@@ -81,8 +81,26 @@ sinônimos/escolhas-padrão).
   passa pelo assistente). Por fim configurar URL+senha na aba Dados.
   Passo a passo completo em `docs/FASE-2-FOTO.md`.
 
+## Fase 3 (Apple Watch/Siri) — PUBLICADA em 2026-07-13
+- Decisão: widget nativo de watchOS descartado (exige Mac + Xcode + conta
+  Apple Developer; Daniel está no Windows). Caminho escolhido: **Atalho da
+  Apple + Siri** lendo um endpoint do proxy.
+- **Worker:** rotas `POST /status` (app envia {date,kcal,goal,prot,protGoal})
+  e `GET /status` (devolve FRASE em texto puro pt-BR, pronta p/ o Atalho
+  mostrar/falar). KV `DIARIO_KV` (id fb8a5a87…), var TIMEZONE
+  America/Sao_Paulo decide o que é "hoje". Clientes sem header Origin
+  (Atalhos/Siri) passam pelo CORS; o X-App-Token continua obrigatório.
+- **App:** `pushStatus()` com debounce 2,5s, gancho no renderHist (roda após
+  toda mutação + no init). Envia SÓ números de hoje — a lista de alimentos
+  nunca sai do aparelho.
+- 16 testes do Worker passando; fluxo app→proxy→frase testado no navegador;
+  endpoint live verificado (401 sem/with token errado).
+- **Falta (ação do Daniel):** criar o Atalho no iPhone (2 ações: Obter
+  conteúdo de URL com header X-App-Token + Mostrar resultado), ativar
+  "Mostrar no Apple Watch". Instruções passadas na conversa de 2026-07-13.
+
 ## Próximos passos sugeridos
-1. **Deploy da Fase 2** (acima) quando o Daniel criar as contas.
+1. **Daniel criar o Atalho** no iPhone (Fase 3, instruções acima).
 2. **Afinar staples do Daniel:** ajustar sinônimos/escolhas-padrão e pesos por
    unidade em `js/measures.js` conforme o uso real; cadastrar os alimentos dele
    (whey, cortes específicos) em Dados → Meus alimentos.

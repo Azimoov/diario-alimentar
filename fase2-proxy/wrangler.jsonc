@@ -11,6 +11,12 @@
     // origens autorizadas a chamar o proxy (CORS)
     "ALLOWED_ORIGINS": "https://azimoov.github.io,http://localhost:8123",
     // modelo de visão; troque se quiser (ex.: claude-sonnet-5 é mais barato)
-    "CLAUDE_MODEL": "claude-opus-4-8"
-  }
+    "CLAUDE_MODEL": "claude-opus-4-8",
+    // fuso p/ decidir o que é "hoje" no /status (Fase 3)
+    "TIMEZONE": "America/Sao_Paulo"
+  },
+  // Fase 3: guarda os totais do dia p/ o Apple Watch/Siri lerem
+  "kv_namespaces": [
+    { "binding": "DIARIO_KV", "id": "fb8a5a87a30f4f5fb8010a406495f3a6" }
+  ]
 }

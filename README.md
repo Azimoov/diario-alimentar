@@ -143,6 +143,18 @@ na Cloudflare. Passo a passo de deploy, custos e proteções em
 [`docs/FASE-2-FOTO.md`](docs/FASE-2-FOTO.md). Sem configurar o proxy, o app
 continua 100% funcional só com texto (Fase 1).
 
+## Fase 3 — Apple Watch / Siri (opcional)
+
+Com o proxy da Fase 2 no ar, o app envia automaticamente os **totais de hoje**
+(só números: kcal, meta e proteína — nunca a lista de alimentos) para
+`POST /status` no Worker. Um **Atalho da Apple** de 2 ações lê `GET /status`
+(que devolve uma frase pronta, ex.: *"Você já comeu 1.450 kcal hoje. Ainda
+pode comer 780 kcal"*) e funciona no iPhone, no Apple Watch e pela Siri.
+Atalho: "Obter conteúdo de URL" (GET na URL do proxy + `/status`, cabeçalho
+`X-App-Token` = senha do app) → "Mostrar resultado". Nas opções do Atalho,
+ative "Mostrar no Apple Watch". Um widget nativo sempre visível no mostrador
+exigiria app watchOS compilado num Mac — fora do escopo atual.
+
 ---
 
 ## Estrutura dos arquivos

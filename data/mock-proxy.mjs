@@ -10,13 +10,35 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type, X-App-Token",
 };
 
+let lastStatus = null; // Fase 3: último status recebido
+
 createServer((req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, CORS); return res.end(); }
-  if (req.method !== "POST") { res.writeHead(405, CORS); return res.end(); }
   if (req.headers["x-app-token"] !== "senha-local") {
     res.writeHead(401, { ...CORS, "Content-Type": "application/json" });
     return res.end(JSON.stringify({ error: "unauthorized", detail: "token errado" }));
   }
+  // ---- Fase 3: /status ----
+  if (req.url.startsWith("/status")) {
+    if (req.method === "POST") {
+      let d = ""; req.on("data", c => d += c);
+      return req.on("end", () => {
+        lastStatus = JSON.parse(d || "{}");
+        console.log("status recebido:", d);
+        res.writeHead(200, { ...CORS, "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      });
+    }
+    if (req.method === "GET") {
+      const s = lastStatus;
+      const text = s
+        ? `Você já comeu ${s.kcal} kcal hoje. Ainda pode comer ${s.goal - s.kcal} kcal (meta ${s.goal}).`
+        : "Nenhum registro hoje ainda.";
+      res.writeHead(200, { ...CORS, "Content-Type": "text/plain; charset=utf-8" });
+      return res.end(text);
+    }
+  }
+  if (req.method !== "POST") { res.writeHead(405, CORS); return res.end(); }
   let data = "";
   req.on("data", (c) => (data += c));
   req.on("end", () => {

@@ -101,6 +101,41 @@ window.App = (function () {
     return (warn || info || {}).msg || '';
   }
 
+  // ============ FASE 3: status p/ Apple Watch / Siri ============
+  // Envia SÓ os totais de hoje (kcal, meta, proteína — números, nunca a lista
+  // de alimentos) para o proxy, onde o Atalho da Apple os lê. Silencioso e
+  // com atraso proposital p/ agrupar edições seguidas.
+  let pushTimer = null;
+  function schedulePushStatus() {
+    if (!S.settings || !S.settings.proxyUrl || !S.settings.proxyToken) return;
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(pushStatus, 2500);
+  }
+  async function pushStatus() {
+    try {
+      const today = isoLocal(new Date());
+      const day = S.days[today] || { items: [] };
+      const tot = window.Nutrition.sumNutrients(day.items
+        .map(it => window.Nutrition.itemNutrients(window.Parser.getFood(it.foodId), it.grams))
+        .filter(n => n.hasKcal));
+      const goalK = window.Nutrition.goalKcal(S.profile, S.goal);
+      const mt = window.Nutrition.macroTargets(S.profile, S.goal, goalK);
+      await fetch(S.settings.proxyUrl.replace(/\/+$/, '') + '/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-App-Token': S.settings.proxyToken },
+        body: JSON.stringify({
+          date: today,
+          kcal: Math.round(tot.kcal),
+          goal: goalK != null ? Math.round(goalK) : undefined,
+          prot: Math.round(tot.prot),
+          protGoal: mt ? mt.protG : undefined,
+        }),
+      });
+    } catch (e) {
+      // silencioso de propósito: o relógio é conveniência; não pode travar o app
+    }
+  }
+
   // ============ FASE 2: registro por foto ============
   // A foto NÃO calcula nutrição: só sugere alimento + gramas. Cada item entra
   // como estimativa (amarela, editável) e é casado com a base TACO/custom.
@@ -389,6 +424,9 @@ window.App = (function () {
 
   // ================= ABA HISTÓRICO =================
   function renderHist() {
+    // renderHist roda após toda mutação de dados (e no init) — é o gancho
+    // natural p/ atualizar o status do relógio (Fase 3), com debounce.
+    schedulePushStatus();
     const root = $('#tab-hist');
     clear(root);
     const goalK = window.Nutrition.goalKcal(S.profile, S.goal);
@@ -712,8 +750,8 @@ window.App = (function () {
     return Number.isFinite(n) ? n : null;
   }
 
-  // addPhotoItems/compressPhoto/analyzePhoto expostos p/ testes automatizados
-  return { init, addPhotoItems, compressPhoto, analyzePhoto };
+  // funções expostas p/ testes automatizados
+  return { init, addPhotoItems, compressPhoto, analyzePhoto, pushStatus };
 })();
 
 document.addEventListener('DOMContentLoaded', window.App.init);

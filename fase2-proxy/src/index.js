@@ -1,10 +1,14 @@
-// Proxy da Fase 2 — Cloudflare Worker.
-// Recebe uma foto (base64) do app, chama a API da Anthropic (visão) e devolve
-// a lista de alimentos estimados. A CHAVE DA API fica em segredo no Worker
-// (env.ANTHROPIC_API_KEY) — jamais no front-end.
+// Proxy das Fases 2 e 3 — Cloudflare Worker.
+// Fase 2 (foto): recebe uma foto (base64) do app, chama a API da Anthropic
+// (visão) e devolve a lista de alimentos estimados. A CHAVE DA API fica em
+// segredo no Worker (env.ANTHROPIC_API_KEY) — jamais no front-end.
+// Fase 3 (Apple Watch/Siri): o app envia os totais do dia (só números) para
+// POST /status; um Atalho da Apple lê GET /status e mostra/fala a frase
+// "Você já comeu X kcal, ainda pode comer Y". Guardado em KV (DIARIO_KV).
 //
-// Proteções: CORS restrito às origens do app, token compartilhado (X-App-Token),
-// limite de tamanho de imagem e rate-limit simples por IP (best-effort).
+// Proteções: token compartilhado (X-App-Token) em tudo; CORS restrito às
+// origens do app para chamadas de navegador; limite de tamanho de imagem e
+// rate-limit simples por IP (best-effort).
 
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -49,6 +53,65 @@ Regras de honestidade:
 - Não liste temperos invisíveis nem invente acompanhamentos que não aparecem.
 - Pratos compostos (estrogonofe, lasanha): liste como um item único com o nome do prato.`;
 
+// ---- Fase 3: status do dia (Apple Watch / Siri / Atalhos) -----------------
+// POST /status  {date:'YYYY-MM-DD', kcal, goal, prot?, protGoal?}  <- app envia
+// GET  /status  -> texto pronto p/ o Atalho mostrar/falar
+function fmtNum(n) { return Math.round(n).toLocaleString("pt-BR"); }
+
+async function handleStatus(request, env, cors, json) {
+  if (!env.DIARIO_KV) {
+    return json({ error: "server_not_configured", detail: "KV DIARIO_KV não configurado." }, 500);
+  }
+  const tz = env.TIMEZONE || "America/Sao_Paulo";
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: tz }); // YYYY-MM-DD
+
+  if (request.method === "POST") {
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
+    const num = (v) => (typeof v === "number" && isFinite(v) && v >= 0 ? Math.round(v) : null);
+    const rec = {
+      date: typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : today,
+      kcal: num(body.kcal),
+      goal: num(body.goal),
+      prot: num(body.prot),
+      protGoal: num(body.protGoal),
+      updatedAt: new Date().toISOString(),
+    };
+    if (rec.kcal == null) return json({ error: "missing_kcal" }, 400);
+    await env.DIARIO_KV.put("status", JSON.stringify(rec));
+    return json({ ok: true });
+  }
+
+  if (request.method === "GET") {
+    const raw = await env.DIARIO_KV.get("status");
+    const data = raw ? JSON.parse(raw) : null;
+    let text;
+    if (!data || data.date !== today || data.kcal == null) {
+      text = "Nenhum registro hoje ainda.";
+      if (data && data.goal) text += ` Sua meta é ${fmtNum(data.goal)} kcal.`;
+      text += " Abra o app e registre uma refeição para atualizar.";
+    } else {
+      text = `Você já comeu ${fmtNum(data.kcal)} kcal hoje.`;
+      if (data.goal) {
+        const rest = data.goal - data.kcal;
+        text += rest >= 0
+          ? ` Ainda pode comer ${fmtNum(rest)} kcal (meta ${fmtNum(data.goal)}).`
+          : ` Passou ${fmtNum(-rest)} kcal da meta (${fmtNum(data.goal)}).`;
+      }
+      if (data.prot != null && data.protGoal) {
+        text += ` Proteína: ${fmtNum(data.prot)} de ${fmtNum(data.protGoal)} g.`;
+      }
+    }
+    // texto puro: o Atalho da Apple mostra/fala direto, sem precisar tratar JSON
+    return new Response(text, {
+      status: 200,
+      headers: { ...cors, "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" },
+    });
+  }
+
+  return json({ error: "method_not_allowed" }, 405);
+}
+
 // rate-limit simples em memória (por isolate — best-effort, não é garantia)
 const hits = new Map();
 function rateLimited(ip, max = 15, windowMs = 60_000) {
@@ -79,13 +142,21 @@ export default {
       new Response(JSON.stringify(obj), { status, headers: { ...cors, "Content-Type": "application/json" } });
 
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-    if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-    if (!allowOrigin) return json({ error: "origin_not_allowed" }, 403);
+
+    // Navegadores mandam Origin: precisa estar na lista. Clientes nativos
+    // (Atalhos da Apple, Siri) não mandam Origin: passam — o token é o porteiro.
+    if (origin && !allowOrigin) return json({ error: "origin_not_allowed" }, 403);
 
     // token compartilhado: o mesmo valor configurado no app (aba Dados)
     if (!env.APP_TOKEN || request.headers.get("X-App-Token") !== env.APP_TOKEN) {
       return json({ error: "unauthorized", detail: "Token do app ausente ou incorreto." }, 401);
     }
+
+    // ---- Fase 3: totais do dia p/ Apple Watch/Siri ----
+    const url = new URL(request.url);
+    if (url.pathname === "/status") return handleStatus(request, env, cors, json);
+
+    if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
     if (!env.ANTHROPIC_API_KEY) {
       return json({ error: "server_not_configured", detail: "ANTHROPIC_API_KEY não configurada no Worker." }, 500);
     }
