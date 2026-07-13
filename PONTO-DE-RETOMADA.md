@@ -47,14 +47,20 @@ sinônimos/escolhas-padrão).
 - TACO não tem tudo cozido (ex.: macarrão só cru).
 - 6 itens da TACO sem valor calórico na digitalização usada.
 
+## Publicado
+- **Site (usar no celular):** https://azimoov.github.io/diario-alimentar/
+- **Repositório:** https://github.com/Azimoov/diario-alimentar (conta **Azimoov**)
+- Deploy = GitHub Pages, branch `main`, raiz. Qualquer `git push` na main
+  republica sozinho em ~1 min.
+- `gh` CLI portátil em `%LOCALAPPDATA%\gh-cli\bin\gh.exe` (logado como Azimoov).
+
 ## Próximos passos sugeridos
-1. **Deploy:** subir no GitHub Pages (passo a passo no README).
-2. **Afinar staples do Daniel:** ajustar sinônimos/escolhas-padrão e pesos por
+1. **Afinar staples do Daniel:** ajustar sinônimos/escolhas-padrão e pesos por
    unidade em `js/measures.js` conforme o uso real; cadastrar os alimentos dele
    (whey, cortes específicos) em Dados → Meus alimentos.
-3. **Qualidade de vida (opcional):** copiar dia anterior/refeições favoritas;
+2. **Qualidade de vida (opcional):** copiar dia anterior/refeições favoritas;
    ordenar itens; metas por refeição.
-4. **Fase 2 (foto):** só com **proxy serverless** guardando a chave. Plano em
+3. **Fase 2 (foto):** só com **proxy serverless** guardando a chave. Plano em
    `docs/FASE-2-FOTO.md`. Não começar sem definir provedor + formato do proxy.
 
 ## Como retomar rápido
