@@ -171,6 +171,11 @@ input[type=number] { width: 100%; }
 .si-kcal { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .modal .field { margin-bottom: 10px; }
 
+/* ---- Boas-vindas (primeiro uso) ---- */
+.welcome { border-left: 4px solid var(--accent); }
+.welcome-steps { margin: 10px 0; padding-left: 4px; list-style: none; font-size: 14px; }
+.welcome-steps li { margin-bottom: 8px; }
+
 .foot { text-align: center; color: var(--muted); font-size: 11px; padding: 10px 14px 24px; }
 
 @media (min-width: 560px) {

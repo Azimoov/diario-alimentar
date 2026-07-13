@@ -35,15 +35,17 @@ const mock = createServer((req, res) => {
   });
 });
 
-// KV simulado (Fase 3)
+// KV simulado (contador do limite diário de fotos)
 const kvStore = new Map();
 const ENV = {
-  APP_TOKEN: "token-teste",
+  // multiusuário: várias senhas separadas por vírgula
+  APP_TOKEN: "token-teste, senha-maria",
   ANTHROPIC_API_KEY: "sk-ant-teste-falsa",
   ANTHROPIC_BASE_URL: `http://localhost:${MOCK_PORT}`,
   ALLOWED_ORIGINS: "http://localhost:8123,https://azimoov.github.io",
   CLAUDE_MODEL: "claude-opus-4-8",
   TIMEZONE: "America/Sao_Paulo",
+  PHOTO_DAILY_LIMIT: "60",
   DIARIO_KV: {
     async get(k) { return kvStore.has(k) ? kvStore.get(k) : null; },
     async put(k, v) { kvStore.set(k, v); },
@@ -93,41 +95,21 @@ mock.listen(MOCK_PORT, async () => {
         && body.modelo === "claude-opus-4-8") || "payload inesperado");
     await check("GET bloqueado (foto)", worker.fetch(req({ method: "GET", body: null }), ENV), 405);
 
-    // ---- Fase 3: /status ----
+    // ---- multiusuário ----
     const hoje = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
-    const statusReq = (opts = {}) => new Request("https://proxy.example/status", {
-      method: opts.method || "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(opts.origin !== null ? { Origin: opts.origin || ORIGIN } : {}),
-        ...(opts.token !== null ? { "X-App-Token": opts.token || "token-teste" } : {}),
-      },
-      body: opts.method === "GET" ? undefined : (opts.body !== undefined ? opts.body : JSON.stringify({ date: hoje, kcal: 1450, goal: 2230, prot: 82, protGoal: 158 })),
-    });
-
-    await check("status GET sem dados", worker.fetch(statusReq({ method: "GET", origin: null }), ENV), 200);
-    await check("status POST grava", worker.fetch(statusReq(), ENV), 200);
-    // GET sem Origin (como o Atalho da Apple) e com texto certo
+    await check("segunda senha da lista funciona", worker.fetch(req({ token: "senha-maria" }), ENV), 200);
+    await check("senha fora da lista", worker.fetch(req({ token: "senha-intrusa" }), ENV), 401);
+    // contador do limite diário incrementa a cada foto analisada
     {
-      const res = await worker.fetch(statusReq({ method: "GET", origin: null }), ENV);
-      const text = await res.text();
-      const ok = res.status === 200
-        && text.includes("1.450") && text.includes("780") && text.includes("2.230")
-        && text.includes("Proteína: 82 de 158");
-      console.log(`${ok ? "PASS" : "FAIL"}  status GET frase completa -> ${res.status} "${text}"`);
+      const usadas = parseInt(kvStore.get("fotos:" + hoje) || "0", 10);
+      const ok = usadas >= 2; // caminho feliz + senha-maria
+      console.log(`${ok ? "PASS" : "FAIL"}  contador diário incrementa -> ${usadas} fotos registradas`);
       if (!ok) failed++;
     }
-    await check("status GET sem token", worker.fetch(statusReq({ method: "GET", token: null, origin: null }), ENV), 401);
-    await check("status POST sem kcal", worker.fetch(statusReq({ body: JSON.stringify({ date: hoje }) }), ENV), 400);
-    // dado de ontem -> mensagem de "nenhum registro hoje"
-    {
-      kvStore.set("status", JSON.stringify({ date: "2020-01-01", kcal: 900, goal: 2230 }));
-      const res = await worker.fetch(statusReq({ method: "GET", origin: null }), ENV);
-      const text = await res.text();
-      const ok = res.status === 200 && text.includes("Nenhum registro hoje");
-      console.log(`${ok ? "PASS" : "FAIL"}  status GET dado velho -> ${res.status} "${text.slice(0, 60)}…"`);
-      if (!ok) failed++;
-    }
+    // limite diário estourado -> 429
+    kvStore.set("fotos:" + hoje, "60");
+    await check("limite diário estourado", worker.fetch(req(), ENV), 429);
+    kvStore.delete("fotos:" + hoje);
   } finally {
     mock.close();
     console.log(failed ? `\n${failed} teste(s) FALHARAM` : "\nTodos os testes passaram.");

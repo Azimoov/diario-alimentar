@@ -143,17 +143,21 @@ na Cloudflare. Passo a passo de deploy, custos e proteções em
 [`docs/FASE-2-FOTO.md`](docs/FASE-2-FOTO.md). Sem configurar o proxy, o app
 continua 100% funcional só com texto (Fase 1).
 
-## Fase 3 — Apple Watch / Siri (opcional)
+## Multiusuário — compartilhando com outras pessoas
 
-Com o proxy da Fase 2 no ar, o app envia automaticamente os **totais de hoje**
-(só números: kcal, meta e proteína — nunca a lista de alimentos) para
-`POST /status` no Worker. Um **Atalho da Apple** de 2 ações lê `GET /status`
-(que devolve uma frase pronta, ex.: *"Você já comeu 1.450 kcal hoje. Ainda
-pode comer 780 kcal"*) e funciona no iPhone, no Apple Watch e pela Siri.
-Atalho: "Obter conteúdo de URL" (GET na URL do proxy + `/status`, cabeçalho
-`X-App-Token` = senha do app) → "Mostrar resultado". Nas opções do Atalho,
-ative "Mostrar no Apple Watch". Um widget nativo sempre visível no mostrador
-exigiria app watchOS compilado num Mac — fora do escopo atual.
+O app é multiusuário por natureza: **basta enviar o link**. Cada pessoa que
+abrir o site tem seu próprio diário, perfil e metas, guardados **no aparelho
+dela** (ninguém vê os dados de ninguém — não há servidor de dados). No
+primeiro acesso, um guia de boas-vindas orienta a preencher o perfil.
+Backup é individual: cada um exporta/importa seu JSON na aba Dados.
+
+**Foto (opcional, custo é do dono do proxy):** o segredo `APP_TOKEN` aceita
+**várias senhas separadas por vírgula** (`senha-daniel,senha-maria`) — dê uma
+senha para cada pessoa e ela configura em Dados → Registro por foto. Para
+revogar alguém, regrave o segredo sem a senha da pessoa
+(`npx wrangler secret put APP_TOKEN`). O custo de todas as fotos cai na conta
+de API do dono; proteções: `PHOTO_DAILY_LIMIT` (máx. de fotos/dia do grupo,
+padrão 60) + limite de gasto no console da Anthropic.
 
 ---
 

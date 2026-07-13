@@ -81,26 +81,28 @@ sinônimos/escolhas-padrão).
   passa pelo assistente). Por fim configurar URL+senha na aba Dados.
   Passo a passo completo em `docs/FASE-2-FOTO.md`.
 
-## Fase 3 (Apple Watch/Siri) — PUBLICADA em 2026-07-13
-- Decisão: widget nativo de watchOS descartado (exige Mac + Xcode + conta
-  Apple Developer; Daniel está no Windows). Caminho escolhido: **Atalho da
-  Apple + Siri** lendo um endpoint do proxy.
-- **Worker:** rotas `POST /status` (app envia {date,kcal,goal,prot,protGoal})
-  e `GET /status` (devolve FRASE em texto puro pt-BR, pronta p/ o Atalho
-  mostrar/falar). KV `DIARIO_KV` (id fb8a5a87…), var TIMEZONE
-  America/Sao_Paulo decide o que é "hoje". Clientes sem header Origin
-  (Atalhos/Siri) passam pelo CORS; o X-App-Token continua obrigatório.
-- **App:** `pushStatus()` com debounce 2,5s, gancho no renderHist (roda após
-  toda mutação + no init). Envia SÓ números de hoje — a lista de alimentos
-  nunca sai do aparelho.
-- 16 testes do Worker passando; fluxo app→proxy→frase testado no navegador;
-  endpoint live verificado (401 sem/with token errado).
-- **Falta (ação do Daniel):** criar o Atalho no iPhone (2 ações: Obter
-  conteúdo de URL com header X-App-Token + Mostrar resultado), ativar
-  "Mostrar no Apple Watch". Instruções passadas na conversa de 2026-07-13.
+## Fase 3 (Apple Watch/Siri) — CANCELADA pelo Daniel em 2026-07-13
+- Chegou a ser publicada (endpoint /status + push do app) e foi **revertida
+  no mesmo dia** a pedido dele: app não envia mais totais, /status removido
+  do Worker, registro "status" apagado do KV. O KV DIARIO_KV foi mantido e
+  repropositado p/ o contador do limite diário de fotos.
+- Se retomar um dia: o commit ecb4b18 tem a implementação completa (Atalho
+  da Apple de 2 ações lia frase pronta em GET /status).
+
+## Fase 4 (multiusuário "cada um no seu celular") — PUBLICADA em 2026-07-13
+- Modelo escolhido pelo Daniel: várias pessoas usam o mesmo site, cada uma
+  com dados no próprio aparelho (sem contas, sem sync, sem painel — LGPD ok).
+- **Worker:** APP_TOKEN aceita várias senhas separadas por vírgula (uma por
+  pessoa; revogação = regravar o segredo sem a senha). Limite diário de
+  fotos do grupo: var PHOTO_DAILY_LIMIT (padrão 60), contado no KV
+  (chave fotos:YYYY-MM-DD, TTL 48h, fuso TIMEZONE). 14 testes passando.
+- **App:** banner de boas-vindas no primeiro uso (some quando o perfil é
+  preenchido; botão leva à aba Perfil).
+- Segredo APP_TOKEN atual do Daniel continua válido (lista de 1). Para
+  adicionar alguém: `npx.cmd wrangler secret put APP_TOKEN` com
+  "senha-daniel,senha-nova".
 
 ## Próximos passos sugeridos
-1. **Daniel criar o Atalho** no iPhone (Fase 3, instruções acima).
 2. **Afinar staples do Daniel:** ajustar sinônimos/escolhas-padrão e pesos por
    unidade em `js/measures.js` conforme o uso real; cadastrar os alimentos dele
    (whey, cortes específicos) em Dados → Meus alimentos.
