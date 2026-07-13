@@ -1,6 +1,6 @@
 # PONTO DE RETOMADA — Diário Alimentar (kcal/macros)
 
-_Atualizado em 2026-07-12._
+_Atualizado em 2026-07-13._
 
 ## O que é
 App pessoal de diário alimentar para perda de peso. Registro por **texto em
@@ -54,14 +54,31 @@ sinônimos/escolhas-padrão).
   republica sozinho em ~1 min.
 - `gh` CLI portátil em `%LOCALAPPDATA%\gh-cli\bin\gh.exe` (logado como Azimoov).
 
+## Fase 2 (foto) — CÓDIGO PRONTO E TESTADO, falta só o deploy do proxy
+- **App:** botão 📷 na aba Hoje (comprime p/ 1024px JPEG no aparelho), config
+  em Dados → "Registro por foto" (URL do proxy + APP_TOKEN, em
+  `S.settings`). Itens de foto entram como estimativa com selo de confiança e
+  confirmação quando o casamento com a TACO é parcial (fallback de matching
+  parcial em `parser.js` — nunca resolve sozinho, sempre `ambiguous`).
+- **Proxy:** Cloudflare Worker em `fase2-proxy/` (SDK oficial
+  `@anthropic-ai/sdk`, saída estruturada `output_config.format` com JSON
+  schema, modelo padrão `claude-opus-4-8`, CORS + X-App-Token + rate-limit).
+  `npm test` roda 10 testes contra API simulada — todos passando.
+- **Testado ponta a ponta** com mock (`data/mock-proxy.mjs`) no navegador.
+- **FALTA (ações do Daniel):** (1) conta API Anthropic + billing + chave +
+  limite de gasto; (2) conta Cloudflare. Depois: `wrangler login` (ele
+  autoriza), `wrangler deploy`, e ELE cola os segredos via
+  `npx wrangler secret put ANTHROPIC_API_KEY` / `APP_TOKEN` (a chave nunca
+  passa pelo assistente). Por fim configurar URL+senha na aba Dados.
+  Passo a passo completo em `docs/FASE-2-FOTO.md`.
+
 ## Próximos passos sugeridos
-1. **Afinar staples do Daniel:** ajustar sinônimos/escolhas-padrão e pesos por
+1. **Deploy da Fase 2** (acima) quando o Daniel criar as contas.
+2. **Afinar staples do Daniel:** ajustar sinônimos/escolhas-padrão e pesos por
    unidade em `js/measures.js` conforme o uso real; cadastrar os alimentos dele
    (whey, cortes específicos) em Dados → Meus alimentos.
-2. **Qualidade de vida (opcional):** copiar dia anterior/refeições favoritas;
+3. **Qualidade de vida (opcional):** copiar dia anterior/refeições favoritas;
    ordenar itens; metas por refeição.
-3. **Fase 2 (foto):** só com **proxy serverless** guardando a chave. Plano em
-   `docs/FASE-2-FOTO.md`. Não começar sem definir provedor + formato do proxy.
 
 ## Como retomar rápido
 - Rodar local: `node data/devserver.mjs` → `http://localhost:8123` (ou abrir

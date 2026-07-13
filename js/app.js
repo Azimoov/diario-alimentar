@@ -101,6 +101,91 @@ window.App = (function () {
     return (warn || info || {}).msg || '';
   }
 
+  // ============ FASE 2: registro por foto ============
+  // A foto NÃO calcula nutrição: só sugere alimento + gramas. Cada item entra
+  // como estimativa (amarela, editável) e é casado com a base TACO/custom.
+  // A análise acontece no SEU proxy (aba Dados) — a chave da API nunca fica aqui.
+
+  // Redimensiona p/ máx 1024 px e converte p/ JPEG (menos dados, mais rápido).
+  function compressPhoto(file) {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const MAX = 1024;
+        const scale = Math.min(1, MAX / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        resolve(dataUrl.split(',')[1]); // só o base64, sem o prefixo data:
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Não consegui ler a imagem.')); };
+      img.src = url;
+    });
+  }
+
+  async function analyzePhoto(base64) {
+    const res = await fetch(S.settings.proxyUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-App-Token': S.settings.proxyToken },
+      body: JSON.stringify({ image: base64, mediaType: 'image/jpeg' }),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* resposta sem corpo */ }
+    if (!res.ok) {
+      const detail = (data && (data.detail || data.error)) || ('HTTP ' + res.status);
+      throw new Error(detail);
+    }
+    return data || { itens: [], observacao: '' };
+  }
+
+  // Insere os itens estimados no dia atual (exposta p/ testes).
+  function addPhotoItems(itens, observacao) {
+    const day = currentDay();
+    let added = 0;
+    (itens || []).forEach(it => {
+      if (!it || !it.nome || !(it.gramas > 0)) return;
+      const match = window.Parser.matchFood(it.nome);
+      day.items.push({
+        raw: '[foto] ' + it.nome,
+        foodText: it.nome,
+        foodId: match.foodId,
+        grams: Math.round(it.gramas),
+        conf: 'estimate',
+        match: match.status,
+        note: 'Estimado por foto (confiança ' + (it.confianca || 'baixa') + ') — confira alimento e gramas.',
+      });
+      added++;
+    });
+    window.Store.save();
+    renderHoje();
+    renderHist();
+    let msgTxt = added
+      ? added + ' item(ns) adicionados pela foto como ESTIMATIVA — confira os alimentos e as gramas.'
+      : 'Nenhum alimento identificado na foto.';
+    if (observacao) msgTxt += '\n\nObservação do modelo: ' + observacao;
+    alert(msgTxt);
+    return added;
+  }
+
+  async function handlePhotoPick(file) {
+    const btn = $('#photo-btn');
+    const old = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ analisando…'; }
+    try {
+      const base64 = await compressPhoto(file);
+      const data = await analyzePhoto(base64);
+      addPhotoItems(data.itens, data.observacao);
+    } catch (err) {
+      alert('Não consegui analisar a foto: ' + err.message);
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = old; }
+    }
+  }
+
   function itemNutrients(item) {
     const food = window.Parser.getFood(item.foodId);
     return window.Nutrition.itemNutrients(food, item.grams);
@@ -124,11 +209,26 @@ window.App = (function () {
     ]));
 
     // ----- entrada de texto -----
+    const photoInput = h('input', {
+      type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none',
+      onchange: e => { const f = e.target.files[0]; e.target.value = ''; if (f) handlePhotoPick(f); },
+    });
     const box = h('div', { class: 'card entry-card' }, [
       h('label', { class: 'lbl', for: 'entry' }, 'O que você comeu? (uma linha por alimento)'),
       h('textarea', { id: 'entry', rows: '3', placeholder: '100 g patinho\n120g arroz\n1 ovo\nmeia xicara de feijao' }),
       h('div', { class: 'entry-actions' }, [
         h('span', { class: 'hint' }, 'Ex.: “150 g frango”, “2 colheres de sopa de azeite”, “1 banana”'),
+        photoInput,
+        h('button', {
+          class: 'btn', id: 'photo-btn', title: 'Registrar por foto (Fase 2)',
+          onclick: () => {
+            if (!S.settings.proxyUrl || !S.settings.proxyToken) {
+              alert('Para usar foto, configure o endereço do proxy e a senha do app na aba Dados (seção "Registro por foto").');
+              return;
+            }
+            photoInput.click();
+          },
+        }, '📷 Foto'),
         h('button', { class: 'btn primary', onclick: addEntries }, '+ Adicionar'),
       ]),
     ]);
@@ -210,7 +310,11 @@ window.App = (function () {
 
     // seletor de candidatos quando não encontrado ou ambíguo
     if (!food || ambiguous) {
-      const parsed = window.Parser.parseLine(item.raw);
+      // usa o texto do alimento já isolado (importante p/ itens de foto);
+      // cai no parse da linha crua só para itens antigos sem foodText
+      const parsed = item.foodText
+        ? window.Parser.matchFood(item.foodText)
+        : window.Parser.parseLine(item.raw);
       if (parsed && parsed.candidates && parsed.candidates.length) {
         const sel = h('select', { class: 'cand', onchange: e => { if (e.target.value) pickFood(e.target.value); } }, [
           h('option', { value: '' }, food ? 'trocar / confirmar…' : 'escolher da base…'),
@@ -448,13 +552,37 @@ window.App = (function () {
     cf.appendChild(cfList);
     root.appendChild(cf);
 
+    // Fase 2: registro por foto
+    const st = S.settings;
+    root.appendChild(h('div', { class: 'card' }, [
+      h('h3', {}, '📷 Registro por foto (Fase 2)'),
+      h('p', { class: 'note' }, 'Opcional. Requer o SEU proxy publicado (veja fase2-proxy/ no projeto). A chave da API fica só no proxy — aqui você informa apenas o endereço dele e a senha do app.'),
+      h('div', { class: 'field' }, [
+        h('label', { class: 'lbl' }, 'Endereço do proxy'),
+        h('input', {
+          type: 'url', class: 'in', placeholder: 'https://seu-proxy.workers.dev',
+          value: st.proxyUrl || '',
+          onchange: e => { st.proxyUrl = e.target.value.trim(); window.Store.save(); },
+        }),
+      ]),
+      h('div', { class: 'field' }, [
+        h('label', { class: 'lbl' }, 'Senha do app (APP_TOKEN)'),
+        h('input', {
+          type: 'password', class: 'in', placeholder: 'a mesma configurada no proxy',
+          value: st.proxyToken || '',
+          onchange: e => { st.proxyToken = e.target.value.trim(); window.Store.save(); },
+        }),
+      ]),
+      h('p', { class: 'hint' }, 'Cada foto analisada tem custo (centavos) cobrado na sua conta da API. Itens de foto entram sempre como estimativa editável.'),
+    ]));
+
     // fonte / sobre
     const db = window.FOOD_DB || {};
     root.appendChild(h('div', { class: 'card' }, [
       h('h3', {}, 'Sobre a base de alimentos'),
       h('p', { class: 'note' }, db.source || ''),
       h('p', { class: 'note' }, 'Digitalização: ' + (db.digitizedFrom || '')),
-      h('p', { class: 'note' }, (db.foods ? db.foods.length : 0) + ' alimentos · base por 100 g. Fase 2 (foto) não implementada — ver README.'),
+      h('p', { class: 'note' }, (db.foods ? db.foods.length : 0) + ' alimentos · base por 100 g.'),
       h('button', { class: 'btn danger', onclick: doReset }, 'Apagar tudo'),
     ]));
   }
@@ -584,7 +712,8 @@ window.App = (function () {
     return Number.isFinite(n) ? n : null;
   }
 
-  return { init };
+  // addPhotoItems/compressPhoto/analyzePhoto expostos p/ testes automatizados
+  return { init, addPhotoItems, compressPhoto, analyzePhoto };
 })();
 
 document.addEventListener('DOMContentLoaded', window.App.init);

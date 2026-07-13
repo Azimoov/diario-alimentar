@@ -19,6 +19,9 @@ window.Store = (function () {
       days: {},             // 'YYYY-MM-DD' -> { items:[{raw,foodId,grams}], weight:null }
       weights: {},          // 'YYYY-MM-DD' -> kg (peso corporal)
       customFoods: [],      // {id:'c1', name, kcal, prot, carb, fat, fiber}
+      // Fase 2 (foto): endereço do SEU proxy + senha do app. A chave da API
+      // fica só no proxy — aqui nunca entra chave nenhuma.
+      settings: { proxyUrl: '', proxyToken: '' },
       createdAt: new Date().toISOString(),
     };
   }
@@ -40,6 +43,7 @@ window.Store = (function () {
     state.days = state.days || {};
     state.weights = state.weights || {};
     state.customFoods = state.customFoods || [];
+    state.settings = Object.assign({}, d.settings, state.settings || {});
     return state;
   }
 

@@ -41,7 +41,11 @@ window.Parser = (function () {
     return FOODS.find(f => String(f.id) === String(id)) || null;
   }
 
+  // conectores/preposições ignorados na comparação
+  const STOPWORDS = new Set(['de', 'da', 'do', 'das', 'dos', 'com', 'sem', 'e', 'em', 'a', 'o']);
+
   // ---- pontuação de similaridade nome<->consulta -------------------------
+  // Retorna { score, matched } — quantos termos da consulta casaram e quão bem.
   function scoreFood(qTokens, food) {
     const fWords = food.norm.split(' ').filter(Boolean);
     let score = 0, matched = 0;
@@ -57,10 +61,9 @@ window.Parser = (function () {
       }
       if (best > 0) { matched++; score += best; }
     }
-    if (matched < qTokens.length) return 0; // todos os termos precisam casar
     score -= Math.max(0, fWords.length - qTokens.length) * 0.4; // prefere conciso
     if (sing(fWords[0]) === sing(qTokens[0]) || sing(fWords[0]).startsWith(sing(qTokens[0]))) score += 2;
-    return score;
+    return { score, matched };
   }
 
   // Retorna { status, foodId, candidates:[{id,score}] } para um texto de alimento.
@@ -68,7 +71,8 @@ window.Parser = (function () {
     const norm = normalize(foodText);
     if (!norm) return { status: 'not_found', foodId: null, candidates: [] };
 
-    const qTokens = norm.split(' ').filter(Boolean);
+    const qTokens = norm.split(' ').filter(t => t && !STOPWORDS.has(t));
+    if (!qTokens.length) return { status: 'not_found', foodId: null, candidates: [] };
     const normSing = qTokens.map(sing).join(' ');
 
     // atalho por sinônimo (escolha-padrão verificada); tenta forma singular
@@ -77,13 +81,34 @@ window.Parser = (function () {
     if (Object.prototype.hasOwnProperty.call(SYN, norm)) synId = SYN[norm];
     else if (Object.prototype.hasOwnProperty.call(SYN, normSing)) synId = SYN[normSing];
 
+    // 1ª passada (estrita): todos os termos precisam casar
     const scored = [];
+    const partial = [];
     for (const f of FOODS) {
-      const s = scoreFood(qTokens, f);
-      if (s > 0) scored.push({ id: f.id, score: s });
+      const r = scoreFood(qTokens, f);
+      if (r.matched === qTokens.length && r.score > 0) scored.push({ id: f.id, score: r.score });
+      else if (r.matched > 0) partial.push({ id: f.id, score: r.score, matched: r.matched });
     }
     scored.sort((a, b) => b.score - a.score);
-    const candidates = scored.slice(0, 8);
+    let candidates = scored.slice(0, 8);
+
+    // 2ª passada (parcial): p/ nomes descritivos (ex. vindos de foto) que têm
+    // palavras a mais ("arroz branco cozido"). Exige a maioria dos termos e
+    // NUNCA resolve sozinha: entra sempre como ambígua (usuário confirma).
+    if (!candidates.length && qTokens.length >= 2) {
+      const minMatched = Math.ceil(qTokens.length / 2);
+      const loose = partial
+        .filter(c => c.matched >= minMatched)
+        .sort((a, b) => (b.matched - a.matched) || (b.score - a.score))
+        .slice(0, 8);
+      if (loose.length) {
+        return {
+          status: 'ambiguous',
+          foodId: synId != null && getFood(synId) ? synId : loose[0].id,
+          candidates: loose,
+        };
+      }
+    }
 
     if (synId != null && getFood(synId)) {
       // sinônimo manda; garante que ele apareça no topo dos candidatos

@@ -129,13 +129,19 @@ rótulo por 100 g. Eles entram na busca e no parser junto com a TACO.
 
 ---
 
-## Fase 2 (NÃO implementada) — registro por foto
+## Fase 2 — registro por foto (opcional)
 
-Planejada, porém **fora deste código** por segurança. Um modelo de visão
-estimaria alimento + gramas a partir de uma foto. A chave de API **jamais** pode
-ficar no front-end: iria atrás de um **proxy serverless** que guarda a chave.
-O ponto de integração e a arquitetura estão descritos em
-[`docs/FASE-2-FOTO.md`](docs/FASE-2-FOTO.md).
+Implementada: botão **📷 Foto** na aba Hoje. A foto é comprimida no aparelho e
+enviada ao **seu proxy** (Cloudflare Worker em [`fase2-proxy/`](fase2-proxy/)),
+que guarda a chave da API da Anthropic como segredo — **a chave jamais fica no
+front-end**. Cada alimento identificado entra como **estimativa editável**
+casada com a base TACO; a nutrição continua vindo da tabela, a foto só sugere
+alimento + gramas.
+
+Requer conta na API da Anthropic (paga por uso, ~US$0,02/foto) e conta grátis
+na Cloudflare. Passo a passo de deploy, custos e proteções em
+[`docs/FASE-2-FOTO.md`](docs/FASE-2-FOTO.md). Sem configurar o proxy, o app
+continua 100% funcional só com texto (Fase 1).
 
 ---
 
@@ -156,5 +162,9 @@ data/
   source/*.csv      CSVs originais da TACO (raulfdm/taco-api, MIT)
   build-db.mjs      gera js/db.js a partir dos CSVs
   devserver.mjs     servidor estático só p/ teste local
-docs/FASE-2-FOTO.md plano da Fase 2 (foto via proxy) — não implementado
+  mock-proxy.mjs    proxy falso p/ testar o botão 📷 sem gastar API
+fase2-proxy/        Cloudflare Worker da Fase 2 (guarda a chave da API)
+  src/index.js      o proxy em si (CORS, token, validações, chamada de visão)
+  test/smoke.mjs    testes locais com API simulada (npm test)
+docs/FASE-2-FOTO.md arquitetura, deploy e custos da Fase 2
 ```

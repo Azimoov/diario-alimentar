@@ -1,2 +1,7 @@
 # configurações locais do Claude Code — não publicar
 .claude/
+
+# dependências e artefatos do proxy (Fase 2)
+node_modules/
+.wrangler/
+.dev.vars

@@ -1,0 +1,17 @@
+{
+  "name": "diario-alimentar-proxy",
+  "private": true,
+  "type": "module",
+  "description": "Proxy serverless (Cloudflare Worker) da Fase 2 — guarda a chave da API e analisa fotos de refeicoes. A chave NUNCA vai para o front-end.",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node test/smoke.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

@@ -1,0 +1,16 @@
+// Configuração do Cloudflare Worker (proxy da Fase 2).
+// SEGREDOS (nunca ficam neste arquivo nem no git):
+//   npx wrangler secret put ANTHROPIC_API_KEY   <- chave da API (só o dono digita)
+//   npx wrangler secret put APP_TOKEN           <- senha do app (mesma configurada em Dados)
+{
+  "name": "diario-alimentar-proxy",
+  "main": "src/index.js",
+  "compatibility_date": "2026-07-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    // origens autorizadas a chamar o proxy (CORS)
+    "ALLOWED_ORIGINS": "https://azimoov.github.io,http://localhost:8123",
+    // modelo de visão; troque se quiser (ex.: claude-sonnet-5 é mais barato)
+    "CLAUDE_MODEL": "claude-opus-4-8"
+  }
+}
