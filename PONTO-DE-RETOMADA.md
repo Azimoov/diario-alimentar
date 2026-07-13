@@ -54,7 +54,16 @@ sinônimos/escolhas-padrão).
   republica sozinho em ~1 min.
 - `gh` CLI portátil em `%LOCALAPPDATA%\gh-cli\bin\gh.exe` (logado como Azimoov).
 
-## Fase 2 (foto) — CÓDIGO PRONTO E TESTADO, falta só o deploy do proxy
+## Fase 2 (foto) — PUBLICADA em 2026-07-13
+- **Proxy no ar:** https://diario-alimentar-proxy.azimoov.workers.dev
+  (Cloudflare, conta serruyadaniel@gmail.com, subdomínio azimoov.workers.dev).
+  Segredos ANTHROPIC_API_KEY e APP_TOKEN cadastrados PELO DANIEL via
+  `wrangler secret put` (dica Windows: usar `npx.cmd`). Verificado: 401 sem
+  token, 403 origem estranha. Wrangler logado (config copiada p/
+  ~/.config/.wrangler p/ funcionar no terminal do usuário).
+- Falta apenas o Daniel configurar URL+senha na aba Dados de cada aparelho.
+
+## Detalhes da implementação
 - **App:** botão 📷 na aba Hoje (comprime p/ 1024px JPEG no aparelho), config
   em Dados → "Registro por foto" (URL do proxy + APP_TOKEN, em
   `S.settings`). Itens de foto entram como estimativa com selo de confiança e
