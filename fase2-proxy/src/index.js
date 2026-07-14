@@ -136,6 +136,9 @@ export default {
       apiKey: env.ANTHROPIC_API_KEY,
       // ANTHROPIC_BASE_URL só é usado nos testes locais (mock); em produção fica indefinida
       baseURL: env.ANTHROPIC_BASE_URL || undefined,
+      // Workers + nodejs_compat: sem isto o SDK pode tentar o caminho de rede
+      // do Node (inexistente aqui) e falhar com "Connection error."
+      fetch: globalThis.fetch.bind(globalThis),
     });
 
     let msg;
@@ -158,6 +161,8 @@ export default {
         }],
       });
     } catch (err) {
+      // aparece no `wrangler tail` p/ diagnóstico (sem dados sensíveis)
+      console.log("ERRO API:", err && err.status, String((err && err.message) || err).slice(0, 300));
       if (err instanceof Anthropic.RateLimitError) {
         return json({ error: "upstream_rate_limited", detail: "API ocupada — tente de novo em instantes." }, 429);
       }
@@ -171,13 +176,20 @@ export default {
     }
 
     if (msg.stop_reason === "refusal") {
+      console.log("RECUSA:", JSON.stringify(msg.stop_details || null));
       return json({ error: "refused", detail: "O modelo recusou analisar esta imagem." }, 502);
     }
     const textBlock = (msg.content || []).find((b) => b.type === "text");
-    if (!textBlock) return json({ error: "empty_response" }, 502);
+    if (!textBlock) {
+      console.log("SEM TEXTO: stop_reason=", msg.stop_reason, "blocos=", (msg.content || []).map((b) => b.type).join(","));
+      return json({ error: "empty_response", detail: "Resposta sem conteúdo (stop: " + msg.stop_reason + ")." }, 502);
+    }
 
     let parsed;
-    try { parsed = JSON.parse(textBlock.text); } catch { return json({ error: "bad_model_output" }, 502); }
+    try { parsed = JSON.parse(textBlock.text); } catch {
+      console.log("JSON RUIM: stop_reason=", msg.stop_reason, "inicio=", textBlock.text.slice(0, 200));
+      return json({ error: "bad_model_output", detail: "Resposta em formato inesperado." }, 502);
+    }
 
     // validação defensiva do formato antes de devolver ao app
     const itens = (Array.isArray(parsed.itens) ? parsed.itens : [])
