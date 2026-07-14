@@ -9,6 +9,9 @@
   "main": "src/index.js",
   "compatibility_date": "2026-07-01",
   "compatibility_flags": ["nodejs_compat"],
+  // NUNCA apagar variáveis/segredos criados pelo painel da Cloudflare ao
+  // fazer deploy pela linha de comando (foi assim que a chave sumiu uma vez)
+  "keep_vars": true,
   "vars": {
     // origens autorizadas a chamar o proxy (CORS)
     "ALLOWED_ORIGINS": "https://azimoov.github.io,http://localhost:8123",
