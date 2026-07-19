@@ -50,6 +50,7 @@ window.MEASURES = {
     laranja: 180, laranjas: 180,
     tangerina: 130, mexerica: 130, bergamota: 130,
     pao: 50, // pão francês por padrão
+    coxinha: 50, coxinhas: 50, // porção média segundo a TBCA (unidade M)
   },
 };
 
@@ -110,6 +111,22 @@ window.SYNONYMS = {
   'fermento': 513,            // Fermento em pó, químico
   'creme de leite': 447,
   'leite condensado': 453,
+  // TBCA (ids são os códigos oficiais — conferíveis em tbca.net.br)
+  'leite': 'C0043G',          // Leite, vaca, integral, fluído (64 kcal)
+  'leite integral': 'C0043G',
+  'leite de vaca': 'C0043G',
+  'cerveja': 'C0009H',        // Bebida alcoólica, cerveja, Pilsen
+  'pasta de amendoim': 'C0290T',
+  'coxinha': 'C0100F',        // Coxinha de frango, industrializada, frita
+  // USDA (subconjunto curado — ids u<fdc_id>, conferíveis em fdc.nal.usda.gov)
+  'whey': 'u173180',          // Whey protein (pó)
+  'whey protein': 'u173180',
+  'whey isolado': 'u173177',
+  'cottage': 'u172179',       // Queijo cottage
+  'queijo cottage': 'u172179',
+  'cream cheese': 'u173418',
+  'leite de soja': 'u172456',
+  'leite de amendoas': 'u174832',
 };
 
 // Palavras que viram número (normalizadas, sem acento).

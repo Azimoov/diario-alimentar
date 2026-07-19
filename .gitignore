@@ -5,3 +5,7 @@
 node_modules/
 .wrangler/
 .dev.vars
+
+# fontes brutas grandes (baixe de novo com as URLs do README)
+data/source-tbca/
+data/source-usda/

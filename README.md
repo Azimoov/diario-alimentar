@@ -44,24 +44,44 @@ para transparência ou removê-los do deploy, à sua escolha.
 
 ---
 
-## Fonte da base de alimentos (TACO)
+## Fontes da base de alimentos (6.273 itens)
 
-- **Tabela:** TACO — Tabela Brasileira de Composição de Alimentos, **4ª edição
-  revisada e ampliada** (NEPA/UNICAMP, 2011).
-  Página oficial: <https://nepa.unicamp.br/tabela-brasileira-de-composicao-de-alimentos-4a-edicao/>
-- **Digitalização usada (JSON/CSV):** repositório **`raulfdm/taco-api`** (licença
-  MIT) — <https://github.com/raulfdm/taco-api>. Os arquivos originais baixados
-  estão em `data/source/` (`food.csv`, `nutrients.csv`, `categories.csv`).
-- **Como a base foi montada:** o script `data/build-db.mjs` junta os três CSVs
-  (sem alterar valores) e gera `js/db.js`, que o app carrega. Para atualizar:
-  substitua os CSVs em `data/source/` e rode `node data/build-db.mjs`.
-- **Conferência:** alguns valores foram checados contra a TACO (ex.: *Arroz,
-  tipo 1, cozido* = 128 kcal/100g; *Carne bovina, patinho, grelhado* = 219
-  kcal/100g; *Feijão, carioca, cozido* = 76 kcal/100g). **597 alimentos**, valores
-  **por 100 g de parte comestível**.
+Três fontes, montadas por `data/build-db.mjs` (determinístico: reorganiza,
+nunca inventa valor). Cada alimento carrega a etiqueta da origem no app.
+Valores **por 100 g de parte comestível**.
 
-> Se você quiser trocar por outra edição/fonte, mantenha a mesma estrutura de
-> CSV e rode o script de novo. Não edite `js/db.js` à mão.
+**1. TACO 4ª ed. — 597 alimentos** (NEPA/UNICAMP, 2011)
+<https://nepa.unicamp.br/tabela-brasileira-de-composicao-de-alimentos-4a-edicao/>
+Digitalização: [`raulfdm/taco-api`](https://github.com/raulfdm/taco-api) (MIT),
+CSVs em `data/source/`. Conferência por amostragem: *Arroz tipo 1 cozido* =
+128 kcal; *Patinho grelhado* = 219 kcal; *Feijão carioca cozido* = 76 kcal ✓.
+
+**2. TBCA 7.3 — 5.668 alimentos** (USP/BRASILFOODS/FoRC)
+<http://www.tbca.net.br/> — inclui pratos prontos, preparações regionais,
+bebidas e industrializados. Citação: *Tabela Brasileira de Composição de
+Alimentos (TBCA). Universidade de São Paulo (USP). Food Research Center
+(FoRC). Versão 7.3. São Paulo, 2025.* **Uso não comercial, com citação
+obrigatória** (termos do site). Digitalização:
+[`resen-dev/web-scraping-tbca`](https://github.com/resen-dev/web-scraping-tbca),
+em `data/source-tbca/`. Conferência campo a campo contra o site oficial:
+*Cerveja Pilsen BRC0009H* = 41 kcal/0,56 P/3,34 C ✓; *Coxinha BRC0100F* =
+273 kcal/9,61 P/34,5 C ✓; *Leite integral BRC0043G* = 64 kcal ✓.
+
+**3. USDA SR Legacy — 8 alimentos** (domínio público, CC0)
+<https://fdc.nal.usda.gov/> — subconjunto curado só com o que falta nas bases
+brasileiras (whey, cottage, cream cheese, leites vegetais…). Nomes traduzidos
+à mão em `data/usda-selecao.mjs`; valores extraídos direto dos CSVs oficiais;
+o nome original em inglês e o `fdc_id` ficam guardados para auditoria.
+
+O script de sanidade em `build-db.mjs` confere valores-âncora a cada build e
+falha se algo divergir. Para atualizar qualquer fonte: substitua os arquivos
+em `data/source*` e rode `node data/build-db.mjs`. Não edite `js/db.js` à mão.
+
+> As pastas `data/source-tbca/` e `data/source-usda/` (61 MB de dados brutos)
+> **não vão para o git** — para reconstruir a base do zero, baixe
+> `alimentos.txt` do repositório da digitalização TBCA e o zip
+> `FoodData_Central_sr_legacy_food_csv_2018-04.zip` de
+> <https://fdc.nal.usda.gov/download-datasets/>.
 
 ---
 

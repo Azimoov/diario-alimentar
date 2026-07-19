@@ -34,7 +34,10 @@ window.Parser = (function () {
   // singulariza plural simples ("ovos"->"ovo", "bananas"->"banana")
   function sing(w) { return w.length > 3 && w.endsWith('s') ? w.slice(0, -1) : w; }
 
-  function setFoods(list) { FOODS = list || []; }
+  function setFoods(list) {
+    // a base embutida vem sem o campo norm (economia de tamanho) — calcula aqui
+    FOODS = (list || []).map(f => (f.norm ? f : Object.assign({}, f, { norm: normalize(f.name) })));
+  }
   function getFoods() { return FOODS; }
   function getFood(id) {
     if (id == null) return null;

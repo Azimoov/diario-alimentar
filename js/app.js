@@ -38,6 +38,13 @@ window.App = (function () {
   function $(sel) { return document.querySelector(sel); }
   function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
+  // etiqueta da fonte de um alimento (TACO/TBCA/USDA/meu/receita)
+  function srcLabel(f) {
+    if (!f) return '';
+    if (f.custom) return f.recipe ? 'receita' : 'meu';
+    return { taco: 'TACO', tbca: 'TBCA', usda: 'USDA' }[f.src] || '';
+  }
+
   // ---------- init ----------
   function init() {
     S = window.Store.load();
@@ -341,7 +348,10 @@ window.App = (function () {
           h('option', { value: '' }, food ? 'trocar / confirmar…' : 'escolher da base…'),
           ...parsed.candidates.map(c => {
             const f = window.Parser.getFood(c.id);
-            return f ? h('option', { value: c.id, selected: String(c.id) === String(item.foodId) ? 'selected' : null }, f.name) : null;
+            if (!f) return null;
+            const tag = srcLabel(f);
+            return h('option', { value: c.id, selected: String(c.id) === String(item.foodId) ? 'selected' : null },
+              f.name + (tag && tag !== 'TACO' ? '  [' + tag + ']' : ''));
           }).filter(Boolean),
         ]);
         row.appendChild(sel);
@@ -634,15 +644,21 @@ window.App = (function () {
       h('p', { class: 'hint' }, 'Cada foto analisada tem custo (centavos) cobrado na sua conta da API. Itens de foto entram sempre como estimativa editável.'),
     ]));
 
-    // fonte / sobre
+    // fontes / sobre
     const db = window.FOOD_DB || {};
-    root.appendChild(h('div', { class: 'card' }, [
+    const sobre = h('div', { class: 'card' }, [
       h('h3', {}, 'Sobre a base de alimentos'),
-      h('p', { class: 'note' }, db.source || ''),
-      h('p', { class: 'note' }, 'Digitalização: ' + (db.digitizedFrom || '')),
-      h('p', { class: 'note' }, (db.foods ? db.foods.length : 0) + ' alimentos · base por 100 g.'),
-      h('button', { class: 'btn danger', onclick: doReset }, 'Apagar tudo'),
-    ]));
+      h('p', { class: 'note' }, (db.foods ? db.foods.length : 0) + ' alimentos · valores por 100 g de parte comestível · versão ' + (db.version || '?') + '.'),
+    ]);
+    (db.sources || []).forEach(s => {
+      sobre.appendChild(h('p', { class: 'note' }, [
+        h('strong', {}, s.label + ' (' + s.count + ' alimentos): '),
+        s.detail + ' ',
+        h('a', { href: s.url, target: '_blank', rel: 'noopener' }, s.url),
+      ]));
+    });
+    sobre.appendChild(h('button', { class: 'btn danger', onclick: doReset }, 'Apagar tudo'));
+    root.appendChild(sobre);
   }
 
   function doExport() {
@@ -715,8 +731,8 @@ window.App = (function () {
       matches.forEach(f => results.appendChild(h('button', {
         class: 'search-item', onclick: () => { onPick(f.id); m.close(); },
       }, [
-        h('span', {}, f.name + (f.custom ? ' ·meu' : '')),
-        h('span', { class: 'si-kcal' }, (f.kcal != null ? f.kcal + ' kcal' : 'sem kcal') + '/100g'),
+        h('span', {}, f.name),
+        h('span', { class: 'si-kcal' }, (f.kcal != null ? f.kcal + ' kcal' : 'sem kcal') + '/100g · ' + srcLabel(f)),
       ])));
     }
     input.addEventListener('input', run);

@@ -115,6 +115,23 @@ sinônimos/escolhas-padrão).
 - Testado no navegador: exemplo do bolo (4.583 kcal/1.100 g, peso final
   900 g → 509,2 kcal/100g; 30 g = 153 kcal), edição recalcula, persiste.
 
+## Fase 6 (base ampliada TACO+TBCA+USDA) — PUBLICADA em 2026-07-18
+- **6.273 alimentos**: TACO 597 + TBCA 7.3 5.668 (pratos prontos, bebidas,
+  industrializados — ids = códigos oficiais BRCxxxx, conferidos campo a campo
+  contra tbca.net.br: cerveja C0009H, coxinha C0100F, leite C0043G) + USDA
+  SR Legacy 8 curados (whey, cottage, cream cheese… ids u<fdcId>, domínio
+  público; seleção em `data/usda-selecao.mjs`).
+- **Licença TBCA:** uso não comercial com citação obrigatória — Daniel ciente
+  e decidiu incluir (repo público). Citação no README e na aba Dados.
+- TABNUT descartada (é USDA traduzida, sem download oficial).
+- `build-db.mjs` reescrito multi-fonte com checks de sanidade que quebram o
+  build se valores-âncora divergirem. `norm` não é mais gravado no db.js
+  (app calcula no load — 34ms). db.js ~1,1 MB (~220 KB gzip).
+- App: etiqueta de fonte na busca/candidatos, cartão de fontes em Dados,
+  sinônimos novos (leite→C0043G resolve o gap nº1, whey→u173180, cerveja,
+  cottage, coxinha 50g/unidade conforme porção TBCA).
+- Ids TACO e de custom foods preservados — dados antigos intactos.
+
 ## Próximos passos sugeridos
 1. **Afinar staples do Daniel:** ajustar sinônimos/escolhas-padrão e pesos por
    unidade em `js/measures.js` conforme o uso real; cadastrar os alimentos dele
