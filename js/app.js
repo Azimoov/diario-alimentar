@@ -52,6 +52,7 @@ window.App = (function () {
   function renderAll() {
     renderHoje();
     renderHist();
+    renderAlimentos();
     renderPerfil();
     renderDados();
   }
@@ -345,7 +346,7 @@ window.App = (function () {
         ]);
         row.appendChild(sel);
       }
-      row.appendChild(h('button', { class: 'link-btn', onclick: () => openCustomFoodForm(searchQuery, newId => { item.foodId = newId; item.match = 'matched'; window.Store.save(); refreshFoods(); renderHoje(); renderHist(); }) }, '+ cadastrar alimento'));
+      row.appendChild(h('button', { class: 'link-btn', onclick: () => openCustomFoodForm(searchQuery, newId => { item.foodId = newId; item.match = 'matched'; window.Store.save(); refreshFoods(); renderHoje(); renderHist(); renderAlimentos(); }) }, '+ cadastrar alimento'));
     }
 
     return row;
@@ -535,6 +536,63 @@ window.App = (function () {
     ]);
   }
 
+  // ================= ABA ALIMENTOS =================
+  // O lugar de cadastrar comida: alimentos individuais (valores do rótulo)
+  // e receitas (soma de ingredientes). A aba Dados fica só p/ backup/config.
+  function renderAlimentos() {
+    const root = $('#tab-alimentos');
+    clear(root);
+    const done = () => { refreshFoods(); renderAlimentos(); renderHoje(); };
+
+    // ----- alimentos individuais -----
+    const plainFoods = S.customFoods.filter(f => !f.recipe);
+    const cf = h('div', { class: 'card' }, [
+      h('h3', {}, '🥩 Alimentos individuais'),
+      h('p', { class: 'note' }, 'Cadastre o que não está na TACO (whey, leite integral, marcas específicas) com os valores do rótulo, por 100 g.'),
+      h('button', { class: 'btn primary', onclick: () => openCustomFoodForm('', done) }, '+ Novo alimento'),
+    ]);
+    const cfList = h('div', { class: 'cf-list' });
+    if (!plainFoods.length) cfList.appendChild(h('p', { class: 'empty' }, 'Nenhum alimento cadastrado ainda.'));
+    plainFoods.forEach(f => {
+      cfList.appendChild(h('div', { class: 'cf-item' }, [
+        h('div', {}, [h('strong', {}, f.name), h('div', { class: 'hint' }, `${f.kcal != null ? f.kcal : '—'} kcal · P${f.prot != null ? f.prot : '—'} C${f.carb != null ? f.carb : '—'} G${f.fat != null ? f.fat : '—'} /100g`)]),
+        h('div', {}, [
+          h('button', { class: 'link-btn', onclick: () => openCustomFoodForm('', done, f) }, 'editar'),
+          h('button', { class: 'link-btn danger', onclick: () => { if (confirm('Remover ' + f.name + '?')) { window.Store.removeCustomFood(f.id); done(); } } }, 'remover'),
+        ]),
+      ]));
+    });
+    cf.appendChild(cfList);
+    root.appendChild(cf);
+
+    // ----- receitas -----
+    const recipes = S.customFoods.filter(f => f.recipe);
+    const rc = h('div', { class: 'card' }, [
+      h('h3', {}, '🍲 Receitas'),
+      h('p', { class: 'note' }, 'Bolo, marmita, sopa… junte os ingredientes (texto ou foto) e a receita vira um alimento seu: depois registre “30 g bolo” na aba Hoje que as calorias saem na proporção.'),
+      h('button', { class: 'btn primary', onclick: () => openRecipeForm(done) }, '+ Nova receita'),
+    ]);
+    const rcList = h('div', { class: 'cf-list' });
+    if (!recipes.length) rcList.appendChild(h('p', { class: 'empty' }, 'Nenhuma receita ainda.'));
+    recipes.forEach(f => {
+      const r = f.recipe;
+      const fw = r.finalWeight || r.ingredients.reduce((a, i) => a + (i.grams || 0), 0);
+      const totKcal = f.kcal != null ? Math.round(f.kcal * fw / 100) : null;
+      rcList.appendChild(h('div', { class: 'cf-item' }, [
+        h('div', {}, [
+          h('strong', {}, f.name),
+          h('div', { class: 'hint' }, `${r.ingredients.length} ingrediente(s) · rende ${Math.round(fw)} g · ${totKcal != null ? totKcal : '—'} kcal no total · ${f.kcal != null ? f.kcal : '—'} kcal/100g`),
+        ]),
+        h('div', {}, [
+          h('button', { class: 'link-btn', onclick: () => openRecipeForm(done, f) }, 'editar'),
+          h('button', { class: 'link-btn danger', onclick: () => { if (confirm('Remover a receita ' + f.name + '? Registros antigos que a usam ficarão sem alimento.')) { window.Store.removeCustomFood(f.id); done(); } } }, 'remover'),
+        ]),
+      ]));
+    });
+    rc.appendChild(rcList);
+    root.appendChild(rc);
+  }
+
   // ================= ABA DADOS =================
   function renderDados() {
     const root = $('#tab-dados');
@@ -551,54 +609,6 @@ window.App = (function () {
       ]),
     ]);
     root.appendChild(io);
-
-    // alimentos do usuário (receitas ficam no cartão próprio, abaixo)
-    const plainFoods = S.customFoods.filter(f => !f.recipe);
-    const cf = h('div', { class: 'card' }, [
-      h('h3', {}, 'Meus alimentos'),
-      h('p', { class: 'note' }, 'Cadastre o que não está na TACO (whey, peito de peru, marcas específicas) com os valores do rótulo, por 100 g.'),
-      h('button', { class: 'btn', onclick: () => openCustomFoodForm('', () => { refreshFoods(); renderDados(); renderHoje(); }) }, '+ Novo alimento'),
-    ]);
-    const cfList = h('div', { class: 'cf-list' });
-    if (!plainFoods.length) cfList.appendChild(h('p', { class: 'empty' }, 'Nenhum alimento cadastrado ainda.'));
-    plainFoods.forEach(f => {
-      cfList.appendChild(h('div', { class: 'cf-item' }, [
-        h('div', {}, [h('strong', {}, f.name), h('div', { class: 'hint' }, `${f.kcal != null ? f.kcal : '—'} kcal · P${f.prot != null ? f.prot : '—'} C${f.carb != null ? f.carb : '—'} G${f.fat != null ? f.fat : '—'} /100g`)]),
-        h('div', {}, [
-          h('button', { class: 'link-btn', onclick: () => openCustomFoodForm('', () => { refreshFoods(); renderDados(); renderHoje(); }, f) }, 'editar'),
-          h('button', { class: 'link-btn danger', onclick: () => { if (confirm('Remover ' + f.name + '?')) { window.Store.removeCustomFood(f.id); refreshFoods(); renderDados(); renderHoje(); } } }, 'remover'),
-        ]),
-      ]));
-    });
-    cf.appendChild(cfList);
-    root.appendChild(cf);
-
-    // receitas do usuário
-    const recipes = S.customFoods.filter(f => f.recipe);
-    const rc = h('div', { class: 'card' }, [
-      h('h3', {}, '🍲 Minhas receitas'),
-      h('p', { class: 'note' }, 'Bolo, marmita, sopa… junte os ingredientes e a receita vira um alimento seu: depois registre “30 g bolo” na aba Hoje que as calorias saem na proporção.'),
-      h('button', { class: 'btn', onclick: () => openRecipeForm(() => { refreshFoods(); renderDados(); renderHoje(); }) }, '+ Nova receita'),
-    ]);
-    const rcList = h('div', { class: 'cf-list' });
-    if (!recipes.length) rcList.appendChild(h('p', { class: 'empty' }, 'Nenhuma receita ainda.'));
-    recipes.forEach(f => {
-      const r = f.recipe;
-      const fw = r.finalWeight || r.ingredients.reduce((a, i) => a + (i.grams || 0), 0);
-      const totKcal = f.kcal != null ? Math.round(f.kcal * fw / 100) : null;
-      rcList.appendChild(h('div', { class: 'cf-item' }, [
-        h('div', {}, [
-          h('strong', {}, f.name),
-          h('div', { class: 'hint' }, `${r.ingredients.length} ingrediente(s) · rende ${Math.round(fw)} g · ${totKcal != null ? totKcal : '—'} kcal no total · ${f.kcal != null ? f.kcal : '—'} kcal/100g`),
-        ]),
-        h('div', {}, [
-          h('button', { class: 'link-btn', onclick: () => openRecipeForm(() => { refreshFoods(); renderDados(); renderHoje(); }, f) }, 'editar'),
-          h('button', { class: 'link-btn danger', onclick: () => { if (confirm('Remover a receita ' + f.name + '? Registros antigos que a usam ficarão sem alimento.')) { window.Store.removeCustomFood(f.id); refreshFoods(); renderDados(); renderHoje(); } } }, 'remover'),
-        ]),
-      ]));
-    });
-    rc.appendChild(rcList);
-    root.appendChild(rc);
 
     // Fase 2: registro por foto
     const st = S.settings;

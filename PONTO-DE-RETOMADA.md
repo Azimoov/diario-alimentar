@@ -103,7 +103,7 @@ sinônimos/escolhas-padrão).
   "senha-daniel,senha-nova".
 
 ## Fase 5 (receitas) — PUBLICADA em 2026-07-16
-- Dados → "Minhas receitas": monta receita com ingredientes por texto (parser
+- Aba "Alimentos" → Receitas: monta receita com ingredientes por texto (parser
   da Fase 1) ou foto (fluxo da Fase 2), com confirmação por ingrediente.
 - Receita = alimento custom com campo `recipe: {ingredients:[{foodId,grams}],
   finalWeight}`; valores por 100 g derivados da soma ÷ peso final (opcional —
@@ -116,10 +116,10 @@ sinônimos/escolhas-padrão).
   900 g → 509,2 kcal/100g; 30 g = 153 kcal), edição recalcula, persiste.
 
 ## Próximos passos sugeridos
-2. **Afinar staples do Daniel:** ajustar sinônimos/escolhas-padrão e pesos por
+1. **Afinar staples do Daniel:** ajustar sinônimos/escolhas-padrão e pesos por
    unidade em `js/measures.js` conforme o uso real; cadastrar os alimentos dele
-   (whey, cortes específicos) em Dados → Meus alimentos.
-3. **Qualidade de vida (opcional):** copiar dia anterior/refeições favoritas;
+   (whey, cortes específicos) na aba Alimentos.
+2. **Qualidade de vida (opcional):** copiar dia anterior/refeições favoritas;
    ordenar itens; metas por refeição.
 
 ## Como retomar rápido

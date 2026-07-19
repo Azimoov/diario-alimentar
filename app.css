@@ -197,3 +197,7 @@ input[type=number] { width: 100%; }
 @media (max-width: 380px) {
   .form-grid { grid-template-columns: 1fr; }
 }
+@media (max-width: 480px) {
+  .tabs { gap: 4px; }
+  .tab-btn { font-size: 12px; padding: 9px 2px; }
+}

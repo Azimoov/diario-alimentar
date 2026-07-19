@@ -109,7 +109,7 @@ sinônimos/escolhas-padrão são **editáveis** em `js/measures.js`.
 ## Meus alimentos (base extensível)
 
 O que não está na TACO — **whey, peito de peru, marcas específicas, suas
-receitas** — você cadastra em **Dados → Meus alimentos**, com os valores do
+receitas** — você cadastra na aba **Alimentos → Alimentos individuais**, com os valores do
 rótulo por 100 g. Eles entram na busca e no parser junto com a TACO.
 
 ---
@@ -145,7 +145,7 @@ continua 100% funcional só com texto (Fase 1).
 
 ## Receitas — comida feita em casa
 
-Em **Dados → Minhas receitas** você monta uma receita (bolo, marmita, sopa…)
+Em **Alimentos → Receitas** você monta uma receita (bolo, marmita, sopa…)
 juntando ingredientes por texto (mesmo parser da aba Hoje: `500 g trigo`,
 `4 ovos`) ou por foto. A soma dos nutrientes vira um **alimento seu** com
 valores por 100 g — depois é só registrar `30 g bolo` na aba Hoje que as
