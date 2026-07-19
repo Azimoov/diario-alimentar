@@ -101,6 +101,15 @@ window.SYNONYMS = {
   'pao de forma': 52,         // Pão, trigo, forma, integral
   'pao integral': 52,
   'pao de queijo': 140,       // Pão, de queijo, assado
+  // ingredientes de receita comuns
+  'trigo': 35,                // Farinha, de trigo
+  'farinha de trigo': 35,
+  'farinha': 35,
+  'oleo': 272,                // Óleo, de soja
+  'oleo de soja': 272,
+  'fermento': 513,            // Fermento em pó, químico
+  'creme de leite': 447,
+  'leite condensado': 453,
 };
 
 // Palavras que viram número (normalizadas, sem acento).

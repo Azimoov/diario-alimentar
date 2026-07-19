@@ -171,6 +171,18 @@ input[type=number] { width: 100%; }
 .si-kcal { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .modal .field { margin-bottom: 10px; }
 
+/* ---- Receitas ---- */
+.rec-rows { margin: 10px 0; }
+.rec-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 10px; margin-bottom: 6px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-left: 4px solid var(--accent); border-radius: 10px;
+}
+.rec-row .item-name { flex: 1 1 160px; }
+.rec-row .hint { flex-basis: 100%; }
+.rec-warn { border-left-color: var(--warn); }
+
 /* ---- Boas-vindas (primeiro uso) ---- */
 .welcome { border-left: 4px solid var(--accent); }
 .welcome-steps { margin: 10px 0; padding-left: 4px; list-style: none; font-size: 14px; }

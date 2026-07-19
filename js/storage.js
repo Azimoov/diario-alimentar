@@ -63,7 +63,10 @@ window.Store = (function () {
     return state.days[dateStr];
   }
 
-  // ---- alimentos do usuário ----
+  // ---- alimentos do usuário (inclui receitas) ----
+  // Receitas são alimentos custom com um campo extra `recipe`:
+  //   { ingredients: [{foodId, grams}], finalWeight }  — os valores por 100 g
+  // são derivados da soma dos ingredientes ÷ peso final.
   function addCustomFood(food) {
     const id = 'c' + Date.now().toString(36);
     const rec = {
@@ -74,6 +77,7 @@ window.Store = (function () {
       custom: true,
       kcal: numOrNull(food.kcal), prot: numOrNull(food.prot),
       carb: numOrNull(food.carb), fat: numOrNull(food.fat), fiber: numOrNull(food.fiber),
+      recipe: food.recipe || null,
     };
     state.customFoods.push(rec);
     save();

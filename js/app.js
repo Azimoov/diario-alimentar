@@ -552,15 +552,16 @@ window.App = (function () {
     ]);
     root.appendChild(io);
 
-    // alimentos do usuário
+    // alimentos do usuário (receitas ficam no cartão próprio, abaixo)
+    const plainFoods = S.customFoods.filter(f => !f.recipe);
     const cf = h('div', { class: 'card' }, [
       h('h3', {}, 'Meus alimentos'),
       h('p', { class: 'note' }, 'Cadastre o que não está na TACO (whey, peito de peru, marcas específicas) com os valores do rótulo, por 100 g.'),
       h('button', { class: 'btn', onclick: () => openCustomFoodForm('', () => { refreshFoods(); renderDados(); renderHoje(); }) }, '+ Novo alimento'),
     ]);
     const cfList = h('div', { class: 'cf-list' });
-    if (!S.customFoods.length) cfList.appendChild(h('p', { class: 'empty' }, 'Nenhum alimento cadastrado ainda.'));
-    S.customFoods.forEach(f => {
+    if (!plainFoods.length) cfList.appendChild(h('p', { class: 'empty' }, 'Nenhum alimento cadastrado ainda.'));
+    plainFoods.forEach(f => {
       cfList.appendChild(h('div', { class: 'cf-item' }, [
         h('div', {}, [h('strong', {}, f.name), h('div', { class: 'hint' }, `${f.kcal != null ? f.kcal : '—'} kcal · P${f.prot != null ? f.prot : '—'} C${f.carb != null ? f.carb : '—'} G${f.fat != null ? f.fat : '—'} /100g`)]),
         h('div', {}, [
@@ -571,6 +572,33 @@ window.App = (function () {
     });
     cf.appendChild(cfList);
     root.appendChild(cf);
+
+    // receitas do usuário
+    const recipes = S.customFoods.filter(f => f.recipe);
+    const rc = h('div', { class: 'card' }, [
+      h('h3', {}, '🍲 Minhas receitas'),
+      h('p', { class: 'note' }, 'Bolo, marmita, sopa… junte os ingredientes e a receita vira um alimento seu: depois registre “30 g bolo” na aba Hoje que as calorias saem na proporção.'),
+      h('button', { class: 'btn', onclick: () => openRecipeForm(() => { refreshFoods(); renderDados(); renderHoje(); }) }, '+ Nova receita'),
+    ]);
+    const rcList = h('div', { class: 'cf-list' });
+    if (!recipes.length) rcList.appendChild(h('p', { class: 'empty' }, 'Nenhuma receita ainda.'));
+    recipes.forEach(f => {
+      const r = f.recipe;
+      const fw = r.finalWeight || r.ingredients.reduce((a, i) => a + (i.grams || 0), 0);
+      const totKcal = f.kcal != null ? Math.round(f.kcal * fw / 100) : null;
+      rcList.appendChild(h('div', { class: 'cf-item' }, [
+        h('div', {}, [
+          h('strong', {}, f.name),
+          h('div', { class: 'hint' }, `${r.ingredients.length} ingrediente(s) · rende ${Math.round(fw)} g · ${totKcal != null ? totKcal : '—'} kcal no total · ${f.kcal != null ? f.kcal : '—'} kcal/100g`),
+        ]),
+        h('div', {}, [
+          h('button', { class: 'link-btn', onclick: () => openRecipeForm(() => { refreshFoods(); renderDados(); renderHoje(); }, f) }, 'editar'),
+          h('button', { class: 'link-btn danger', onclick: () => { if (confirm('Remover a receita ' + f.name + '? Registros antigos que a usam ficarão sem alimento.')) { window.Store.removeCustomFood(f.id); refreshFoods(); renderDados(); renderHoje(); } } }, 'remover'),
+        ]),
+      ]));
+    });
+    rc.appendChild(rcList);
+    root.appendChild(rc);
 
     // Fase 2: registro por foto
     const st = S.settings;
@@ -732,8 +760,184 @@ window.App = (function () {
     return Number.isFinite(n) ? n : null;
   }
 
+  // ============ RECEITAS ============
+  // Uma receita soma os nutrientes dos ingredientes e vira um alimento do
+  // usuário com valores por 100 g. Se a pessoa pesar o resultado pronto
+  // (peso final), a densidade fica exata; sem isso usamos a soma dos
+  // ingredientes — marcado como estimativa (bolo perde água no forno).
+  function computeRecipe(ings, finalWeight) {
+    const tot = { kcal: 0, prot: 0, carb: 0, fat: 0, fiber: 0 };
+    let rawWeight = 0;
+    let pendentes = 0;
+    ings.forEach(ing => {
+      const f = window.Parser.getFood(ing.foodId);
+      if (!f || !(ing.grams > 0) || f.kcal == null) { pendentes++; return; }
+      const n = window.Nutrition.itemNutrients(f, ing.grams);
+      tot.kcal += n.kcal; tot.prot += n.prot; tot.carb += n.carb;
+      tot.fat += n.fat; tot.fiber += n.fiber;
+      rawWeight += ing.grams;
+    });
+    const fw = finalWeight > 0 ? finalWeight : rawWeight;
+    const per100 = fw > 0 ? {
+      kcal: Math.round(tot.kcal / fw * 1000) / 10,
+      prot: Math.round(tot.prot / fw * 1000) / 10,
+      carb: Math.round(tot.carb / fw * 1000) / 10,
+      fat: Math.round(tot.fat / fw * 1000) / 10,
+      fiber: Math.round(tot.fiber / fw * 1000) / 10,
+    } : null;
+    return { tot, rawWeight, fw, per100, pendentes };
+  }
+
+  function openRecipeForm(onSaved, editing) {
+    let ings = [];
+    if (editing && editing.recipe) {
+      ings = editing.recipe.ingredients.map(i => {
+        const f = window.Parser.getFood(i.foodId);
+        return { foodText: f ? f.name : '(removido)', foodId: i.foodId, grams: i.grams, match: f ? 'matched' : 'not_found' };
+      });
+    }
+
+    const nameInput = h('input', { type: 'text', class: 'in', placeholder: 'ex.: Bolo da casa', value: editing ? editing.name : '' });
+    const ta = h('textarea', { rows: '3', placeholder: '500 g trigo\n300 g manteiga\n100 g leite\n4 ovos' });
+    const fwInput = h('input', {
+      type: 'number', min: '0', step: '1', class: 'in', placeholder: 'opcional — pese o pronto',
+      value: editing && editing.recipe && editing.recipe.finalWeight ? editing.recipe.finalWeight : '',
+    });
+    fwInput.addEventListener('change', () => renderRows());
+    const rowsBox = h('div', { class: 'rec-rows' });
+    const totalsBox = h('div');
+
+    function addFromText() {
+      window.Parser.parseText(ta.value).forEach(p => {
+        ings.push({ foodText: p.foodText, foodId: p.foodId, grams: p.grams, match: p.matchStatus });
+      });
+      ta.value = '';
+      renderRows();
+    }
+
+    // foto de ingredientes (reusa o fluxo da Fase 2)
+    const photoIn = h('input', {
+      type: 'file', accept: 'image/*', style: 'display:none',
+      onchange: async e => {
+        const f = e.target.files[0]; e.target.value = '';
+        if (!f) return;
+        if (!S.settings.proxyUrl || !S.settings.proxyToken) { alert('Para usar foto, configure o proxy na aba Dados.'); return; }
+        photoBtn.disabled = true; const old = photoBtn.textContent; photoBtn.textContent = '⏳…';
+        try {
+          const b64 = await compressPhoto(f);
+          const data = await analyzePhoto(b64);
+          (data.itens || []).forEach(it => {
+            if (!it || !it.nome || !(it.gramas > 0)) return;
+            const m = window.Parser.matchFood(it.nome);
+            ings.push({ foodText: it.nome, foodId: m.foodId, grams: Math.round(it.gramas), match: m.status });
+          });
+          if (data.observacao) alert('Observação do modelo: ' + data.observacao);
+        } catch (err) { alert('Não consegui analisar a foto: ' + err.message); }
+        photoBtn.disabled = false; photoBtn.textContent = old;
+        renderRows();
+      },
+    });
+    const photoBtn = h('button', { class: 'btn', onclick: () => photoIn.click() }, '📷 Foto');
+
+    function renderRows() {
+      clear(rowsBox);
+      if (!ings.length) rowsBox.appendChild(h('p', { class: 'empty' }, 'Nenhum ingrediente ainda.'));
+      ings.forEach((ing, idx) => {
+        const food = window.Parser.getFood(ing.foodId);
+        const noKcal = food && food.kcal == null;
+        const pendente = !food || noKcal || !(ing.grams > 0);
+        const n = window.Nutrition.itemNutrients(food, ing.grams);
+        const row = h('div', { class: 'rec-row' + (pendente || ing.match === 'ambiguous' ? ' rec-warn' : '') }, [
+          h('button', {
+            class: 'item-name',
+            title: 'Trocar/confirmar ingrediente',
+            onclick: () => openFoodSearch(ing.foodText, id => { ing.foodId = id; ing.match = 'matched'; renderRows(); }),
+          }, food ? food.name : (ing.foodText + ' — escolher…')),
+          h('input', {
+            type: 'number', class: 'grams', min: '0', step: '1',
+            value: ing.grams != null ? Math.round(ing.grams) : '', placeholder: 'g',
+            onchange: e => { ing.grams = e.target.value === '' ? null : Number(String(e.target.value).replace(',', '.')); renderRows(); },
+          }),
+          h('span', { class: 'unit' }, 'g'),
+          h('div', { class: 'item-kcal' }, food && !noKcal && ing.grams > 0 ? Math.round(n.kcal) + ' kcal' : '—'),
+          h('button', { class: 'del', onclick: () => { ings.splice(idx, 1); renderRows(); } }, '✕'),
+        ]);
+        if (ing.match === 'ambiguous' && food) row.appendChild(h('div', { class: 'hint' }, '⚠ vários parecidos — toque no nome p/ confirmar'));
+        if (food && noKcal) row.appendChild(h('div', { class: 'hint' }, '⚠ sem valor na TACO — troque ou cadastre em Meus alimentos'));
+        if (!food) row.appendChild(h('div', { class: 'hint' }, '⚠ não encontrado — toque p/ escolher da base'));
+        rowsBox.appendChild(row);
+      });
+
+      clear(totalsBox);
+      if (ings.length) {
+        const fwVal = fwInput.value === '' ? null : Number(String(fwInput.value).replace(',', '.'));
+        const c = computeRecipe(ings, fwVal);
+        totalsBox.appendChild(h('p', { class: 'note' },
+          `Soma dos ingredientes: ${Math.round(c.tot.kcal)} kcal · P ${Math.round(c.tot.prot)} g · C ${Math.round(c.tot.carb)} g · G ${Math.round(c.tot.fat)} g (${Math.round(c.rawWeight)} g).`));
+        if (c.per100) {
+          totalsBox.appendChild(h('p', { class: 'note' },
+            `Rende ${Math.round(c.fw)} g → ${c.per100.kcal} kcal por 100 g` +
+            (fwVal > 0 ? '.' : ' — usando a soma dos ingredientes; pese o pronto p/ ficar exato (assados perdem água).')));
+        }
+        if (c.pendentes) totalsBox.appendChild(h('p', { class: 'note' }, `⚠ ${c.pendentes} ingrediente(s) pendente(s) fora da soma.`));
+      }
+    }
+
+    const m = modal(editing ? 'Editar receita' : 'Nova receita', h('div', {}, [
+      h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Nome da receita'), nameInput]),
+      h('div', { class: 'field' }, [
+        h('label', { class: 'lbl' }, 'Ingredientes (um por linha, como na aba Hoje)'),
+        ta,
+        h('div', { class: 'btn-row' }, [
+          h('button', { class: 'btn', onclick: addFromText }, '+ Adicionar ingredientes'),
+          photoIn, photoBtn,
+        ]),
+      ]),
+      rowsBox,
+      h('div', { class: 'field' }, [
+        h('label', { class: 'lbl' }, 'Peso final depois de pronto (g)'),
+        fwInput,
+      ]),
+      totalsBox,
+      h('div', { class: 'btn-row' }, [
+        h('button', {
+          class: 'btn primary',
+          onclick: () => {
+            const name = nameInput.value.trim();
+            if (!name) { alert('Dê um nome à receita.'); return; }
+            if (!ings.length) { alert('Adicione pelo menos um ingrediente.'); return; }
+            const pendente = ings.find(i => {
+              const f = window.Parser.getFood(i.foodId);
+              return !f || f.kcal == null || !(i.grams > 0);
+            });
+            if (pendente) { alert('Há ingrediente pendente (sem alimento, sem gramas ou sem valor na TACO). Resolva os marcados com ⚠ antes de salvar.'); return; }
+            const fwVal = fwInput.value === '' ? null : Number(String(fwInput.value).replace(',', '.'));
+            const c = computeRecipe(ings, fwVal);
+            const payload = {
+              name,
+              kcal: c.per100.kcal, prot: c.per100.prot, carb: c.per100.carb,
+              fat: c.per100.fat, fiber: c.per100.fiber,
+              recipe: {
+                ingredients: ings.map(i => ({ foodId: i.foodId, grams: Math.round(i.grams) })),
+                finalWeight: fwVal > 0 ? Math.round(fwVal) : null,
+              },
+            };
+            if (editing) window.Store.updateCustomFood(editing.id, payload);
+            else window.Store.addCustomFood(payload);
+            refreshFoods();
+            m.close();
+            onSaved && onSaved();
+          },
+        }, 'Salvar receita'),
+        h('button', { class: 'btn', onclick: () => m.close() }, 'Cancelar'),
+      ]),
+    ]));
+    renderRows();
+    setTimeout(() => nameInput.focus(), 30);
+  }
+
   // funções expostas p/ testes automatizados
-  return { init, addPhotoItems, compressPhoto, analyzePhoto };
+  return { init, addPhotoItems, compressPhoto, analyzePhoto, computeRecipe, openRecipeForm };
 })();
 
 document.addEventListener('DOMContentLoaded', window.App.init);

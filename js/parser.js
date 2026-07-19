@@ -75,6 +75,13 @@ window.Parser = (function () {
     if (!qTokens.length) return { status: 'not_found', foodId: null, candidates: [] };
     const normSing = qTokens.map(sing).join(' ');
 
+    // Alimento/receita DO USUÁRIO com nome exatamente igual ao digitado:
+    // casa direto — quem cadastrou sabe o que quis dizer.
+    const exactCustom = FOODS.find(f => f.custom && (f.norm === norm || f.norm === normSing));
+    if (exactCustom) {
+      return { status: 'matched', foodId: exactCustom.id, candidates: [{ id: exactCustom.id, score: 999 }] };
+    }
+
     // atalho por sinônimo (escolha-padrão verificada); tenta forma singular
     let synId = null;
     const SYN = window.SYNONYMS || {};

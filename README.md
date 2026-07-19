@@ -143,6 +143,17 @@ na Cloudflare. Passo a passo de deploy, custos e proteções em
 [`docs/FASE-2-FOTO.md`](docs/FASE-2-FOTO.md). Sem configurar o proxy, o app
 continua 100% funcional só com texto (Fase 1).
 
+## Receitas — comida feita em casa
+
+Em **Dados → Minhas receitas** você monta uma receita (bolo, marmita, sopa…)
+juntando ingredientes por texto (mesmo parser da aba Hoje: `500 g trigo`,
+`4 ovos`) ou por foto. A soma dos nutrientes vira um **alimento seu** com
+valores por 100 g — depois é só registrar `30 g bolo` na aba Hoje que as
+calorias saem na proporção. Detalhe importante: informe o **peso final depois
+de pronto** se puder pesar (assados perdem água no forno — sem isso o app usa
+a soma dos ingredientes e avisa que é estimativa). Editar a receita recalcula
+tudo; digitar o nome exato da receita casa direto, sem pedir confirmação.
+
 ## Multiusuário — compartilhando com outras pessoas
 
 O app é multiusuário por natureza: **basta enviar o link**. Cada pessoa que
