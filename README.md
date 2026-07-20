@@ -85,6 +85,23 @@ em `data/source*` e rode `node data/build-db.mjs`. Não edite `js/db.js` à mão
 
 ---
 
+## Precisão: TDEE adaptativo, guarda cru×cozido e tendência de peso
+
+- **TDEE real (adaptativo)** — aba Perfil: com 10+ dias registrados e 2+
+  pesagens espaçadas (janela de 28 dias), o app calcula seu gasto REAL:
+  `média ingerida + 7.700 × perda de peso por dia` (regressão linear sobre as
+  pesagens; dias com <500 kcal são ignorados como incompletos). Um toque
+  passa a usar esse valor como base da meta — ele absorve inclusive o viés
+  sistemático de sub-registro. Valores implausíveis (<1000 ou >5500) são
+  sinalizados e não são usados.
+- **Guarda cru × cozido** — se um item casar silenciosamente com uma variante
+  CRUA de grãos/carnes/peixes/ovos/raízes sem você ter escrito "cru", o app
+  alerta (o erro pode ser de 3x) e oferece a troca para a versão pronta em um
+  toque. Quem escreve "cru" de propósito não é incomodado; ingredientes de
+  receita (pesados crus, correto) também não.
+- **Média móvel de 7 dias** no gráfico de peso: o peso diário oscila ±1 kg por
+  água/glicogênio; a linha de tendência é o sinal que importa.
+
 ## Como o app calcula a meta
 
 - **TMB (Mifflin-St Jeor):**

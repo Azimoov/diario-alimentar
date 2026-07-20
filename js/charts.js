@@ -78,10 +78,13 @@ window.Charts = (function () {
       svg.appendChild(txt(W / 2, H / 2, opts.empty || 'Sem dados ainda', { 'text-anchor': 'middle', class: 'lc-empty' }));
       return svg;
     }
-    const xs = pts.map(p => +new Date(p.date));
+    // séries extras (ex.: média móvel) entram na escala e são desenhadas por cima
+    const extraSets = (opts.extra || []).map(e => Object.assign({}, e, { pts: (e.series || []).filter(p => p.value != null) }));
+    const allPts = pts.concat(...extraSets.map(e => e.pts));
+    const xs = allPts.map(p => +new Date(p.date));
     const minX = Math.min(...xs), maxX = Math.max(...xs);
-    let minY = Math.min(...pts.map(p => p.value));
-    let maxY = Math.max(...pts.map(p => p.value));
+    let minY = Math.min(...allPts.map(p => p.value));
+    let maxY = Math.max(...allPts.map(p => p.value));
     if (opts.goalLine != null) { minY = Math.min(minY, opts.goalLine); maxY = Math.max(maxY, opts.goalLine); }
     const pad = (maxY - minY) * 0.15 || 10;
     minY = Math.floor((minY - pad) / 10) * 10;
@@ -104,15 +107,29 @@ window.Charts = (function () {
       svg.appendChild(el('line', { x1: padL, y1: y, x2: W - padR, y2: y, stroke: 'var(--accent)', 'stroke-width': 1.5, 'stroke-dasharray': '5 4', opacity: 0.8 }));
       svg.appendChild(txt(W - padR, y - 5, 'meta ' + Math.round(opts.goalLine), { 'text-anchor': 'end', class: 'lc-axis', fill: 'var(--accent)' }));
     }
-    // caminho
+    // caminho principal
     const d = pts.map((p, i) => (i ? 'L' : 'M') + sx(+new Date(p.date)).toFixed(1) + ' ' + sy(p.value).toFixed(1)).join(' ');
-    svg.appendChild(el('path', { d, fill: 'none', stroke: opts.color || 'var(--fg)', 'stroke-width': 2, 'stroke-linejoin': 'round' }));
+    svg.appendChild(el('path', {
+      d, fill: 'none', stroke: opts.color || 'var(--fg)',
+      'stroke-width': opts.width || 2, 'stroke-linejoin': 'round',
+      opacity: opts.lineOpacity != null ? opts.lineOpacity : 1,
+    }));
     // pontos + rótulos de data nas pontas
     pts.forEach((p, i) => {
       const cx = sx(+new Date(p.date)), cy = sy(p.value);
-      const c = el('circle', { cx, cy, r: 3.5, fill: opts.color || 'var(--fg)' });
-      c.appendChild(el('title', {}, [document.createTextNode(fmtDate(p.date) + ': ' + Math.round(p.value) + (opts.unit || ''))]));
+      const c = el('circle', { cx, cy, r: opts.pointR || 3.5, fill: opts.color || 'var(--fg)' });
+      c.appendChild(el('title', {}, [document.createTextNode(fmtDate(p.date) + ': ' + (Math.round(p.value * 10) / 10) + (opts.unit || ''))]));
       svg.appendChild(c);
+    });
+    // séries extras (linha sem pontos — ex.: tendência/média móvel)
+    extraSets.forEach(e => {
+      if (!e.pts.length) return;
+      const dd = e.pts.map((p, i) => (i ? 'L' : 'M') + sx(+new Date(p.date)).toFixed(1) + ' ' + sy(p.value).toFixed(1)).join(' ');
+      svg.appendChild(el('path', {
+        d: dd, fill: 'none', stroke: e.color || 'var(--fg)',
+        'stroke-width': e.width || 2.5, 'stroke-linejoin': 'round',
+        'stroke-dasharray': e.dash || null,
+      }));
     });
     // rótulo primeira/última data
     svg.appendChild(txt(sx(minX), H - 8, fmtDate(pts[0].date), { 'text-anchor': 'start', class: 'lc-axis' }));

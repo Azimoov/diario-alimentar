@@ -15,6 +15,7 @@ window.Store = (function () {
         manualKcal: null,   // sobrepõe tudo se preenchido
         proteinPerKg: 1.8,
         fatPct: 0.25,
+        useAdaptive: false, // usar TDEE real observado como base da meta
       },
       days: {},             // 'YYYY-MM-DD' -> { items:[{raw,foodId,grams}], weight:null }
       weights: {},          // 'YYYY-MM-DD' -> kg (peso corporal)

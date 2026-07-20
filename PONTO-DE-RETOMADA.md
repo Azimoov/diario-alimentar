@@ -145,3 +145,21 @@ sinônimos/escolhas-padrão).
 - Regerar base após trocar CSVs: `node data/build-db.mjs`.
 - Teste rápido do parser (Node): carregar `js/db.js`+`measures.js`+`parser.js`
   com `global.window={}` e chamar `Parser.parseLine("120g arroz")`.
+
+## Fase 7 (precisão) — PUBLICADA em 2026-07-20
+- **TDEE adaptativo:** `Nutrition.adaptiveTDEE(dailyKcal, weights)` — janela
+  28d, mín. 10 dias válidos (>500 kcal) e 2 pesagens com 10+ dias de
+  intervalo; regressão linear no peso; TDEE real = média ingerida −
+  7700×slope. Toggle `goal.useAdaptive` na aba Perfil (cartão "TDEE real");
+  `effectiveGoal()` no app.js decide manual > adaptativo > Mifflin e é usado
+  por dashboard/histórico/perfil. Valores implausíveis (suspeito) não são
+  usados na meta.
+- **Guarda cru×cozido:** dispara só quando o alimento casado é CRU, o usuário
+  NÃO digitou "cru" e a classe é perigosa (RAW_GUARD_RE: grãos, carnes,
+  peixes, ovos, raízes — fruta/salada crua não alarma). Badge + select
+  "pesei pronto → trocar para…" com irmãos cozidos (cookedSiblings). Receitas
+  não têm guarda (ingrediente cru é o correto lá).
+- **Peso:** média móvel de 7 dias no gráfico (linha de tendência; extraSeries
+  em charts.js), pesagens viram pontos claros.
+- Testado: sintético 14d/2000kcal/-0,7kg → TDEE 2414 ✓; toggle muda meta
+  2236→1781; arroz silenciosamente cru (537 kcal) capturado e trocado (192).

@@ -45,6 +45,27 @@ window.App = (function () {
     return { taco: 'TACO', tbca: 'TBCA', usda: 'USDA' }[f.src] || '';
   }
 
+  // guarda cru × cozido: pesar a comida PRONTA e registrar a versão CRUA é o
+  // maior erro silencioso possível (até 3x nas kcal de arroz/massa/carne).
+  // Só dispara nas classes que normalmente vão ao fogo — fruta/salada cruas
+  // são o jeito normal de comer e não merecem alarme.
+  const RAW_TOKENS = ['cru', 'crua', 'crus', 'cruas'];
+  const RAW_GUARD_RE = /(arroz|macarr|massa|espaguete|lasanha|nhoque|feijao|feijoes|lentilha|ervilha|grao|soja|aveia|quinoa|milho|farinha|carne|bovin|frango|galinha|peru|suin|porco|patinho|acem|alcatra|maminha|picanha|costela|lombo|file|bife|peixe|pescad|salmao|atum|tilapia|merluza|bacalhau|sardinha|camarao|lula|polvo|ovo|ovos|batata|mandioca|aipim|macaxeira|inhame|care|mandioquinha)/;
+  function isRawFood(f) {
+    return !!(f && f.norm
+      && f.norm.split(' ').some(t => RAW_TOKENS.includes(t))
+      && RAW_GUARD_RE.test(f.norm));
+  }
+  function cookedSiblings(f) {
+    const toks = f.norm.split(' ').filter(t => !RAW_TOKENS.includes(t));
+    const lead = toks.slice(0, Math.min(2, toks.length));
+    if (!lead.length) return [];
+    const COOKED = /(cozid|grelhad|assad|frit|refogad)/;
+    return window.Parser.getFoods()
+      .filter(o => String(o.id) !== String(f.id) && COOKED.test(o.norm) && lead.every(t => o.norm.includes(t)))
+      .slice(0, 6);
+  }
+
   // ---------- init ----------
   function init() {
     S = window.Store.load();
@@ -199,6 +220,29 @@ window.App = (function () {
     return window.Nutrition.itemNutrients(food, item.grams);
   }
 
+  // ---- meta efetiva (fórmula ou TDEE adaptativo) --------------------------
+  function dailyKcalMap() {
+    const map = {};
+    Object.keys(S.days).forEach(date => {
+      const items = S.days[date].items || [];
+      if (!items.length) return;
+      const tot = window.Nutrition.sumNutrients(items.map(itemNutrients).filter(n => n.hasKcal));
+      if (tot.kcal > 0) map[date] = Math.round(tot.kcal);
+    });
+    return map;
+  }
+  function computeAdaptive() {
+    return window.Nutrition.adaptiveTDEE(dailyKcalMap(), S.weights);
+  }
+  // Meta que o app realmente usa: manual > (TDEE real, se ligado e disponível)
+  // > fórmula Mifflin-St Jeor. Devolve também o diagnóstico adaptativo.
+  function effectiveGoal() {
+    const adaptive = computeAdaptive();
+    const useAdapt = !!(S.goal.useAdaptive && adaptive.ok && !adaptive.suspeito);
+    const goalK = window.Nutrition.goalKcal(S.profile, S.goal, useAdapt ? adaptive.tdee : null);
+    return { adaptive, useAdapt, goalK, mt: window.Nutrition.macroTargets(S.profile, S.goal, goalK) };
+  }
+
   function renderHoje() {
     const root = $('#tab-hoje');
     clear(root);
@@ -291,8 +335,16 @@ window.App = (function () {
     const searchQuery = item.foodText || item.raw;
     const pickFood = id => { item.foodId = id; item.match = 'matched'; window.Store.save(); renderHoje(); renderHist(); };
 
+    // guarda cru×cozido: só quando o alimento casado é CRU mas o usuário NÃO
+    // digitou "cru" — ou seja, o casamento silencioso perigoso. Quem escreve
+    // "arroz cru" sabe o que está fazendo. Ambíguo/não-achado já têm seletor.
+    const typedRaw = window.Parser.normalize(item.foodText || item.raw || '')
+      .split(' ').some(t => RAW_TOKENS.includes(t));
+    const rawGuard = !!(food && !noKcal && !ambiguous && item.match !== 'not_found'
+      && isRawFood(food) && !typedRaw);
+
     let cls = 'item';
-    if (!food || needsGrams || noKcal || ambiguous) cls += ' item-warn';
+    if (!food || needsGrams || noKcal || ambiguous || rawGuard) cls += ' item-warn';
     if (!food) cls += ' item-error';
 
     const row = h('div', { class: cls });
@@ -334,7 +386,22 @@ window.App = (function () {
     if (noKcal) badges.appendChild(badge('sem valor na TACO — cadastre', 'error'));
     if (needsGrams && food) badges.appendChild(badge('informe as gramas', 'warn'));
     if (item.conf === 'estimate' && item.note) badges.appendChild(badge('estimativa', 'warn', item.note));
+    if (rawGuard) badges.appendChild(badge('CRU — pesou cru?', 'warn', 'Se você pesou a comida já pronta, troque para a versão cozida — a diferença pode ser de 2 a 3 vezes nas calorias.'));
     if (badges.children.length) row.appendChild(badges);
+
+    // troca rápida cru → cozido
+    if (rawGuard) {
+      const sibs = cookedSiblings(food);
+      if (sibs.length) {
+        row.appendChild(h('select', { class: 'cand', onchange: e => { if (e.target.value) pickFood(e.target.value); } }, [
+          h('option', { value: '' }, 'pesei pronto → trocar para…'),
+          ...sibs.map(s => {
+            const tag = srcLabel(s);
+            return h('option', { value: s.id }, s.name + (tag && tag !== 'TACO' ? '  [' + tag + ']' : ''));
+          }),
+        ]));
+      }
+    }
 
     // seletor de candidatos quando não encontrado ou ambíguo
     if (!food || ambiguous) {
@@ -372,8 +439,9 @@ window.App = (function () {
   function renderDashboard(day) {
     const nutrients = day.items.map(itemNutrients).filter(n => n.hasKcal);
     const total = window.Nutrition.sumNutrients(nutrients);
-    const goalK = window.Nutrition.goalKcal(S.profile, S.goal);
-    const mt = window.Nutrition.macroTargets(S.profile, S.goal, goalK);
+    const eg = effectiveGoal();
+    const goalK = eg.goalK;
+    const mt = eg.mt;
 
     const wrap = h('div', { class: 'card dash' });
     wrap.appendChild(h('h3', {}, 'Resumo do dia'));
@@ -422,7 +490,7 @@ window.App = (function () {
   function renderHist() {
     const root = $('#tab-hist');
     clear(root);
-    const goalK = window.Nutrition.goalKcal(S.profile, S.goal);
+    const goalK = effectiveGoal().goalK;
 
     // série de kcal por dia
     const kcalSeries = Object.keys(S.days).sort().map(date => {
@@ -432,6 +500,17 @@ window.App = (function () {
     }).filter(p => p.value != null);
 
     const weightSeries = Object.keys(S.weights).sort().map(date => ({ date, value: S.weights[date] }));
+    // média móvel de 7 dias (tendência): o peso diário oscila ±1 kg por água/
+    // glicogênio; a média é o sinal verdadeiro
+    const weightMA = weightSeries.map(p => {
+      const d0 = new Date(p.date + 'T12:00:00');
+      const vals = weightSeries.filter(q => {
+        const dq = new Date(q.date + 'T12:00:00');
+        const diff = (d0 - dq) / 86400000;
+        return diff >= 0 && diff < 7;
+      }).map(q => q.value);
+      return { date: p.date, value: Math.round(vals.reduce((a, b) => a + b, 0) / vals.length * 100) / 100 };
+    });
 
     root.appendChild(h('div', { class: 'card' }, [
       h('h3', {}, 'Calorias por dia'),
@@ -440,7 +519,12 @@ window.App = (function () {
 
     root.appendChild(h('div', { class: 'card' }, [
       h('h3', {}, 'Peso corporal'),
-      window.Charts.lineChart(weightSeries, { color: 'var(--g)', unit: ' kg', empty: 'Registre seu peso na aba Hoje' }),
+      window.Charts.lineChart(weightSeries, {
+        color: 'var(--g)', unit: ' kg', empty: 'Registre seu peso na aba Hoje',
+        width: 1.5, lineOpacity: 0.4, pointR: 3,
+        extra: weightSeries.length >= 3 ? [{ series: weightMA, color: 'var(--accent)', width: 2.5 }] : [],
+      }),
+      weightSeries.length >= 3 ? h('p', { class: 'hint' }, 'Pontos: pesagens · linha verde: média de 7 dias (a tendência que importa)') : null,
     ]));
 
     // tabela resumida (últimos 14 dias com registro)
@@ -504,17 +588,18 @@ window.App = (function () {
     gGrid.appendChild(field('Meta manual (kcal, opcional)', numInput(g.manualKcal, v => { g.manualKcal = v; save(); })));
     goalCard.appendChild(gGrid);
 
-    // resultados
+    // resultados (a Meta exibida é a EFETIVA — fórmula ou TDEE real)
     const bmr = window.Nutrition.bmr(p);
     const tdee = window.Nutrition.tdee(p);
-    const goalK = window.Nutrition.goalKcal(p, g);
-    const mt = window.Nutrition.macroTargets(p, g, goalK);
+    const eg = effectiveGoal();
+    const goalK = eg.goalK;
+    const mt = eg.mt;
     const results = h('div', { class: 'results' });
     if (bmr == null) {
       results.appendChild(h('p', { class: 'note' }, 'Preencha idade, altura e peso para calcular.'));
     } else {
       results.appendChild(statBox('TMB', round(bmr, 0), 'kcal/dia'));
-      results.appendChild(statBox('TDEE', round(tdee, 0), 'kcal/dia'));
+      results.appendChild(statBox(eg.useAdapt ? 'TDEE real' : 'TDEE', eg.useAdapt ? eg.adaptive.tdee : round(tdee, 0), 'kcal/dia'));
       results.appendChild(statBox('Meta', goalK, 'kcal/dia'));
       if (mt) {
         results.appendChild(statBox('Proteína', mt.protG, 'g/dia'));
@@ -534,6 +619,43 @@ window.App = (function () {
       }
     }
     root.appendChild(goalCard);
+
+    // ---- TDEE real (adaptativo) ----
+    const ad = eg.adaptive;
+    const adCard = h('div', { class: 'card' }, [
+      h('h3', {}, '📈 TDEE real (observado)'),
+      h('p', { class: 'note' }, 'Em vez de confiar na fórmula, calcula seu gasto real a partir do que você registrou e de como seu peso se moveu: média ingerida + 7.700 kcal × perda de peso. Absorve inclusive o seu viés de sub-registro.'),
+    ]);
+    if (!ad.ok) {
+      const falta = ad.reason === 'poucos_dias'
+        ? `Faltam dias de registro: ${ad.daysUsed} de ${10} necessários nos últimos ${ad.windowDays} dias.`
+        : `Faltam pesagens: são necessárias 2+ com 10+ dias de intervalo (você tem ${ad.weighIns} pesagem(ns), intervalo de ${ad.spanDays} dia(s)).`;
+      adCard.appendChild(h('p', { class: 'note' }, '⏳ Ainda sem dados suficientes. ' + falta + ' Continue registrando as refeições e pesando-se — isto se ativa sozinho.'));
+    } else {
+      const adResults = h('div', { class: 'results' });
+      adResults.appendChild(statBox('TDEE real', ad.tdee, 'kcal/dia'));
+      adResults.appendChild(statBox('Ingerido', ad.meanIntake, 'kcal/dia (média)'));
+      adResults.appendChild(statBox('Peso', (ad.slopeKgWeek > 0 ? '+' : '') + ad.slopeKgWeek, 'kg/semana'));
+      adCard.appendChild(adResults);
+      adCard.appendChild(h('p', { class: 'hint' },
+        `Base: últimos ${ad.windowDays} dias — ${ad.daysUsed} dias de registro válidos, ${ad.weighIns} pesagens em ${ad.spanDays} dias` +
+        (ad.excludedDays ? ` (${ad.excludedDays} dia(s) com menos de 500 kcal ignorados como incompletos)` : '') + '. ' +
+        `Fórmula estimava ${round(tdee, 0)} kcal — diferença de ${ad.tdee - Math.round(tdee || 0)} kcal/dia.`));
+      if (ad.suspeito) {
+        adCard.appendChild(h('div', { class: 'warnbar' }, '⚠ Valor fora da faixa fisiológica plausível — provavelmente há dias só parcialmente registrados ou pesagem atípica. O app NÃO vai usar este número na meta enquanto estiver assim.'));
+      }
+      const chk = h('input', {
+        type: 'checkbox', id: 'use-adaptive',
+        onchange: e => { g.useAdaptive = e.target.checked; save(); },
+      });
+      if (g.useAdaptive) chk.checked = true;
+      if (ad.suspeito) chk.disabled = true;
+      adCard.appendChild(h('div', { class: 'adaptive-toggle' }, [
+        chk,
+        h('label', { for: 'use-adaptive' }, ' Usar o TDEE real como base da minha meta (recomendado após 3+ semanas de registro)'),
+      ]));
+    }
+    root.appendChild(adCard);
 
     function save() { window.Store.save(); renderPerfil(); renderHoje(); renderHist(); }
   }

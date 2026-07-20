@@ -36,9 +36,11 @@ window.Nutrition = (function () {
   // pace em kg/sem -> déficit diário = pace * 7700 / 7.
   function deficitFromPace(pace) { return (Number(pace) || 0) * KCAL_PER_KG / 7; }
 
-  function goalKcal(profile, goal) {
+  // baseTdee (opcional): sobrepõe o TDEE da fórmula — usado pelo modo
+  // adaptativo, que passa o TDEE real observado.
+  function goalKcal(profile, goal, baseTdee) {
     if (goal && goal.manualKcal != null && goal.manualKcal !== '') return Number(goal.manualKcal);
-    const t = tdee(profile);
+    const t = baseTdee != null ? baseTdee : tdee(profile);
     if (t == null) return null;
     const deficit = goal && goal.deficit != null ? Number(goal.deficit) : deficitFromPace(goal ? goal.pace : 0.5);
     return Math.round(t - deficit);
@@ -67,6 +69,68 @@ window.Nutrition = (function () {
     };
   }
 
+  // ---- TDEE adaptativo (gasto REAL observado) ----------------------------
+  // TDEE_real ≈ média de kcal ingeridas + 7700 × perda de peso por dia.
+  // Usa regressão linear sobre as pesagens da janela (robusto a oscilação
+  // diária de água/glicogênio). Absorve o viés sistemático de sub-registro.
+  // dailyKcal: {'YYYY-MM-DD': kcal}; weights: {'YYYY-MM-DD': kg}
+  function adaptiveTDEE(dailyKcal, weights, opts) {
+    const o = Object.assign({
+      windowDays: 28,    // olha os últimos 28 dias
+      minLoggedDays: 10, // mínimo de dias com registro válido
+      minSpanDays: 10,   // intervalo mínimo entre 1ª e última pesagem
+      minKcalDay: 500,   // dias abaixo disso = provavelmente incompletos
+      todayStr: null,    // p/ testes
+    }, opts || {});
+    const iso = (d) => { const t = new Date(d); t.setMinutes(t.getMinutes() - t.getTimezoneOffset()); return t.toISOString().slice(0, 10); };
+    const todayStr = o.todayStr || iso(new Date());
+    const startD = new Date(todayStr + 'T12:00:00');
+    startD.setDate(startD.getDate() - (o.windowDays - 1));
+    const startStr = iso(startD);
+    const dayNum = (ds) => Math.round((new Date(ds + 'T12:00:00') - new Date(startStr + 'T12:00:00')) / 86400000);
+
+    const kcals = [];
+    let excluded = 0;
+    Object.keys(dailyKcal || {}).forEach(ds => {
+      if (ds < startStr || ds > todayStr) return;
+      const k = dailyKcal[ds];
+      if (!(k > 0)) return;
+      if (k < o.minKcalDay) { excluded++; return; }
+      kcals.push(k);
+    });
+
+    const ws = Object.keys(weights || {})
+      .filter(ds => ds >= startStr && ds <= todayStr && weights[ds] > 0)
+      .sort()
+      .map(ds => ({ x: dayNum(ds), y: Number(weights[ds]) }));
+
+    const res = {
+      ok: false, windowDays: o.windowDays,
+      daysUsed: kcals.length, excludedDays: excluded,
+      weighIns: ws.length, spanDays: ws.length ? ws[ws.length - 1].x - ws[0].x : 0,
+    };
+    if (kcals.length < o.minLoggedDays) { res.reason = 'poucos_dias'; return res; }
+    if (ws.length < 2 || res.spanDays < o.minSpanDays) { res.reason = 'poucas_pesagens'; return res; }
+
+    const meanIntake = kcals.reduce((a, b) => a + b, 0) / kcals.length;
+    // regressão linear peso ~ dia (slope em kg/dia)
+    const n = ws.length;
+    const mx = ws.reduce((a, p) => a + p.x, 0) / n;
+    const my = ws.reduce((a, p) => a + p.y, 0) / n;
+    let num = 0, den = 0;
+    ws.forEach(p => { num += (p.x - mx) * (p.y - my); den += (p.x - mx) * (p.x - mx); });
+    const slope = den ? num / den : 0;
+
+    res.ok = true;
+    res.meanIntake = Math.round(meanIntake);
+    res.slopeKgWeek = Math.round(slope * 7 * 100) / 100;
+    res.tdee = Math.round(meanIntake - KCAL_PER_KG * slope);
+    // fora da faixa fisiológica plausível → provável dado ruim (ex.: só
+    // metade dos dias registrados, pesagem errada) — sinaliza, não esconde
+    res.suspeito = res.tdee < 1000 || res.tdee > 5500;
+    return res;
+  }
+
   // Nutrientes de um item = valores/100 g * gramas/100.
   function itemNutrients(food, grams) {
     if (!food || !(grams > 0)) return { kcal: 0, prot: 0, carb: 0, fat: 0, fiber: 0, hasKcal: !!(food && food.kcal != null) };
@@ -87,7 +151,7 @@ window.Nutrition = (function () {
   }
 
   return {
-    ACTIVITY, KCAL_PER_KG, floorKcal, bmr, tdee,
+    ACTIVITY, KCAL_PER_KG, floorKcal, bmr, tdee, adaptiveTDEE,
     deficitFromPace, goalKcal, macroTargets, itemNutrients, sumNutrients,
   };
 })();
