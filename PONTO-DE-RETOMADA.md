@@ -163,3 +163,16 @@ sinônimos/escolhas-padrão).
   em charts.js), pesagens viram pontos claros.
 - Testado: sintético 14d/2000kcal/-0,7kg → TDEE 2414 ✓; toggle muda meta
   2236→1781; arroz silenciosamente cru (537 kcal) capturado e trocado (192).
+
+## 2026-07-21 — Comuns do dia a dia (pedido "Foodvisor")
+- Daniel pediu p/ copiar dados do Foodvisor (app comercial) — RECUSADO pelas
+  regras de honestidade dele mesmo (banco proprietário de concorrente; e é
+  agregador das mesmas fontes primárias que já usamos). Entregue o
+  equivalente legítimo: auditoria de 34 alimentos comuns contra nossa base
+  (33 já existiam!) + ~25 sinônimos-padrão verificados (hamburguer→417
+  grelhado, esfiha→C0439A, sushi, lasanha, picanha, misto quente, pastel…).
+- Bug corrigido no parser: fallback parcial devolvia "ambíguo" antes de
+  honrar sinônimo cadastrado; agora sinônimo vence (matched).
+- Ambiguidades deliberadas mantidas: cuscuz (paulista×nordestino), açaí
+  (puro×com xarope), salgadinho, milanesa — diferença grande demais p/
+  decidir em silêncio.

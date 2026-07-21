@@ -112,11 +112,12 @@ window.Parser = (function () {
         .sort((a, b) => (b.matched - a.matched) || (b.score - a.score))
         .slice(0, 8);
       if (loose.length) {
-        return {
-          status: 'ambiguous',
-          foodId: synId != null && getFood(synId) ? synId : loose[0].id,
-          candidates: loose,
-        };
+        // sinônimo cadastrado vence o fallback parcial: é escolha verificada
+        if (synId != null && getFood(synId)) {
+          const rest = loose.filter(c => String(c.id) !== String(synId));
+          return { status: 'matched', foodId: synId, candidates: [{ id: synId, score: 999 }, ...rest].slice(0, 8) };
+        }
+        return { status: 'ambiguous', foodId: loose[0].id, candidates: loose };
       }
     }
 

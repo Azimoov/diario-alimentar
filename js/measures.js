@@ -118,6 +118,32 @@ window.SYNONYMS = {
   'cerveja': 'C0009H',        // Bebida alcoólica, cerveja, Pilsen
   'pasta de amendoim': 'C0290T',
   'coxinha': 'C0100F',        // Coxinha de frango, industrializada, frita
+  // comuns do dia a dia (escolha-padrão = variante mais típica; ids conferidos)
+  'hamburguer': 417,              // Hambúrguer, bovino, grelhado (TACO)
+  'cachorro quente': 'C0363A',    // pão hot dog + salsicha (TBCA)
+  'hot dog': 'C0363A',
+  'lasanha': 'C0395A',            // bolonhesa caseira assada (TBCA)
+  'lasanha bolonhesa': 'C0395A',
+  'panqueca': 'C0324A',           // c/ carne moída e molho (TBCA)
+  'pastel': 56,                   // Pastel, de carne, frito (TACO)
+  'empada': 389,                  // Empada de frango, assada (TACO)
+  'picanha': 381,                 // com gordura, grelhada (TACO)
+  'vitamina de banana': 'C0073G', // leite integral c/ banana, c/ açúcar (TBCA)
+  'esfiha': 'C0439A',             // Esfirra caseira assada, média de sabores (TBCA)
+  'esfirra': 'C0439A',
+  'bolacha recheada': 9,          // Biscoito recheado com chocolate (TACO)
+  'biscoito recheado': 9,
+  'coca cola': 480,               // Refrigerante, tipo cola (TACO)
+  'coca': 480,
+  'salada de frutas': 'C0187C',   // laranja/banana/maçã/mamão s/ açúcar (TBCA)
+  'salada de fruta': 'C0187C',
+  'iogurte grego': 'C0133G',      // grego simples integral (TBCA)
+  'sushi': 'C0305E',              // sushi c/ peixe (TBCA)
+  'misto quente': 'C0267A',       // pão francês, presunto e queijo (TBCA)
+  'sorvete': 'C0141K',            // industrializado, média de sabores (TBCA)
+  'farofa': 131,                  // Mandioca, farofa, temperada (TACO)
+  'linguica': 422,                // Lingüiça, porco, frita (TACO)
+  'suco de laranja': 215,         // Laranja, pêra, suco (TACO)
   // USDA (subconjunto curado — ids u<fdc_id>, conferíveis em fdc.nal.usda.gov)
   'whey': 'u173180',          // Whey protein (pó)
   'whey protein': 'u173180',
