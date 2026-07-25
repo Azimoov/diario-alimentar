@@ -107,17 +107,17 @@ window.App = (function () {
     const parsed = window.Parser.parseText(ta.value);
     if (!parsed.length) return;
     const day = currentDay();
-    parsed.forEach(p => {
-      day.items.push({
-        raw: p.raw,
-        foodText: p.foodText,
-        foodId: p.foodId,
-        grams: p.grams,
-        conf: p.confidence,
-        match: p.matchStatus,   // 'matched' | 'ambiguous' | 'not_found'
-        note: primaryFlag(p),
-      });
-    });
+    // entradas novas no TOPO da lista (batch inteiro, mantendo a ordem interna)
+    const novos = parsed.map(p => ({
+      raw: p.raw,
+      foodText: p.foodText,
+      foodId: p.foodId,
+      grams: p.grams,
+      conf: p.confidence,
+      match: p.matchStatus,   // 'matched' | 'ambiguous' | 'not_found'
+      note: primaryFlag(p),
+    }));
+    day.items.unshift(...novos);
     window.Store.save();
     ta.value = '';
     renderHoje();
@@ -174,11 +174,11 @@ window.App = (function () {
   // Insere os itens estimados no dia atual (exposta p/ testes).
   function addPhotoItems(itens, observacao) {
     const day = currentDay();
-    let added = 0;
+    const novos = [];
     (itens || []).forEach(it => {
       if (!it || !it.nome || !(it.gramas > 0)) return;
       const match = window.Parser.matchFood(it.nome);
-      day.items.push({
+      novos.push({
         raw: '[foto] ' + it.nome,
         foodText: it.nome,
         foodId: match.foodId,
@@ -187,8 +187,9 @@ window.App = (function () {
         match: match.status,
         note: 'Estimado por foto (confiança ' + (it.confianca || 'baixa') + ') — confira alimento e gramas.',
       });
-      added++;
     });
+    const added = novos.length;
+    day.items.unshift(...novos); // foto também entra no topo
     window.Store.save();
     renderHoje();
     renderHist();
