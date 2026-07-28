@@ -85,6 +85,47 @@ Regras de honestidade:
 - Não liste temperos invisíveis nem invente acompanhamentos que não aparecem.
 - Pratos compostos (estrogonofe, lasanha): liste como um item único com o nome do prato.`;
 
+// ---- backup na nuvem (cofre por senha) ------------------------------------
+// POST /backup  {blob, iv, salt, v, updatedAt}  <- estado CIFRADO no aparelho
+// GET  /backup  -> devolve o último backup da senha em uso (404 se não há)
+// Cada senha do app tem seu próprio cofre (chave = SHA-256 da senha) — em
+// multiusuário, cada pessoa só alcança o próprio backup.
+async function tokenKey(token) {
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return "backup:" + [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function handleBackup(request, env, json, token) {
+  if (!env.DIARIO_KV) {
+    return json({ error: "server_not_configured", detail: "KV não configurado." }, 500);
+  }
+  const key = await tokenKey(token);
+
+  if (request.method === "POST") {
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
+    if (!body || typeof body.blob !== "string" || !body.blob || typeof body.iv !== "string" || typeof body.salt !== "string") {
+      return json({ error: "invalid_backup" }, 400);
+    }
+    const record = JSON.stringify({
+      v: 1, blob: body.blob, iv: body.iv, salt: body.salt,
+      updatedAt: typeof body.updatedAt === "string" ? body.updatedAt : new Date().toISOString(),
+      savedAt: new Date().toISOString(),
+    });
+    if (record.length > 4_000_000) return json({ error: "backup_too_large", detail: "Backup acima de ~4 MB." }, 413);
+    await env.DIARIO_KV.put(key, record);
+    return json({ ok: true, bytes: record.length });
+  }
+
+  if (request.method === "GET") {
+    const raw = await env.DIARIO_KV.get(key);
+    if (!raw) return json({ error: "no_backup", detail: "Nenhum backup encontrado para esta senha." }, 404);
+    return json(JSON.parse(raw)); // re-serializa p/ sair com os headers CORS
+  }
+
+  return json({ error: "method_not_allowed" }, 405);
+}
+
 // rate-limit simples em memória (por isolate — best-effort, não é garantia)
 const hits = new Map();
 function rateLimited(ip, max = 15, windowMs = 60_000) {
@@ -126,6 +167,11 @@ export default {
     if (!validTokens.length || !validTokens.includes(givenToken)) {
       return json({ error: "unauthorized", detail: "Senha do app ausente ou incorreta." }, 401);
     }
+
+    // ---- backup criptografado do diário (por senha; o servidor só vê o
+    // blob cifrado — a criptografia acontece no aparelho) ----
+    const url = new URL(request.url);
+    if (url.pathname === "/backup") return handleBackup(request, env, json, givenToken);
 
     if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
     if (!env.ANTHROPIC_API_KEY) {

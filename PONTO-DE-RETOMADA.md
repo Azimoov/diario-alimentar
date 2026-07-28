@@ -185,3 +185,19 @@ sinônimos/escolhas-padrão).
   preenche os campos editáveis, com aviso p/ conferir com a embalagem.
 - Foto de rótulo comprime a 1600px (letra miúda); refeição segue 1024px.
 - Conta no mesmo limite diário de fotos. Worker: 15 testes passando.
+
+## 2026-07-28 — Backup automático na nuvem (pós-incidente)
+- INCIDENTE: Daniel perdeu dados ao remover/re-adicionar o app da tela de
+  início (a atualização do ícone tornou o app standalone via manifest — no
+  iOS isso move o localStorage p/ um cofre próprio do app, apagado junto).
+  Instrução minha estava errada ("dados não são apagados"). Possível
+  recuperação: dados antigos podem seguir no cofre do SAFARI (abrir o site
+  no navegador → Exportar → Importar no app).
+- SOLUÇÃO: backup automático opt-in (aba Dados). Estado cifrado NO APARELHO
+  (AES-GCM 256, chave PBKDF2-SHA256 150k da senha do app) → POST /backup no
+  Worker (KV, chave = SHA-256 da senha → cofre por pessoa no multiusuário).
+  Restauração: botão "Restaurar da nuvem…" (exige proxy+senha; confirma
+  substituição). Debounce 4s no gancho do renderHist. lastBackupAt na UI.
+  Senha trocada = backup antigo indecifrável (mensagem clara).
+- 20 testes do Worker passando; ciclo desastre→restauração testado no
+  navegador com mock.

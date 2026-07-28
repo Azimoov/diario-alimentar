@@ -10,13 +10,34 @@ const CORS = {
   "Access-Control-Allow-Headers": "Content-Type, X-App-Token",
 };
 
+const backups = new Map(); // token -> registro (Fase backup)
+
 createServer((req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, CORS); return res.end(); }
-  if (req.method !== "POST") { res.writeHead(405, CORS); return res.end(); }
-  if (req.headers["x-app-token"] !== "senha-local") {
+  const token = req.headers["x-app-token"];
+  if (token !== "senha-local") {
     res.writeHead(401, { ...CORS, "Content-Type": "application/json" });
     return res.end(JSON.stringify({ error: "unauthorized", detail: "token errado" }));
   }
+  // ---- /backup ----
+  if (req.url.startsWith("/backup")) {
+    if (req.method === "POST") {
+      let d = ""; req.on("data", c => d += c);
+      return req.on("end", () => {
+        const b = JSON.parse(d || "{}");
+        backups.set(token, { ...b, savedAt: new Date().toISOString() });
+        console.log("backup recebido:", (d.length / 1024).toFixed(1), "KB");
+        res.writeHead(200, { ...CORS, "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+      });
+    }
+    if (req.method === "GET") {
+      const b = backups.get(token);
+      res.writeHead(b ? 200 : 404, { ...CORS, "Content-Type": "application/json" });
+      return res.end(JSON.stringify(b || { error: "no_backup", detail: "Nenhum backup." }));
+    }
+  }
+  if (req.method !== "POST") { res.writeHead(405, CORS); return res.end(); }
   let data = "";
   req.on("data", (c) => (data += c));
   req.on("end", () => {

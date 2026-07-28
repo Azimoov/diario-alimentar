@@ -130,6 +130,86 @@ window.App = (function () {
     return (warn || info || {}).msg || '';
   }
 
+  // ============ BACKUP AUTOMÁTICO NA NUVEM ============
+  // O diário inteiro é CIFRADO NO APARELHO (AES-GCM; chave derivada da senha
+  // do app via PBKDF2) e guardado no proxy. O servidor só vê um blob opaco.
+  // Cada senha tem seu cofre — em multiusuário ninguém alcança o dos outros.
+  const _te = new TextEncoder(), _td = new TextDecoder();
+  function bufToB64(buf) {
+    const u = new Uint8Array(buf); let s = ''; const CH = 0x8000;
+    for (let i = 0; i < u.length; i += CH) s += String.fromCharCode.apply(null, u.subarray(i, i + CH));
+    return btoa(s);
+  }
+  function b64ToBuf(s) { return Uint8Array.from(atob(s), c => c.charCodeAt(0)); }
+  async function deriveKey(senha, salt) {
+    const base = await crypto.subtle.importKey('raw', _te.encode(senha), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' },
+      base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+  async function encryptState(text, senha) {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await deriveKey(senha, salt);
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, _te.encode(text));
+    return { v: 1, blob: bufToB64(ct), iv: bufToB64(iv), salt: bufToB64(salt) };
+  }
+  async function decryptState(rec, senha) {
+    const key = await deriveKey(senha, b64ToBuf(rec.salt));
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64ToBuf(rec.iv) }, key, b64ToBuf(rec.blob));
+    return _td.decode(pt);
+  }
+
+  let backupTimer = null;
+  function scheduleBackup() {
+    if (!S.settings || !S.settings.autoBackup || !S.settings.proxyUrl || !S.settings.proxyToken) return;
+    if (!(window.crypto && crypto.subtle)) return; // exige contexto seguro (https)
+    clearTimeout(backupTimer);
+    backupTimer = setTimeout(pushBackup, 4000);
+  }
+  async function pushBackup() {
+    try {
+      const payload = await encryptState(window.Store.exportJSON(), S.settings.proxyToken);
+      payload.updatedAt = new Date().toISOString();
+      const res = await fetch(S.settings.proxyUrl.replace(/\/+$/, '') + '/backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-App-Token': S.settings.proxyToken },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        S.settings.lastBackupAt = payload.updatedAt;
+        window.Store.save();
+        const el = document.getElementById('bk-status');
+        if (el) el.textContent = 'Último backup: ' + new Date(payload.updatedAt).toLocaleString('pt-BR');
+      }
+      return res.ok;
+    } catch (e) { return false; /* silencioso: backup não pode travar o app */ }
+  }
+  async function restoreBackup() {
+    if (!S.settings.proxyUrl || !S.settings.proxyToken) {
+      alert('Antes, configure o endereço do proxy e a senha do app (nesta aba, seção Registro por foto).');
+      return false;
+    }
+    try {
+      const res = await fetch(S.settings.proxyUrl.replace(/\/+$/, '') + '/backup', {
+        headers: { 'X-App-Token': S.settings.proxyToken },
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) { alert((data && data.detail) || 'Nenhum backup encontrado para esta senha.'); return false; }
+      let text = null;
+      try { text = await decryptState(data, S.settings.proxyToken); } catch (e) { /* senha diferente */ }
+      if (!text) { alert('Encontrei um backup, mas ele foi criptografado com OUTRA senha — não consigo abrir com a atual.'); return false; }
+      const quando = data.updatedAt ? new Date(data.updatedAt).toLocaleString('pt-BR') : '?';
+      if (!confirm('Restaurar o backup de ' + quando + '?\n\nIsto SUBSTITUI os dados atuais deste aparelho.')) return false;
+      window.Store.importJSON(text, 'replace');
+      S = window.Store.get();
+      refreshFoods();
+      renderAll();
+      alert('Backup restaurado com sucesso! ✅');
+      return true;
+    } catch (e) { alert('Erro ao restaurar: ' + e.message); return false; }
+  }
+
   // ============ FASE 2: registro por foto ============
   // A foto NÃO calcula nutrição: só sugere alimento + gramas. Cada item entra
   // como estimativa (amarela, editável) e é casado com a base TACO/custom.
@@ -522,6 +602,9 @@ window.App = (function () {
 
   // ================= ABA HISTÓRICO =================
   function renderHist() {
+    // renderHist roda após toda mutação de dados (e no init) — gancho do
+    // backup automático (com debounce; só age se estiver ligado)
+    scheduleBackup();
     const root = $('#tab-hist');
     clear(root);
     const goalK = effectiveGoal().goalK;
@@ -764,11 +847,31 @@ window.App = (function () {
     const root = $('#tab-dados');
     clear(root);
 
-    // export/import
+    // export/import + backup automático na nuvem
+    const st0 = S.settings;
+    const bkChk = h('input', {
+      type: 'checkbox', id: 'auto-backup',
+      onchange: e => {
+        st0.autoBackup = e.target.checked;
+        window.Store.save();
+        if (st0.autoBackup) { scheduleBackup(); }
+        renderDados();
+      },
+    });
+    if (st0.autoBackup) bkChk.checked = true;
     const io = h('div', { class: 'card' }, [
       h('h3', {}, 'Backup dos seus dados'),
-      h('p', { class: 'note' }, 'Tudo fica só neste aparelho (localStorage). Exporte um arquivo JSON para backup ou para levar a outro dispositivo.'),
+      h('p', { class: 'note' }, 'Os dados vivem neste aparelho. ⚠ No iPhone, REMOVER o app da tela de início APAGA os dados locais — ligue o backup automático abaixo para ficar protegido.'),
+      h('div', { class: 'adaptive-toggle' }, [
+        bkChk,
+        h('label', { for: 'auto-backup' }, ' ☁ Backup automático na nuvem — o diário é criptografado NESTE aparelho com a sua senha do app e guardado no seu proxy. O servidor não consegue ler. Requer proxy + senha configurados abaixo.'),
+      ]),
+      h('p', { class: 'hint', id: 'bk-status' },
+        st0.autoBackup
+          ? (st0.lastBackupAt ? 'Último backup: ' + new Date(st0.lastBackupAt).toLocaleString('pt-BR') : 'Backup ligado — aguardando o primeiro envio…')
+          : 'Backup automático desligado.'),
       h('div', { class: 'btn-row' }, [
+        h('button', { class: 'btn primary', onclick: restoreBackup }, '☁ Restaurar da nuvem…'),
         h('button', { class: 'btn', onclick: doExport }, '⬇ Exportar JSON'),
         h('label', { class: 'btn' }, ['⬆ Importar (substituir)', h('input', { type: 'file', accept: 'application/json,.json', style: 'display:none', onchange: e => doImport(e, 'replace') })]),
         h('label', { class: 'btn' }, ['⬆ Importar (mesclar)', h('input', { type: 'file', accept: 'application/json,.json', style: 'display:none', onchange: e => doImport(e, 'merge') })]),
@@ -1149,7 +1252,7 @@ window.App = (function () {
   }
 
   // funções expostas p/ testes automatizados
-  return { init, addPhotoItems, compressPhoto, analyzePhoto, computeRecipe, openRecipeForm, applyLabelToForm };
+  return { init, addPhotoItems, compressPhoto, analyzePhoto, computeRecipe, openRecipeForm, applyLabelToForm, pushBackup, restoreBackup };
 })();
 
 document.addEventListener('DOMContentLoaded', window.App.init);

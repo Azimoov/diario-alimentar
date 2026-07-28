@@ -22,7 +22,8 @@ window.Store = (function () {
       customFoods: [],      // {id:'c1', name, kcal, prot, carb, fat, fiber}
       // Fase 2 (foto): endereço do SEU proxy + senha do app. A chave da API
       // fica só no proxy — aqui nunca entra chave nenhuma.
-      settings: { proxyUrl: '', proxyToken: '' },
+      // autoBackup: diário cifrado no aparelho e guardado no proxy.
+      settings: { proxyUrl: '', proxyToken: '', autoBackup: false, lastBackupAt: null },
       createdAt: new Date().toISOString(),
     };
   }

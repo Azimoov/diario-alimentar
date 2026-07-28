@@ -112,6 +112,24 @@ mock.listen(MOCK_PORT, async () => {
     await check("limite diário estourado", worker.fetch(req(), ENV), 429);
     kvStore.delete("fotos:" + hoje);
 
+    // ---- backup na nuvem ----
+    const bkReq = (opts = {}) => new Request("https://proxy.example/backup", {
+      method: opts.method || "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: ORIGIN,
+        "X-App-Token": opts.token || "token-teste",
+      },
+      body: opts.method === "GET" ? undefined :
+        JSON.stringify(opts.body !== undefined ? opts.body : { blob: "Y2lmcmFkbw==", iv: "aXY=", salt: "c2FsdA==", updatedAt: "2026-07-28T12:00:00Z" }),
+    });
+    await check("backup GET sem nada", worker.fetch(bkReq({ method: "GET", token: "senha-maria" }), ENV), 404);
+    await check("backup POST grava", worker.fetch(bkReq(), ENV), 200);
+    await check("backup GET devolve", worker.fetch(bkReq({ method: "GET" }), ENV), 200,
+      (res, body) => (body.blob === "Y2lmcmFkbw==" && body.iv === "aXY=" && body.updatedAt === "2026-07-28T12:00:00Z") || "conteúdo diferente");
+    await check("backup isolado por senha", worker.fetch(bkReq({ method: "GET", token: "senha-maria" }), ENV), 404);
+    await check("backup inválido", worker.fetch(bkReq({ body: { blob: 123 } }), ENV), 400);
+
     // ---- modo rótulo (tabela nutricional) ----
     await check("modo rótulo devolve campos", worker.fetch(req({
       body: JSON.stringify({ image: IMG, mediaType: "image/jpeg", mode: "rotulo" }),
