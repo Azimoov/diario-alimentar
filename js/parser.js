@@ -208,10 +208,35 @@ window.Parser = (function () {
     const p = prep(raw);            // mantém números/decimais/frações
     if (!p) return null;
 
-    const q = extractQuantity(p);
+    let q = extractQuantity(p);
     let rest = q.rest;
-    const unit = extractUnit(rest);
+    let unit = extractUnit(rest);
+
+    // Ordem invertida (comum no ditado por voz): "arroz 100 g" /
+    // "patinho, 150 gramas". Se não achou quantidade no INÍCIO, procura um
+    // número no FIM da linha com (ou sem) unidade depois dele.
+    let invertedFood = null;
+    if (q.qty == null && !unit) {
+      const m = p.match(/^(.*?)[\s,]+((?:\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?)\s*[a-z]*)$/);
+      if (m && m[1].trim()) {
+        const tailQ = extractQuantity(m[2].trim());
+        if (tailQ.qty != null) {
+          const tailUnit = extractUnit(tailQ.rest);
+          const sobra = (tailUnit ? tailUnit.rest : tailQ.rest).trim();
+          if (!sobra) { // o rabo é SÓ quantidade+unidade — inversão confirmada
+            q = { qty: tailQ.qty, rest: '' };
+            unit = tailUnit;
+            // número grande sem unidade ("patinho 150") = gramas no ditado;
+            // número pequeno ("banana 2") continua sendo contagem de unidades
+            if (!unit && q.qty >= 15) unit = { kind: 'mass', gramsPer: 1, name: 'g', rest: '' };
+            invertedFood = m[1].trim();
+          }
+        }
+      }
+    }
+
     if (unit) rest = unit.rest;
+    if (invertedFood != null) rest = invertedFood;
     let foodText = stripConnector(rest);
 
     // se não sobrou texto de alimento mas havia unidade tipo "de", trata tudo
@@ -277,12 +302,24 @@ window.Parser = (function () {
   }
 
   function parseText(text) {
-    return String(text || '')
+    const chunks = String(text || '')
       .split(/\r?\n|;|,\s*(?=\d)|\se\s(?=\d)/) // quebra por linha, ; ou vírgula antes de número
       .map(s => s.trim())
-      .filter(Boolean)
-      .map(parseLine)
       .filter(Boolean);
+    // remenda o que a vírgula separou: "arroz, 100 g" vira ["arroz","100 g"]
+    // — se um pedaço é SÓ quantidade+unidade e o anterior não tem número,
+    // junta de volta como "100 g arroz".
+    const QTY_ONLY = /^(\d+\s*\/\s*\d+|\d+(?:[.,]\d+)?)\s*(g|gr|grs|gramas?|kg|quilos?|kilos?|ml|l|litros?)?$/i;
+    const merged = [];
+    for (const c of chunks) {
+      const prev = merged[merged.length - 1];
+      if (prev && QTY_ONLY.test(prep(c)) && !/\d/.test(prev)) {
+        merged[merged.length - 1] = c + ' ' + prev;
+      } else {
+        merged.push(c);
+      }
+    }
+    return merged.map(parseLine).filter(Boolean);
   }
 
   return { normalize, setFoods, getFoods, getFood, matchFood, parseLine, parseText };
