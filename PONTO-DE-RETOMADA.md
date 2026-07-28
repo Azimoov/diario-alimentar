@@ -201,3 +201,14 @@ sinônimos/escolhas-padrão).
   Senha trocada = backup antigo indecifrável (mensagem clara).
 - 20 testes do Worker passando; ciclo desastre→restauração testado no
   navegador com mock.
+
+## 2026-07-28 — Base COMUM de alimentos (multiusuário)
+- Alimento cadastrado com "🌐 Compartilhar" (checkbox padrão ON no form de
+  alimento novo, se proxy configurado) vai p/ o Worker (GET/POST/DELETE
+  /foods, KV chave foods-comum, máx 500, dedupe por nome, atribuição
+  anônima 6-hex da senha) e aparece p/ TODOS os usuários com etiqueta
+  "comum" na busca. Sync no init com cache local (sharedFoods no estado —
+  funciona offline). Custom local de mesmo nome vence o comum (dedupe).
+- CORS ganhou GET/DELETE nos Allow-Methods. 27 testes do Worker passando.
+- Fluxo 2 usuários testado no navegador (criador compartilha → aparelho
+  zerado sincroniza, busca e registra).

@@ -11,6 +11,7 @@ const CORS = {
 };
 
 const backups = new Map(); // token -> registro (Fase backup)
+const foodsComum = [];     // base comum de alimentos
 
 createServer((req, res) => {
   if (req.method === "OPTIONS") { res.writeHead(204, CORS); return res.end(); }
@@ -18,6 +19,24 @@ createServer((req, res) => {
   if (token !== "senha-local") {
     res.writeHead(401, { ...CORS, "Content-Type": "application/json" });
     return res.end(JSON.stringify({ error: "unauthorized", detail: "token errado" }));
+  }
+  // ---- /foods (base comum) ----
+  if (req.url.startsWith("/foods")) {
+    if (req.method === "GET") {
+      res.writeHead(200, { ...CORS, "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ foods: foodsComum }));
+    }
+    if (req.method === "POST") {
+      let d = ""; req.on("data", c => d += c);
+      return req.on("end", () => {
+        const b = JSON.parse(d || "{}");
+        const food = { id: "s" + Date.now().toString(36), ...b, criadoEm: new Date().toISOString() };
+        foodsComum.push(food);
+        console.log("alimento comum adicionado:", b.name);
+        res.writeHead(200, { ...CORS, "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true, food }));
+      });
+    }
   }
   // ---- /backup ----
   if (req.url.startsWith("/backup")) {

@@ -126,6 +126,66 @@ async function handleBackup(request, env, json, token) {
   return json({ error: "method_not_allowed" }, 405);
 }
 
+// ---- base comum de alimentos --------------------------------------------
+// GET    /foods         -> lista todos os alimentos compartilhados
+// POST   /foods {name, kcal, prot?, carb?, fat?, fiber?} -> adiciona
+// DELETE /foods?id=sXX  -> remove (modelo de confiança: qualquer usuário)
+// Guardado num único registro KV; valores vêm do usuário (rótulo/manual) e
+// aparecem no app com etiqueta "comum".
+const FOODS_KEY = "foods-comum";
+const normBR = (s) => String(s).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim();
+
+async function handleFoods(request, env, json, token, url) {
+  if (!env.DIARIO_KV) return json({ error: "server_not_configured", detail: "KV não configurado." }, 500);
+
+  if (request.method === "GET") {
+    const raw = await env.DIARIO_KV.get(FOODS_KEY);
+    return json({ foods: raw ? JSON.parse(raw) : [] });
+  }
+
+  if (request.method === "POST") {
+    let b;
+    try { b = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
+    const nm = typeof b.name === "string" ? b.name.trim().slice(0, 120) : "";
+    const num = (v) => (typeof v === "number" && isFinite(v) && v >= 0 ? Math.round(v * 10) / 10 : null);
+    const kcal = num(b.kcal);
+    if (!nm || kcal == null) return json({ error: "invalid_food", detail: "Nome e kcal são obrigatórios." }, 400);
+
+    const raw = await env.DIARIO_KV.get(FOODS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    if (list.some((f) => normBR(f.name) === normBR(nm))) {
+      return json({ error: "duplicate", detail: "Já existe um alimento com esse nome na base comum." }, 409);
+    }
+    if (list.length >= 500) return json({ error: "catalog_full", detail: "Base comum cheia (máx. 500)." }, 413);
+
+    // atribuição anônima: 6 hex da senha de quem criou (p/ auditoria leve)
+    const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+    const por = [...new Uint8Array(hash)].slice(0, 3).map((x) => x.toString(16).padStart(2, "0")).join("");
+    const food = {
+      id: "s" + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36),
+      name: nm, kcal,
+      prot: num(b.prot), carb: num(b.carb), fat: num(b.fat), fiber: num(b.fiber),
+      por, criadoEm: new Date().toISOString(),
+    };
+    list.push(food);
+    await env.DIARIO_KV.put(FOODS_KEY, JSON.stringify(list));
+    return json({ ok: true, food });
+  }
+
+  if (request.method === "DELETE") {
+    const id = url.searchParams.get("id");
+    if (!id) return json({ error: "missing_id" }, 400);
+    const raw = await env.DIARIO_KV.get(FOODS_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    const nova = list.filter((f) => f.id !== id);
+    if (nova.length === list.length) return json({ error: "not_found" }, 404);
+    await env.DIARIO_KV.put(FOODS_KEY, JSON.stringify(nova));
+    return json({ ok: true });
+  }
+
+  return json({ error: "method_not_allowed" }, 405);
+}
+
 // rate-limit simples em memória (por isolate — best-effort, não é garantia)
 const hits = new Map();
 function rateLimited(ip, max = 15, windowMs = 60_000) {
@@ -147,7 +207,7 @@ export default {
 
     const cors = {
       "Access-Control-Allow-Origin": allowOrigin || allowed[0] || "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, X-App-Token",
       "Access-Control-Max-Age": "86400",
       "Vary": "Origin",
@@ -172,6 +232,9 @@ export default {
     // blob cifrado — a criptografia acontece no aparelho) ----
     const url = new URL(request.url);
     if (url.pathname === "/backup") return handleBackup(request, env, json, givenToken);
+
+    // ---- base COMUM de alimentos (compartilhada entre todos os usuários) ----
+    if (url.pathname === "/foods") return handleFoods(request, env, json, givenToken, url);
 
     if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
     if (!env.ANTHROPIC_API_KEY) {

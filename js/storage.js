@@ -20,6 +20,7 @@ window.Store = (function () {
       days: {},             // 'YYYY-MM-DD' -> { items:[{raw,foodId,grams}], weight:null }
       weights: {},          // 'YYYY-MM-DD' -> kg (peso corporal)
       customFoods: [],      // {id:'c1', name, kcal, prot, carb, fat, fiber}
+      sharedFoods: [],      // cache da base COMUM (compartilhada via proxy)
       // Fase 2 (foto): endereço do SEU proxy + senha do app. A chave da API
       // fica só no proxy — aqui nunca entra chave nenhuma.
       // autoBackup: diário cifrado no aparelho e guardado no proxy.
@@ -45,6 +46,7 @@ window.Store = (function () {
     state.days = state.days || {};
     state.weights = state.weights || {};
     state.customFoods = state.customFoods || [];
+    state.sharedFoods = state.sharedFoods || [];
     state.settings = Object.assign({}, d.settings, state.settings || {});
     return state;
   }
@@ -102,10 +104,22 @@ window.Store = (function () {
     return Number.isFinite(n) ? n : null;
   }
 
-  // Base combinada (TACO + custom) para o parser.
+  function setSharedFoods(list) {
+    state.sharedFoods = Array.isArray(list) ? list : [];
+    save();
+  }
+
+  // Base combinada (TACO/TBCA/USDA + base comum + custom) para o parser.
+  // Se o usuário tem um custom com o MESMO nome de um item da base comum
+  // (ex.: quem criou e compartilhou), o custom local vence — evita duplicata.
   function combinedFoods() {
     const taco = (window.FOOD_DB && window.FOOD_DB.foods) || [];
-    return taco.concat(state.customFoods || []);
+    const customNorms = new Set((state.customFoods || []).map(f => f.norm));
+    const shared = (state.sharedFoods || [])
+      .filter(f => f && f.name && f.kcal != null
+        && !customNorms.has(window.Parser.normalize(f.name)))
+      .map(f => Object.assign({ src: 'comum', cat: 0 }, f));
+    return taco.concat(shared, state.customFoods || []);
   }
 
   // ---- export / import ----
@@ -139,6 +153,6 @@ window.Store = (function () {
   return {
     load, get, save, day, defaults,
     addCustomFood, updateCustomFood, removeCustomFood, combinedFoods,
-    exportJSON, importJSON, reset,
+    setSharedFoods, exportJSON, importJSON, reset,
   };
 })();

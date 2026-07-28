@@ -130,6 +130,32 @@ mock.listen(MOCK_PORT, async () => {
     await check("backup isolado por senha", worker.fetch(bkReq({ method: "GET", token: "senha-maria" }), ENV), 404);
     await check("backup inválido", worker.fetch(bkReq({ body: { blob: 123 } }), ENV), 400);
 
+    // ---- base comum de alimentos ----
+    const fdReq = (opts = {}) => new Request("https://proxy.example/foods" + (opts.qs || ""), {
+      method: opts.method || "POST",
+      headers: { "Content-Type": "application/json", Origin: ORIGIN, "X-App-Token": opts.token || "token-teste" },
+      body: (opts.method === "GET" || opts.method === "DELETE") ? undefined :
+        JSON.stringify(opts.body !== undefined ? opts.body : { name: "Whey do Grupo", kcal: 400, prot: 80, carb: 10, fat: 5 }),
+    });
+    await check("foods lista vazia", worker.fetch(fdReq({ method: "GET" }), ENV), 200,
+      (res, body) => (Array.isArray(body.foods) && body.foods.length === 0) || "deveria estar vazia");
+    let sharedId = null;
+    {
+      const res = await worker.fetch(fdReq(), ENV);
+      const body = await res.json();
+      const ok = res.status === 200 && body.ok && body.food && body.food.name === "Whey do Grupo" && body.food.kcal === 400;
+      sharedId = body.food && body.food.id;
+      console.log(`${ok ? "PASS" : "FAIL"}  foods adiciona -> ${res.status} id=${sharedId}`);
+      if (!ok) failed++;
+    }
+    await check("foods duplicado rejeitado", worker.fetch(fdReq({ body: { name: "whey do grupo", kcal: 390 } }), ENV), 409);
+    await check("foods outro usuário vê", worker.fetch(fdReq({ method: "GET", token: "senha-maria" }), ENV), 200,
+      (res, body) => (body.foods.length === 1 && body.foods[0].name === "Whey do Grupo") || "não viu o alimento");
+    await check("foods sem kcal", worker.fetch(fdReq({ body: { name: "Sem Valor" } }), ENV), 400);
+    await check("foods remove", worker.fetch(fdReq({ method: "DELETE", qs: "?id=" + sharedId }), ENV), 200);
+    await check("foods removido some", worker.fetch(fdReq({ method: "GET" }), ENV), 200,
+      (res, body) => body.foods.length === 0 || "ainda tem itens");
+
     // ---- modo rótulo (tabela nutricional) ----
     await check("modo rótulo devolve campos", worker.fetch(req({
       body: JSON.stringify({ image: IMG, mediaType: "image/jpeg", mode: "rotulo" }),

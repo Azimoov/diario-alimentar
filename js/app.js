@@ -42,7 +42,7 @@ window.App = (function () {
   function srcLabel(f) {
     if (!f) return '';
     if (f.custom) return f.recipe ? 'receita' : 'meu';
-    return { taco: 'TACO', tbca: 'TBCA', usda: 'USDA' }[f.src] || '';
+    return { taco: 'TACO', tbca: 'TBCA', usda: 'USDA', comum: 'comum' }[f.src] || '';
   }
 
   // guarda cru × cozido: pesar a comida PRONTA e registrar a versão CRUA é o
@@ -73,6 +73,7 @@ window.App = (function () {
     currentDate = isoLocal(new Date());
     bindTabs();
     renderAll();
+    syncSharedFoods(); // base comum: atualiza em segundo plano (cache p/ offline)
   }
 
   function refreshFoods() { window.Parser.setFoods(window.Store.combinedFoods()); }
@@ -128,6 +129,41 @@ window.App = (function () {
     const warn = p.flags.find(f => f.level === 'warn');
     const info = p.flags.find(f => f.level === 'info');
     return (warn || info || {}).msg || '';
+  }
+
+  // ============ BASE COMUM DE ALIMENTOS ============
+  // Alimentos cadastrados com "compartilhar" ligam todos os usuários do
+  // grupo: ficam no proxy e sincronizam a cada abertura do app (com cache
+  // local p/ funcionar offline).
+  async function syncSharedFoods() {
+    if (!S.settings.proxyUrl || !S.settings.proxyToken) return;
+    try {
+      const res = await fetch(S.settings.proxyUrl.replace(/\/+$/, '') + '/foods', {
+        headers: { 'X-App-Token': S.settings.proxyToken },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && Array.isArray(data.foods)) {
+        window.Store.setSharedFoods(data.foods);
+        refreshFoods();
+      }
+    } catch (e) { /* offline — usa o cache local */ }
+  }
+  async function shareFood(food) {
+    const res = await fetch(S.settings.proxyUrl.replace(/\/+$/, '') + '/foods', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-App-Token': S.settings.proxyToken },
+      body: JSON.stringify({
+        name: food.name,
+        kcal: Number(food.kcal), prot: Number(food.prot) || undefined,
+        carb: Number(food.carb) || undefined, fat: Number(food.fat) || undefined,
+        fiber: Number(food.fiber) || undefined,
+      }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) return { ok: false, detail: (data && data.detail) || ('HTTP ' + res.status) };
+    syncSharedFoods();
+    return { ok: true };
   }
 
   // ============ BACKUP AUTOMÁTICO NA NUVEM ============
@@ -1035,6 +1071,11 @@ window.App = (function () {
       },
     }, '📷 Fotografar tabela nutricional');
 
+    // compartilhar na base comum (só p/ alimentos novos, com proxy configurado)
+    const podeCompartilhar = !editing && S.settings.proxyUrl && S.settings.proxyToken;
+    const shareChk = h('input', { type: 'checkbox', id: 'share-food' });
+    if (podeCompartilhar) shareChk.checked = true;
+
     const body = h('div', {}, [
       inp('name', 'Nome do alimento'),
       h('div', { class: 'btn-row' }, [scanBtn, labelIn]),
@@ -1044,6 +1085,10 @@ window.App = (function () {
         inp('fiber', 'Fibra /100g (opcional)'),
       ]),
       h('p', { class: 'hint' }, 'Fotografe a tabela nutricional da embalagem para preencher sozinho (confira depois!), ou digite os valores por 100 g. Não invente — copie da embalagem ou de fonte confiável.'),
+      podeCompartilhar ? h('div', { class: 'adaptive-toggle' }, [
+        shareChk,
+        h('label', { for: 'share-food' }, ' 🌐 Compartilhar na base comum — todos os usuários do grupo passam a encontrar este alimento na busca.'),
+      ]) : null,
     ]);
     const m = modal(editing ? 'Editar alimento' : 'Novo alimento', h('div', {}, [
       body,
@@ -1062,6 +1107,11 @@ window.App = (function () {
             } else {
               const rec = window.Store.addCustomFood(data);
               refreshFoods(); m.close(); onSaved && onSaved(rec.id);
+              if (podeCompartilhar && shareChk.checked) {
+                shareFood(rec).then(r => {
+                  if (!r.ok) alert('Salvo no seu aparelho, mas NÃO compartilhado na base comum: ' + r.detail);
+                });
+              }
             }
           },
         }, 'Salvar'),
