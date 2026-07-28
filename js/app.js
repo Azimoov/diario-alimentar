@@ -135,14 +135,15 @@ window.App = (function () {
   // como estimativa (amarela, editável) e é casado com a base TACO/custom.
   // A análise acontece no SEU proxy (aba Dados) — a chave da API nunca fica aqui.
 
-  // Redimensiona p/ máx 1024 px e converte p/ JPEG (menos dados, mais rápido).
-  function compressPhoto(file) {
+  // Redimensiona p/ máx `max` px e converte p/ JPEG (menos dados, mais
+  // rápido). Rótulos usam 1600 px — letra miúda precisa de resolução.
+  function compressPhoto(file, max) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
         URL.revokeObjectURL(url);
-        const MAX = 1024;
+        const MAX = max || 1024;
         const scale = Math.min(1, MAX / Math.max(img.width, img.height));
         const canvas = document.createElement('canvas');
         canvas.width = Math.round(img.width * scale);
@@ -156,11 +157,11 @@ window.App = (function () {
     });
   }
 
-  async function analyzePhoto(base64) {
+  async function analyzePhoto(base64, mode) {
     const res = await fetch(S.settings.proxyUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-App-Token': S.settings.proxyToken },
-      body: JSON.stringify({ image: base64, mediaType: 'image/jpeg' }),
+      body: JSON.stringify({ image: base64, mediaType: 'image/jpeg', mode: mode || 'refeicao' }),
     });
     let data = null;
     try { data = await res.json(); } catch { /* resposta sem corpo */ }
@@ -169,6 +170,38 @@ window.App = (function () {
       throw new Error(detail);
     }
     return data || { itens: [], observacao: '' };
+  }
+
+  // ---- foto de TABELA NUTRICIONAL (preenche o cadastro de alimento) ----
+  // Converte p/ base 100 g quando o rótulo só traz a porção; valores ficam
+  // editáveis e o usuário é instruído a conferir com a embalagem.
+  function applyLabelToForm(r, container) {
+    if (!r || r.base === 'desconhecida' || r.kcal == null) {
+      return { ok: false, msg: 'Não consegui ler a tabela nutricional: ' + ((r && r.observacao) || 'foto ilegível ou sem tabela. Tente de novo com boa luz, de frente.') };
+    }
+    let fator = 1;
+    let origem = 'valores por 100 g do rótulo';
+    if (r.base === 'porcao') {
+      if (!(r.porcao_g > 0)) {
+        return { ok: false, msg: 'O rótulo só traz valores por porção e não consegui ler o tamanho da porção. Preencha manualmente.' };
+      }
+      fator = 100 / r.porcao_g;
+      origem = 'convertido da porção de ' + r.porcao_g + ' g para 100 g';
+    }
+    const setVal = (key, v, dec) => {
+      const inp = [...container.querySelectorAll('input')].find(i => i.dataset.key === key);
+      if (inp && v != null) inp.value = Math.round(v * fator * Math.pow(10, dec)) / Math.pow(10, dec);
+    };
+    setVal('kcal', r.kcal, 0);
+    setVal('prot', r.prot, 1);
+    setVal('carb', r.carb, 1);
+    setVal('fat', r.fat, 1);
+    setVal('fiber', r.fiber, 1);
+    const nomeInp = [...container.querySelectorAll('input')].find(i => i.dataset.key === 'name');
+    if (nomeInp && !nomeInp.value.trim() && r.nome) nomeInp.value = r.nome;
+    let msg = 'Preenchido a partir do rótulo (' + origem + '). CONFIRA os números com a embalagem antes de salvar.';
+    if (r.observacao) msg += '\n\nObservação: ' + r.observacao;
+    return { ok: true, msg };
   }
 
   // Insere os itens estimados no dia atual (exposta p/ testes).
@@ -870,14 +903,44 @@ window.App = (function () {
       i.dataset.key = key;
       return h('div', { class: 'field' }, [h('label', { class: 'lbl' }, label), i]);
     }
+    // foto da tabela nutricional → preenche os campos (modo rótulo do proxy)
+    const labelIn = h('input', {
+      type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none',
+      onchange: async e => {
+        const f = e.target.files[0]; e.target.value = '';
+        if (!f) return;
+        scanBtn.disabled = true; const old = scanBtn.textContent; scanBtn.textContent = '⏳ lendo rótulo…';
+        try {
+          const b64 = await compressPhoto(f, 1600); // letra miúda pede resolução
+          const data = await analyzePhoto(b64, 'rotulo');
+          const res = applyLabelToForm(data.rotulo, body);
+          alert(res.msg);
+        } catch (err) {
+          alert('Não consegui ler o rótulo: ' + err.message);
+        }
+        scanBtn.disabled = false; scanBtn.textContent = old;
+      },
+    });
+    const scanBtn = h('button', {
+      class: 'btn',
+      onclick: () => {
+        if (!S.settings.proxyUrl || !S.settings.proxyToken) {
+          alert('Para ler rótulo por foto, configure o proxy na aba Dados (seção "Registro por foto").');
+          return;
+        }
+        labelIn.click();
+      },
+    }, '📷 Fotografar tabela nutricional');
+
     const body = h('div', {}, [
       inp('name', 'Nome do alimento'),
+      h('div', { class: 'btn-row' }, [scanBtn, labelIn]),
       h('div', { class: 'form-grid' }, [
         inp('kcal', 'kcal /100g', '1'), inp('prot', 'Proteína /100g'),
         inp('carb', 'Carbo /100g'), inp('fat', 'Gordura /100g'),
         inp('fiber', 'Fibra /100g (opcional)'),
       ]),
-      h('p', { class: 'hint' }, 'Use os valores do rótulo por 100 g. Não invente — copie da embalagem ou de fonte confiável.'),
+      h('p', { class: 'hint' }, 'Fotografe a tabela nutricional da embalagem para preencher sozinho (confira depois!), ou digite os valores por 100 g. Não invente — copie da embalagem ou de fonte confiável.'),
     ]);
     const m = modal(editing ? 'Editar alimento' : 'Novo alimento', h('div', {}, [
       body,
@@ -1086,7 +1149,7 @@ window.App = (function () {
   }
 
   // funções expostas p/ testes automatizados
-  return { init, addPhotoItems, compressPhoto, analyzePhoto, computeRecipe, openRecipeForm };
+  return { init, addPhotoItems, compressPhoto, analyzePhoto, computeRecipe, openRecipeForm, applyLabelToForm };
 })();
 
 document.addEventListener('DOMContentLoaded', window.App.init);

@@ -176,3 +176,12 @@ sinônimos/escolhas-padrão).
 - Ambiguidades deliberadas mantidas: cuscuz (paulista×nordestino), açaí
   (puro×com xarope), salgadinho, milanesa — diferença grande demais p/
   decidir em silêncio.
+
+## 2026-07-28 — Foto de tabela nutricional (cadastro de alimento)
+- Botão "📷 Fotografar tabela nutricional" no formulário de alimento
+  individual: foto do rótulo → proxy modo "rotulo" (SYSTEM_ROTULO +
+  SCHEMA_ROTULO, campos anuláveis, nunca inventa) → applyLabelToForm
+  converte porção→100g quando o rótulo não tem coluna 100g (RDC 429) e
+  preenche os campos editáveis, com aviso p/ conferir com a embalagem.
+- Foto de rótulo comprime a 1600px (letra miúda); refeição segue 1024px.
+- Conta no mesmo limite diário de fotos. Worker: 15 testes passando.

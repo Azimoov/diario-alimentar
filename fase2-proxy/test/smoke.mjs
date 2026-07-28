@@ -12,22 +12,23 @@ const mock = createServer((req, res) => {
   req.on("data", (c) => (data += c));
   req.on("end", () => {
     const body = JSON.parse(data || "{}");
-    // resposta no formato da Messages API, com o JSON estruturado no bloco text
-    const payload = {
-      id: "msg_mock", type: "message", role: "assistant",
-      model: body.model || "claude-opus-4-8",
-      stop_reason: "end_turn",
-      content: [{
-        type: "text",
-        text: JSON.stringify({
+    // detecta o modo pelo system prompt que o worker enviou
+    const isRotulo = String(body.system || "").includes("tabelas nutricionais");
+    const conteudo = isRotulo
+      ? { nome: "Whey Teste", base: "porcao", porcao_g: 30, kcal: 120, prot: 24, carb: 3, fat: 1.5, fiber: 0, observacao: "" }
+      : {
           itens: [
             { nome: "arroz branco cozido", gramas: 150, confianca: "media" },
             { nome: "feijão carioca cozido", gramas: 100, confianca: "media" },
             { nome: "peito de frango grelhado", gramas: 120, confianca: "alta" },
           ],
           observacao: "",
-        }),
-      }],
+        };
+    const payload = {
+      id: "msg_mock", type: "message", role: "assistant",
+      model: body.model || "claude-opus-4-8",
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: JSON.stringify(conteudo) }],
       usage: { input_tokens: 1500, output_tokens: 120 },
     };
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -110,6 +111,13 @@ mock.listen(MOCK_PORT, async () => {
     kvStore.set("fotos:" + hoje, "60");
     await check("limite diário estourado", worker.fetch(req(), ENV), 429);
     kvStore.delete("fotos:" + hoje);
+
+    // ---- modo rótulo (tabela nutricional) ----
+    await check("modo rótulo devolve campos", worker.fetch(req({
+      body: JSON.stringify({ image: IMG, mediaType: "image/jpeg", mode: "rotulo" }),
+    }), ENV), 200, (res, body) =>
+      (body.rotulo && body.rotulo.base === "porcao" && body.rotulo.porcao_g === 30
+        && body.rotulo.kcal === 120 && body.rotulo.prot === 24) || "payload rótulo inesperado");
   } finally {
     mock.close();
     console.log(failed ? `\n${failed} teste(s) FALHARAM` : "\nTodos os testes passaram.");

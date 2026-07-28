@@ -21,7 +21,14 @@ createServer((req, res) => {
   req.on("data", (c) => (data += c));
   req.on("end", () => {
     const body = JSON.parse(data || "{}");
-    console.log(`foto recebida: ${((body.image || "").length / 1024).toFixed(0)} KB base64, tipo ${body.mediaType}`);
+    console.log(`foto recebida: ${((body.image || "").length / 1024).toFixed(0)} KB base64, tipo ${body.mediaType}, modo ${body.mode || "refeicao"}`);
+    if (body.mode === "rotulo") {
+      res.writeHead(200, { ...CORS, "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        rotulo: { nome: "Whey Mock", base: "porcao", porcao_g: 30, kcal: 120, prot: 24, carb: 3, fat: 1.5, fiber: 0, observacao: "teste local" },
+        modelo: "mock",
+      }));
+    }
     res.writeHead(200, { ...CORS, "Content-Type": "application/json" });
     res.end(JSON.stringify({
       itens: [

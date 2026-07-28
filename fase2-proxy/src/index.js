@@ -43,6 +43,36 @@ const SCHEMA = {
   additionalProperties: false,
 };
 
+// ---- modo "rotulo": lê tabela nutricional p/ cadastro de alimento ----
+const SCHEMA_ROTULO = {
+  type: "object",
+  properties: {
+    nome: { type: ["string", "null"], description: "Nome do produto, se visível na embalagem" },
+    base: { type: "string", enum: ["100g", "porcao", "desconhecida"], description: "A que se referem os valores extraídos" },
+    porcao_g: { type: ["number", "null"], description: "Tamanho da porção em g (ou mL), quando base=porcao" },
+    kcal: { type: ["number", "null"] },
+    prot: { type: ["number", "null"] },
+    carb: { type: ["number", "null"] },
+    fat: { type: ["number", "null"] },
+    fiber: { type: ["number", "null"] },
+    observacao: { type: "string" },
+  },
+  required: ["nome", "base", "porcao_g", "kcal", "prot", "carb", "fat", "fiber", "observacao"],
+  additionalProperties: false,
+};
+
+const SYSTEM_ROTULO = `Você lê FOTOS de tabelas nutricionais (rótulos de alimentos brasileiros no padrão ANVISA, ou importados) para preencher um cadastro.
+
+Regras de honestidade (crítico):
+- Extraia SOMENTE o que está legível na foto. NUNCA complete de memória nem estime valores que não aparecem.
+- Rótulos novos (RDC 429/2020) têm coluna "por 100 g": prefira essa coluna e use base="100g".
+- Rótulos antigos só trazem a porção: use base="porcao", reporte os valores da porção e porcao_g (ex.: "Porção de 30 g" → 30).
+- Valor energético: o número em kcal (ignore o kJ).
+- prot = proteínas; carb = carboidratos totais; fat = gorduras totais; fiber = fibra alimentar. Tudo em gramas.
+- Campo ilegível ou ausente no rótulo: null.
+- Se a foto NÃO for uma tabela nutricional legível: base="desconhecida", campos null, explicando em observacao.
+- observacao: avisos curtos ("porção em mL", "fibra ilegível"). String vazia se nada a observar.`;
+
 const SYSTEM = `Você analisa fotos de refeições (comida majoritariamente brasileira) para um diário alimentar pessoal.
 
 Tarefa: identificar cada alimento visível e estimar o peso em gramas da porção.
@@ -141,6 +171,9 @@ export default {
       fetch: globalThis.fetch.bind(globalThis),
     });
 
+    // dois modos de leitura: refeição (padrão) ou tabela nutricional
+    const isRotulo = body.mode === "rotulo";
+
     let msg;
     try {
       msg = await client.messages.create({
@@ -149,14 +182,16 @@ export default {
         thinking: { type: "adaptive" },
         output_config: {
           effort: "medium",
-          format: { type: "json_schema", schema: SCHEMA },
+          format: { type: "json_schema", schema: isRotulo ? SCHEMA_ROTULO : SCHEMA },
         },
-        system: SYSTEM,
+        system: isRotulo ? SYSTEM_ROTULO : SYSTEM,
         messages: [{
           role: "user",
           content: [
             { type: "image", source: { type: "base64", media_type: mediaType, data: image } },
-            { type: "text", text: "Identifique os alimentos desta refeição e estime as gramas de cada um." },
+            { type: "text", text: isRotulo
+              ? "Extraia os dados da tabela nutricional desta foto."
+              : "Identifique os alimentos desta refeição e estime as gramas de cada um." },
           ],
         }],
       });
@@ -189,6 +224,25 @@ export default {
     try { parsed = JSON.parse(textBlock.text); } catch {
       console.log("JSON RUIM: stop_reason=", msg.stop_reason, "inicio=", textBlock.text.slice(0, 200));
       return json({ error: "bad_model_output", detail: "Resposta em formato inesperado." }, 502);
+    }
+
+    // ---- modo rótulo: valida e devolve os campos da tabela nutricional ----
+    if (isRotulo) {
+      const numN = (v) => (typeof v === "number" && isFinite(v) && v >= 0 ? v : null);
+      return json({
+        rotulo: {
+          nome: typeof parsed.nome === "string" && parsed.nome.trim() ? parsed.nome.trim().slice(0, 120) : null,
+          base: ["100g", "porcao", "desconhecida"].includes(parsed.base) ? parsed.base : "desconhecida",
+          porcao_g: numN(parsed.porcao_g),
+          kcal: numN(parsed.kcal),
+          prot: numN(parsed.prot),
+          carb: numN(parsed.carb),
+          fat: numN(parsed.fat),
+          fiber: numN(parsed.fiber),
+          observacao: typeof parsed.observacao === "string" ? parsed.observacao : "",
+        },
+        modelo: msg.model,
+      });
     }
 
     // validação defensiva do formato antes de devolver ao app
