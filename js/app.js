@@ -514,11 +514,14 @@ window.App = (function () {
       },
     });
 
-    row.appendChild(h('div', { class: 'item-main' }, [
+    // nome em cima (linha inteira), gramas + kcal embaixo
+    row.appendChild(h('div', { class: 'item-head' }, [
       nameBtn,
+      h('button', { class: 'del', title: 'Remover', onclick: () => { currentDay().items.splice(idx, 1); window.Store.save(); renderHoje(); renderHist(); } }, '✕'),
+    ]));
+    row.appendChild(h('div', { class: 'item-controls' }, [
       h('div', { class: 'item-qty' }, [gramsInput, h('span', { class: 'unit' }, 'g')]),
       h('div', { class: 'item-kcal' }, resolved && !noKcal ? round(n.kcal, 0) + ' kcal' : '—'),
-      h('button', { class: 'del', title: 'Remover', onclick: () => { currentDay().items.splice(idx, 1); window.Store.save(); renderHoje(); renderHist(); } }, '✕'),
     ]));
 
     // linha 2: macros
