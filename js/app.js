@@ -454,6 +454,8 @@ window.App = (function () {
         h('button', { class: 'btn primary', onclick: addEntries }, '+ Adicionar'),
       ]),
     ]);
+    // ----- dashboard PRIMEIRO (fixado no topo da aba) -----
+    root.appendChild(renderDashboard(day));
     root.appendChild(box);
     // Ctrl+Enter envia
     box.querySelector('#entry').addEventListener('keydown', e => {
@@ -467,9 +469,6 @@ window.App = (function () {
     }
     day.items.forEach((item, idx) => list.appendChild(renderItem(item, idx)));
     root.appendChild(list);
-
-    // ----- dashboard -----
-    root.appendChild(renderDashboard(day));
 
     // ----- peso do dia -----
     root.appendChild(renderWeightInput());
