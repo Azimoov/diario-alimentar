@@ -149,9 +149,11 @@ input[type=number] { width: 100%; }
 .warnbar { margin-top: 14px; background: color-mix(in srgb, var(--warn) 14%, transparent); border: 1px solid var(--warn); color: var(--warn); padding: 10px 12px; border-radius: 10px; font-size: 13px; }
 
 /* ---- Histórico ---- */
-.linechart { display: block; }
+.linechart { display: block; touch-action: pan-y; }
 .lc-axis { font-size: 10px; fill: var(--muted); }
 .lc-empty { font-size: 13px; fill: var(--muted); }
+.lc-tip-date { font-size: 11px; fill: var(--card); }
+.lc-tip-val { font-size: 14px; font-weight: 700; fill: var(--card); }
 .histtable { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
 .histtable th, .histtable td { padding: 7px 6px; text-align: right; border-bottom: 1px solid var(--border); }
 .histtable th:first-child, .histtable td:first-child { text-align: left; }

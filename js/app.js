@@ -670,12 +670,13 @@ window.App = (function () {
     root.appendChild(h('div', { class: 'card' }, [
       h('h3', {}, 'Calorias por dia'),
       window.Charts.lineChart(kcalSeries, { goalLine: goalK || null, color: 'var(--accent)', unit: ' kcal', zeroBase: true, empty: 'Registre alimentos para ver o histórico' }),
+      kcalSeries.length ? h('p', { class: 'hint' }, 'Toque e arraste no gráfico para ver o valor de cada dia.') : null,
     ]));
 
     root.appendChild(h('div', { class: 'card' }, [
       h('h3', {}, 'Peso corporal'),
       window.Charts.lineChart(weightSeries, {
-        color: 'var(--g)', unit: ' kg', empty: 'Registre seu peso na aba Hoje',
+        color: 'var(--g)', unit: ' kg', decimals: 1, empty: 'Registre seu peso na aba Hoje',
         width: 1.5, lineOpacity: 0.4, pointR: 3,
         extra: weightSeries.length >= 3 ? [{ series: weightMA, color: 'var(--accent)', width: 2.5 }] : [],
       }),

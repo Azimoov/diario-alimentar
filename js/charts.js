@@ -134,6 +134,67 @@ window.Charts = (function () {
     // rótulo primeira/última data
     svg.appendChild(txt(sx(minX), H - 8, fmtDate(pts[0].date), { 'text-anchor': 'start', class: 'lc-axis' }));
     if (pts.length > 1) svg.appendChild(txt(sx(maxX), H - 8, fmtDate(pts[pts.length - 1].date), { 'text-anchor': 'end', class: 'lc-axis' }));
+
+    // ---- leitura por toque/arraste: mostra data + valor exato do ponto
+    // mais próximo do dedo (funciona no celular, onde não existe "passar o
+    // mouse por cima"). Também segue o mouse no computador. ----
+    const hover = el('g', { class: 'lc-hover', opacity: 0, 'pointer-events': 'none' });
+    const vline = el('line', { y1: padT, y2: H - padB, stroke: 'var(--muted)', 'stroke-width': 1, 'stroke-dasharray': '3 3' });
+    const dot = el('circle', { r: 6, fill: opts.color || 'var(--fg)', stroke: 'var(--card)', 'stroke-width': 2.5 });
+    const boxW = 118, boxH = 34;
+    const bbox = el('rect', { width: boxW, height: boxH, rx: 8, fill: 'var(--fg)', opacity: 0.92 });
+    const l1 = txt(0, 0, '', { class: 'lc-tip-date', 'text-anchor': 'middle' });
+    const l2 = txt(0, 0, '', { class: 'lc-tip-val', 'text-anchor': 'middle' });
+    hover.appendChild(vline); hover.appendChild(dot);
+    hover.appendChild(bbox); hover.appendChild(l1); hover.appendChild(l2);
+    svg.appendChild(hover);
+
+    const dec = opts.decimals != null ? opts.decimals : 0;
+    const fmtVal = v => (dec ? v.toFixed(dec).replace('.', ',') : String(Math.round(v))) + (opts.unit || '');
+
+    function showAt(clientX) {
+      const r = svg.getBoundingClientRect();
+      if (!r.width) return; // gráfico ainda sem layout (aba oculta) — ignora
+      // converte px da tela -> unidades do viewBox
+      const vx = (clientX - r.left) * (W / r.width);
+      let best = pts[0], bestD = Infinity;
+      pts.forEach(p => {
+        const d = Math.abs(sx(+new Date(p.date)) - vx);
+        if (d < bestD) { bestD = d; best = p; }
+      });
+      const px = sx(+new Date(best.date)), py = sy(best.value);
+      vline.setAttribute('x1', px); vline.setAttribute('x2', px);
+      dot.setAttribute('cx', px); dot.setAttribute('cy', py);
+      // caixa acima do ponto; vira p/ baixo se não couber, e cabe nas bordas
+      const bx = Math.max(2, Math.min(W - boxW - 2, px - boxW / 2));
+      const acima = py - boxH - 14 > 0;
+      const by = acima ? py - boxH - 12 : py + 12;
+      bbox.setAttribute('x', bx); bbox.setAttribute('y', by);
+      l1.setAttribute('x', bx + boxW / 2); l1.setAttribute('y', by + 14);
+      l2.setAttribute('x', bx + boxW / 2); l2.setAttribute('y', by + 27);
+      l1.textContent = fmtDate(best.date);
+      l2.textContent = fmtVal(best.value);
+      hover.setAttribute('opacity', 1);
+    }
+    const hide = () => hover.setAttribute('opacity', 0);
+
+    // camada transparente que captura o toque em toda a área do gráfico
+    const capture = el('rect', { x: 0, y: 0, width: W, height: H, fill: 'transparent', style: 'touch-action:none' });
+    svg.appendChild(capture);
+    const onMove = (ev) => {
+      const t = ev.touches && ev.touches[0];
+      if (ev.cancelable && t) ev.preventDefault(); // arrastar no gráfico não rola a página
+      showAt(t ? t.clientX : ev.clientX);
+    };
+    capture.addEventListener('pointerdown', onMove);
+    capture.addEventListener('pointermove', (ev) => { if (ev.pressure > 0 || ev.buttons || ev.pointerType === 'mouse') onMove(ev); });
+    capture.addEventListener('pointerup', hide);
+    capture.addEventListener('pointerleave', hide);
+    capture.addEventListener('pointercancel', hide);
+    capture.addEventListener('touchstart', onMove, { passive: false });
+    capture.addEventListener('touchmove', onMove, { passive: false });
+    capture.addEventListener('touchend', hide);
+
     return svg;
   }
 
