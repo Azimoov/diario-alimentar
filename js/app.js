@@ -394,12 +394,9 @@ window.App = (function () {
     window.Store.save();
     renderHoje();
     renderHist();
-    let msgTxt = added
-      ? '📷 ' + added + ' item(ns) adicionados como estimativa — confira alimentos e gramas.'
-        + (reconhecidos ? '\n🏷️ ' + reconhecidos + ' rótulo(s) reconhecido(s) do seu cadastro.' : '')
-      : 'Nenhum alimento identificado na foto.';
-    if (observacao) msgTxt += '\n' + observacao;
-    toast(msgTxt, added ? 'ok' : null);
+    // Sem aviso quando dá certo: os itens já aparecem na lista (marcados como
+    // estimativa). Só avisa se a foto não rendeu nada.
+    if (!added) toast('Nenhum alimento identificado na foto.' + (observacao ? ' ' + observacao : ''), 'error');
     return added;
   }
 
@@ -1158,7 +1155,8 @@ window.App = (function () {
           renderThumb();
           const data = await analyzePhoto(b64, 'rotulo');
           const res = applyLabelToForm(data.rotulo, body);
-          toast(res.msg, res.ok ? 'ok' : 'error');
+          // deu certo: os campos preenchidos são o próprio feedback
+          if (!res.ok) toast(res.msg, 'error');
         } catch (err) {
           toast('Não consegui ler o rótulo: ' + err.message, 'error');
         }
@@ -1304,7 +1302,6 @@ window.App = (function () {
             const m = window.Parser.matchFood(it.nome);
             ings.push({ foodText: it.nome, foodId: m.foodId, grams: Math.round(it.gramas), match: m.status });
           });
-          if (data.observacao) toast(data.observacao);
         } catch (err) { toast('Não consegui analisar a foto: ' + err.message, 'error'); }
         photoBtn.disabled = false; photoBtn.textContent = old;
         renderRows();
