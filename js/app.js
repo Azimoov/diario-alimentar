@@ -1127,20 +1127,44 @@ window.App = (function () {
       i.dataset.key = key;
       return h('div', { class: 'field' }, [h('label', { class: 'lbl' }, label), i]);
     }
-    // foto da tabela nutricional → preenche os campos E fica guardada como
-    // "foto do rótulo" deste alimento (miniatura), para que fotografar a
-    // embalagem depois já reconheça o produto cadastrado
+    // ---- duas fotos, dois propósitos ----
+    // (1) tabela nutricional: analisada p/ preencher os campos, NÃO é guardada
+    // (2) foto do rótulo: só guardada (nenhuma análise, nenhum custo), serve
+    //     de referência visual e p/ reconhecer a embalagem em fotos futuras
     let labelPhoto = (editing && editing.labelPhoto) || null;
     const thumbBox = h('div', { class: 'label-thumb' });
     const renderThumb = () => {
       clear(thumbBox);
-      if (!labelPhoto) return;
+      if (!labelPhoto) {
+        thumbBox.appendChild(h('span', { class: 'hint' }, 'Nenhuma foto do rótulo guardada.'));
+        return;
+      }
       thumbBox.appendChild(h('img', { src: labelPhoto, alt: 'Foto do rótulo' }));
-      thumbBox.appendChild(h('button', {
-        class: 'link-btn danger', onclick: () => { labelPhoto = null; renderThumb(); },
-      }, 'remover foto'));
+      thumbBox.appendChild(h('div', {}, [
+        h('div', { class: 'hint' }, '🏷️ Rótulo guardado — a câmera reconhece este produto.'),
+        h('button', { class: 'link-btn danger', onclick: () => { labelPhoto = null; renderThumb(); } }, 'remover foto'),
+      ]));
     };
     renderThumb();
+
+    // (2) botão só-guarda: nem passa pela internet
+    const photoIn = h('input', {
+      type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none',
+      onchange: async e => {
+        const f = e.target.files[0]; e.target.value = '';
+        if (!f) return;
+        try {
+          labelPhoto = 'data:image/jpeg;base64,' + (await compressPhoto(f, 400, 0.65));
+          renderThumb();
+        } catch (err) {
+          toast('Não consegui usar essa foto: ' + err.message, 'error');
+        }
+      },
+    });
+    const photoBtn = h('button', {
+      class: 'btn', title: 'Só guarda a foto (não analisa nada)',
+      onclick: () => photoIn.click(),
+    }, '📷 Foto do rótulo');
 
     const labelIn = h('input', {
       type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none',
@@ -1150,9 +1174,6 @@ window.App = (function () {
         scanBtn.disabled = true; const old = scanBtn.textContent; scanBtn.textContent = '⏳ lendo rótulo…';
         try {
           const b64 = await compressPhoto(f, 1600); // letra miúda pede resolução
-          // miniatura leve p/ guardar junto do alimento (localStorage é curto)
-          labelPhoto = 'data:image/jpeg;base64,' + (await compressPhoto(f, 320, 0.6));
-          renderThumb();
           const data = await analyzePhoto(b64, 'rotulo');
           const res = applyLabelToForm(data.rotulo, body);
           // deu certo: os campos preenchidos são o próprio feedback
@@ -1181,14 +1202,14 @@ window.App = (function () {
 
     const body = h('div', {}, [
       inp('name', 'Nome do alimento'),
-      h('div', { class: 'btn-row' }, [scanBtn, labelIn]),
+      h('div', { class: 'btn-row' }, [scanBtn, labelIn, photoBtn, photoIn]),
       thumbBox,
       h('div', { class: 'form-grid' }, [
         inp('kcal', 'kcal /100g', '1'), inp('prot', 'Proteína /100g'),
         inp('carb', 'Carbo /100g'), inp('fat', 'Gordura /100g'),
         inp('fiber', 'Fibra /100g (opcional)'),
       ]),
-      h('p', { class: 'hint' }, 'Fotografe a tabela nutricional da embalagem para preencher sozinho (confira depois!), ou digite os valores por 100 g. Não invente — copie da embalagem ou de fonte confiável.'),
+      h('p', { class: 'hint' }, '“Tabela nutricional”: lê a foto e preenche os campos abaixo (a foto não é guardada). “Foto do rótulo”: só guarda a imagem do produto, para você reconhecer depois. Confira sempre os valores com a embalagem.'),
       podeCompartilhar ? h('div', { class: 'adaptive-toggle' }, [
         shareChk,
         h('label', { for: 'share-food' }, ' 🌐 Compartilhar na base comum — todos os usuários do grupo passam a encontrar este alimento na busca.'),
