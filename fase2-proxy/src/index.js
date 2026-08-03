@@ -29,8 +29,12 @@ const SCHEMA = {
           },
           gramas: { type: "number", description: "Peso estimado em gramas da porção visível" },
           confianca: { type: "string", enum: ["alta", "media", "baixa"] },
+          produto: {
+            type: ["string", "null"],
+            description: "Se este item for a embalagem/rótulo de um produto da lista PRODUTOS CADASTRADOS fornecida, copie aqui o nome EXATO daquela lista. Caso contrário, null.",
+          },
         },
-        required: ["nome", "gramas", "confianca"],
+        required: ["nome", "gramas", "confianca", "produto"],
         additionalProperties: false,
       },
     },
@@ -83,7 +87,12 @@ Regras de honestidade:
 - Se a foto não contém comida, devolva "itens" vazio e explique em "observacao".
 - Nomes em português brasileiro, minúsculas, no estilo da tabela TACO (alimento + preparo), ex.: "arroz branco cozido", "feijão preto cozido", "carne bovina patinho grelhado", "ovo frito", "banana prata".
 - Não liste temperos invisíveis nem invente acompanhamentos que não aparecem.
-- Pratos compostos (estrogonofe, lasanha): liste como um item único com o nome do prato.`;
+- Pratos compostos (estrogonofe, lasanha): liste como um item único com o nome do prato.
+
+Produtos cadastrados pelo usuário:
+- Se a foto mostrar a EMBALAGEM/RÓTULO de um produto que está na lista "PRODUTOS CADASTRADOS" (quando fornecida), preencha "produto" com o nome EXATO como aparece na lista — assim o app reaproveita os valores que o usuário já cadastrou.
+- Só faça isso quando tiver certeza razoável de que é aquele produto (marca/nome batem). Na dúvida, "produto": null.
+- Mesmo com "produto" preenchido, estime as gramas normalmente (o quanto será consumido).`;
 
 // ---- backup na nuvem (cofre por senha) ------------------------------------
 // POST /backup  {blob, iv, salt, v, updatedAt}  <- estado CIFRADO no aparelho
@@ -282,6 +291,11 @@ export default {
 
     // dois modos de leitura: refeição (padrão) ou tabela nutricional
     const isRotulo = body.mode === "rotulo";
+    // produtos que o usuário cadastrou com foto de rótulo — permitem que a
+    // foto da embalagem reaproveite o alimento já cadastrado
+    const produtos = Array.isArray(body.produtos)
+      ? body.produtos.filter((p) => typeof p === "string" && p.trim()).slice(0, 60).map((p) => p.trim().slice(0, 120))
+      : [];
 
     let msg;
     try {
@@ -300,7 +314,8 @@ export default {
             { type: "image", source: { type: "base64", media_type: mediaType, data: image } },
             { type: "text", text: isRotulo
               ? "Extraia os dados da tabela nutricional desta foto."
-              : "Identifique os alimentos desta refeição e estime as gramas de cada um." },
+              : "Identifique os alimentos desta refeição e estime as gramas de cada um."
+                + (produtos.length ? "\n\nPRODUTOS CADASTRADOS (use no campo \"produto\" se a foto mostrar a embalagem de um deles):\n- " + produtos.join("\n- ") : "") },
           ],
         }],
       });
@@ -363,6 +378,8 @@ export default {
         nome: i.nome.trim().slice(0, 120),
         gramas: Math.round(i.gramas),
         confianca: ["alta", "media", "baixa"].includes(i.confianca) ? i.confianca : "baixa",
+        // só aceita produto que realmente está na lista enviada pelo app
+        produto: typeof i.produto === "string" && produtos.includes(i.produto.trim()) ? i.produto.trim() : null,
       }));
 
     return json({

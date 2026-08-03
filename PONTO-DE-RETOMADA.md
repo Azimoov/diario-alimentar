@@ -212,3 +212,19 @@ sinônimos/escolhas-padrão).
 - CORS ganhou GET/DELETE nos Allow-Methods. 27 testes do Worker passando.
 - Fluxo 2 usuários testado no navegador (criador compartilha → aparelho
   zerado sincroniza, busca e registra).
+
+## 2026-08-03 — Refeições, avisos discretos e rótulo reconhecido
+- **Refeições:** item ganha campo `meal` (cafe/almoco/lanche/jantar);
+  seletor na caixa de registro (padrão por horário: 4-11 café, 11-15
+  almoço, 15-19 lanche, resto jantar), lista agrupada com subtotal por
+  refeição e seletor em cada item p/ mover. Itens antigos sem meal caem
+  no grupo "Outros".
+- **Sem alertas na foto:** helper toast() (rodapé, some sozinho) substitui
+  alert() em TODOS os fluxos de foto/rótulo/import/backup. confirm()
+  mantido só onde a ação é destrutiva.
+- **Foto do rótulo linkada:** a foto usada p/ ler a tabela nutricional é
+  guardada como miniatura (320px q0.6) em customFood.labelPhoto; o app
+  envia a lista desses produtos ao proxy (campo `produtos`) e o modelo
+  devolve `produto` quando reconhece a embalagem — o item entra já casado
+  com o alimento cadastrado (valores conferidos pelo usuário). Worker
+  valida que o produto devolvido está na lista enviada.

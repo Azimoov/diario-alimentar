@@ -82,6 +82,7 @@ window.Store = (function () {
       kcal: numOrNull(food.kcal), prot: numOrNull(food.prot),
       carb: numOrNull(food.carb), fat: numOrNull(food.fat), fiber: numOrNull(food.fiber),
       recipe: food.recipe || null,
+      labelPhoto: food.labelPhoto || null, // miniatura do rótulo (data URL)
     };
     state.customFoods.push(rec);
     save();

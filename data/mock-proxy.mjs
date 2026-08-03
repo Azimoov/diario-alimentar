@@ -69,13 +69,16 @@ createServer((req, res) => {
         modelo: "mock",
       }));
     }
+    // se o app mandou produtos cadastrados, simula reconhecer o primeiro
+    const prod = Array.isArray(body.produtos) && body.produtos.length ? body.produtos[0] : null;
     res.writeHead(200, { ...CORS, "Content-Type": "application/json" });
     res.end(JSON.stringify({
       itens: [
-        { nome: "arroz branco cozido", gramas: 150, confianca: "media" },
-        { nome: "feijão carioca cozido", gramas: 100, confianca: "media" },
-        { nome: "peito de frango grelhado", gramas: 120, confianca: "alta" },
-        { nome: "quibebe de abóbora", gramas: 80, confianca: "baixa" },
+        { nome: "arroz branco cozido", gramas: 150, confianca: "media", produto: null },
+        { nome: "feijão carioca cozido", gramas: 100, confianca: "media", produto: null },
+        prod
+          ? { nome: prod, gramas: 30, confianca: "alta", produto: prod }
+          : { nome: "peito de frango grelhado", gramas: 120, confianca: "alta", produto: null },
       ],
       observacao: "Teste local — dados fixos do mock.",
       modelo: "mock",

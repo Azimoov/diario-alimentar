@@ -38,6 +38,38 @@ window.App = (function () {
   function $(sel) { return document.querySelector(sel); }
   function clear(node) { while (node.firstChild) node.removeChild(node.firstChild); }
 
+  // ---- refeições ----
+  const MEALS = [
+    { id: 'cafe', nome: '☕ Café da manhã' },
+    { id: 'almoco', nome: '🍽️ Almoço' },
+    { id: 'lanche', nome: '🥪 Lanche' },
+    { id: 'jantar', nome: '🌙 Jantar' },
+  ];
+  const MEAL_NOMES = MEALS.reduce((a, m) => (a[m.id] = m.nome, a), { outros: '📋 Outros' });
+  // palpite pelo horário — o usuário pode trocar a qualquer momento
+  function mealPorHora(d) {
+    const hh = (d || new Date()).getHours();
+    if (hh >= 4 && hh < 11) return 'cafe';
+    if (hh >= 11 && hh < 15) return 'almoco';
+    if (hh >= 15 && hh < 19) return 'lanche';
+    return 'jantar';
+  }
+
+  // Aviso discreto no rodapé (sem travar a tela como o alert). Some sozinho;
+  // toque fecha antes. Usado no fluxo de foto, que é frequente.
+  let toastTimer = null;
+  function toast(msg, tipo) {
+    let box = $('#toast');
+    if (!box) {
+      box = h('div', { id: 'toast', class: 'toast', onclick: () => box.classList.remove('show') });
+      document.body.appendChild(box);
+    }
+    box.className = 'toast show' + (tipo ? ' toast-' + tipo : '');
+    box.textContent = msg;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => box.classList.remove('show'), tipo === 'error' ? 7000 : 4500);
+  }
+
   // etiqueta da fonte de um alimento (TACO/TBCA/USDA/meu/receita)
   function srcLabel(f) {
     if (!f) return '';
@@ -108,6 +140,8 @@ window.App = (function () {
     const parsed = window.Parser.parseText(ta.value);
     if (!parsed.length) return;
     const day = currentDay();
+    const mealSel = $('#meal-sel');
+    const meal = (mealSel && mealSel.value) || mealPorHora();
     // entradas novas no TOPO da lista (batch inteiro, mantendo a ordem interna)
     const novos = parsed.map(p => ({
       raw: p.raw,
@@ -117,6 +151,7 @@ window.App = (function () {
       conf: p.confidence,
       match: p.matchStatus,   // 'matched' | 'ambiguous' | 'not_found'
       note: primaryFlag(p),
+      meal,
     }));
     day.items.unshift(...novos);
     window.Store.save();
@@ -241,7 +276,7 @@ window.App = (function () {
       S = window.Store.get();
       refreshFoods();
       renderAll();
-      alert('Backup restaurado com sucesso! ✅');
+      toast('Backup restaurado com sucesso ✅', 'ok');
       return true;
     } catch (e) { alert('Erro ao restaurar: ' + e.message); return false; }
   }
@@ -253,7 +288,7 @@ window.App = (function () {
 
   // Redimensiona p/ máx `max` px e converte p/ JPEG (menos dados, mais
   // rápido). Rótulos usam 1600 px — letra miúda precisa de resolução.
-  function compressPhoto(file, max) {
+  function compressPhoto(file, max, qualidade) {
     return new Promise((resolve, reject) => {
       const url = URL.createObjectURL(file);
       const img = new Image();
@@ -265,7 +300,7 @@ window.App = (function () {
         canvas.width = Math.round(img.width * scale);
         canvas.height = Math.round(img.height * scale);
         canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        const dataUrl = canvas.toDataURL('image/jpeg', qualidade || 0.8);
         resolve(dataUrl.split(',')[1]); // só o base64, sem o prefixo data:
       };
       img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Não consegui ler a imagem.')); };
@@ -274,10 +309,14 @@ window.App = (function () {
   }
 
   async function analyzePhoto(base64, mode) {
+    // manda a lista de produtos com rótulo cadastrado: se a foto for a
+    // embalagem de um deles, o modelo devolve o nome e o app reaproveita
+    // o alimento já cadastrado (com os valores conferidos por você)
+    const produtos = (S.customFoods || []).filter(f => f.labelPhoto).map(f => f.name);
     const res = await fetch(S.settings.proxyUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-App-Token': S.settings.proxyToken },
-      body: JSON.stringify({ image: base64, mediaType: 'image/jpeg', mode: mode || 'refeicao' }),
+      body: JSON.stringify({ image: base64, mediaType: 'image/jpeg', mode: mode || 'refeicao', produtos }),
     });
     let data = null;
     try { data = await res.json(); } catch { /* resposta sem corpo */ }
@@ -324,17 +363,30 @@ window.App = (function () {
   function addPhotoItems(itens, observacao) {
     const day = currentDay();
     const novos = [];
+    let reconhecidos = 0;
     (itens || []).forEach(it => {
       if (!it || !it.nome || !(it.gramas > 0)) return;
-      const match = window.Parser.matchFood(it.nome);
+      // rótulo reconhecido? usa o alimento que VOCÊ cadastrou (valores já
+      // conferidos) em vez de casar por nome na base geral
+      let cadastrado = null;
+      if (it.produto) {
+        cadastrado = (S.customFoods || []).find(f => f.labelPhoto && f.name === it.produto);
+      }
+      const match = cadastrado
+        ? { foodId: cadastrado.id, status: 'matched' }
+        : window.Parser.matchFood(it.nome);
+      if (cadastrado) reconhecidos++;
       novos.push({
-        raw: '[foto] ' + it.nome,
-        foodText: it.nome,
+        raw: '[foto] ' + (cadastrado ? cadastrado.name : it.nome),
+        foodText: cadastrado ? cadastrado.name : it.nome,
         foodId: match.foodId,
         grams: Math.round(it.gramas),
         conf: 'estimate',
         match: match.status,
-        note: 'Estimado por foto (confiança ' + (it.confianca || 'baixa') + ') — confira alimento e gramas.',
+        note: cadastrado
+          ? 'Rótulo reconhecido: ' + cadastrado.name + ' — confira as gramas.'
+          : 'Estimado por foto (confiança ' + (it.confianca || 'baixa') + ') — confira alimento e gramas.',
+        meal: (($('#meal-sel') || {}).value) || mealPorHora(),
       });
     });
     const added = novos.length;
@@ -343,10 +395,11 @@ window.App = (function () {
     renderHoje();
     renderHist();
     let msgTxt = added
-      ? added + ' item(ns) adicionados pela foto como ESTIMATIVA — confira os alimentos e as gramas.'
+      ? '📷 ' + added + ' item(ns) adicionados como estimativa — confira alimentos e gramas.'
+        + (reconhecidos ? '\n🏷️ ' + reconhecidos + ' rótulo(s) reconhecido(s) do seu cadastro.' : '')
       : 'Nenhum alimento identificado na foto.';
-    if (observacao) msgTxt += '\n\nObservação do modelo: ' + observacao;
-    alert(msgTxt);
+    if (observacao) msgTxt += '\n' + observacao;
+    toast(msgTxt, added ? 'ok' : null);
     return added;
   }
 
@@ -359,7 +412,7 @@ window.App = (function () {
       const data = await analyzePhoto(base64);
       addPhotoItems(data.itens, data.observacao);
     } catch (err) {
-      alert('Não consegui analisar a foto: ' + err.message);
+      toast('Não consegui analisar a foto: ' + err.message, 'error');
     } finally {
       if (btn) { btn.disabled = false; btn.textContent = old; }
     }
@@ -439,13 +492,15 @@ window.App = (function () {
       h('label', { class: 'lbl', for: 'entry' }, 'O que você comeu? (uma linha por alimento)'),
       h('textarea', { id: 'entry', rows: '3', placeholder: '100 g patinho\n120g arroz\n1 ovo\nmeia xicara de feijao' }),
       h('div', { class: 'entry-actions' }, [
-        h('span', { class: 'hint' }, 'Ex.: “150 g frango”, “2 colheres de sopa de azeite”, “1 banana”'),
+        h('select', { id: 'meal-sel', class: 'meal-sel', title: 'Refeição' },
+          MEALS.map(m => h('option', { value: m.id, selected: m.id === mealPorHora() ? 'selected' : null }, m.nome))),
+        h('span', { class: 'hint' }, 'Ex.: “150 g frango”, “1 banana”'),
         photoInput,
         h('button', {
           class: 'btn', id: 'photo-btn', title: 'Registrar por foto (Fase 2)',
           onclick: () => {
             if (!S.settings.proxyUrl || !S.settings.proxyToken) {
-              alert('Para usar foto, configure o endereço do proxy e a senha do app na aba Dados (seção "Registro por foto").');
+              toast('Para usar foto, configure o proxy e a senha na aba Dados.', 'error');
               return;
             }
             photoInput.click();
@@ -462,12 +517,29 @@ window.App = (function () {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); addEntries(); }
     });
 
-    // ----- lista de itens -----
+    // ----- lista de itens, agrupada por refeição -----
     const list = h('div', { class: 'items' });
     if (!day.items.length) {
       list.appendChild(h('p', { class: 'empty' }, 'Nenhum item ainda. Escreva acima e toque em Adicionar.'));
+    } else {
+      // mantém a ordem de registro dentro de cada refeição; grupos vazios somem
+      const ordem = MEALS.map(m => m.id).concat('outros');
+      const porMeal = {};
+      day.items.forEach((item, idx) => {
+        const g = MEAL_NOMES[item.meal] ? item.meal : 'outros';
+        (porMeal[g] = porMeal[g] || []).push({ item, idx });
+      });
+      ordem.forEach(g => {
+        const grupo = porMeal[g];
+        if (!grupo || !grupo.length) return;
+        const tot = window.Nutrition.sumNutrients(grupo.map(x => itemNutrients(x.item)).filter(n => n.hasKcal));
+        list.appendChild(h('div', { class: 'meal-head' }, [
+          h('span', { class: 'meal-name' }, MEAL_NOMES[g]),
+          h('span', { class: 'meal-total' }, round(tot.kcal, 0) + ' kcal'),
+        ]));
+        grupo.forEach(x => list.appendChild(renderItem(x.item, x.idx)));
+      });
     }
-    day.items.forEach((item, idx) => list.appendChild(renderItem(item, idx)));
     root.appendChild(list);
 
     // ----- peso do dia -----
@@ -520,6 +592,13 @@ window.App = (function () {
     ]));
     row.appendChild(h('div', { class: 'item-controls' }, [
       h('div', { class: 'item-qty' }, [gramsInput, h('span', { class: 'unit' }, 'g')]),
+      h('select', {
+        class: 'item-meal', title: 'Mover para outra refeição',
+        onchange: e => { item.meal = e.target.value; window.Store.save(); renderHoje(); },
+      }, MEALS.map(m => h('option', {
+        value: m.id,
+        selected: (MEAL_NOMES[item.meal] ? item.meal : mealPorHora()) === m.id ? 'selected' : null,
+      }, m.nome))),
       h('div', { class: 'item-kcal' }, resolved && !noKcal ? round(n.kcal, 0) + ' kcal' : '—'),
     ]));
 
@@ -843,7 +922,13 @@ window.App = (function () {
     if (!plainFoods.length) cfList.appendChild(h('p', { class: 'empty' }, 'Nenhum alimento cadastrado ainda.'));
     plainFoods.forEach(f => {
       cfList.appendChild(h('div', { class: 'cf-item' }, [
-        h('div', {}, [h('strong', {}, f.name), h('div', { class: 'hint' }, `${f.kcal != null ? f.kcal : '—'} kcal · P${f.prot != null ? f.prot : '—'} C${f.carb != null ? f.carb : '—'} G${f.fat != null ? f.fat : '—'} /100g`)]),
+        h('div', { class: 'cf-info' }, [
+          f.labelPhoto ? h('img', { class: 'cf-thumb', src: f.labelPhoto, alt: 'rótulo', title: 'Foto do rótulo — a câmera reconhece este produto' }) : null,
+          h('div', {}, [
+            h('strong', {}, f.name),
+            h('div', { class: 'hint' }, `${f.kcal != null ? f.kcal : '—'} kcal · P${f.prot != null ? f.prot : '—'} C${f.carb != null ? f.carb : '—'} G${f.fat != null ? f.fat : '—'} /100g` + (f.labelPhoto ? ' · 🏷️ rótulo salvo' : '')),
+          ]),
+        ]),
         h('div', {}, [
           h('button', { class: 'link-btn', onclick: () => openCustomFoodForm('', done, f) }, 'editar'),
           h('button', { class: 'link-btn danger', onclick: () => { if (confirm('Remover ' + f.name + '?')) { window.Store.removeCustomFood(f.id); done(); } } }, 'remover'),
@@ -977,7 +1062,7 @@ window.App = (function () {
         S = window.Store.get();
         refreshFoods();
         renderAll();
-        alert('Importado com sucesso.');
+        toast('Importado com sucesso ✅', 'ok');
       } catch (err) {
         alert('Não consegui ler o arquivo: ' + err.message);
       }
@@ -1045,7 +1130,21 @@ window.App = (function () {
       i.dataset.key = key;
       return h('div', { class: 'field' }, [h('label', { class: 'lbl' }, label), i]);
     }
-    // foto da tabela nutricional → preenche os campos (modo rótulo do proxy)
+    // foto da tabela nutricional → preenche os campos E fica guardada como
+    // "foto do rótulo" deste alimento (miniatura), para que fotografar a
+    // embalagem depois já reconheça o produto cadastrado
+    let labelPhoto = (editing && editing.labelPhoto) || null;
+    const thumbBox = h('div', { class: 'label-thumb' });
+    const renderThumb = () => {
+      clear(thumbBox);
+      if (!labelPhoto) return;
+      thumbBox.appendChild(h('img', { src: labelPhoto, alt: 'Foto do rótulo' }));
+      thumbBox.appendChild(h('button', {
+        class: 'link-btn danger', onclick: () => { labelPhoto = null; renderThumb(); },
+      }, 'remover foto'));
+    };
+    renderThumb();
+
     const labelIn = h('input', {
       type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none',
       onchange: async e => {
@@ -1054,11 +1153,14 @@ window.App = (function () {
         scanBtn.disabled = true; const old = scanBtn.textContent; scanBtn.textContent = '⏳ lendo rótulo…';
         try {
           const b64 = await compressPhoto(f, 1600); // letra miúda pede resolução
+          // miniatura leve p/ guardar junto do alimento (localStorage é curto)
+          labelPhoto = 'data:image/jpeg;base64,' + (await compressPhoto(f, 320, 0.6));
+          renderThumb();
           const data = await analyzePhoto(b64, 'rotulo');
           const res = applyLabelToForm(data.rotulo, body);
-          alert(res.msg);
+          toast(res.msg, res.ok ? 'ok' : 'error');
         } catch (err) {
-          alert('Não consegui ler o rótulo: ' + err.message);
+          toast('Não consegui ler o rótulo: ' + err.message, 'error');
         }
         scanBtn.disabled = false; scanBtn.textContent = old;
       },
@@ -1067,7 +1169,7 @@ window.App = (function () {
       class: 'btn',
       onclick: () => {
         if (!S.settings.proxyUrl || !S.settings.proxyToken) {
-          alert('Para ler rótulo por foto, configure o proxy na aba Dados (seção "Registro por foto").');
+          toast('Para ler rótulo por foto, configure o proxy na aba Dados.', 'error');
           return;
         }
         labelIn.click();
@@ -1082,6 +1184,7 @@ window.App = (function () {
     const body = h('div', {}, [
       inp('name', 'Nome do alimento'),
       h('div', { class: 'btn-row' }, [scanBtn, labelIn]),
+      thumbBox,
       h('div', { class: 'form-grid' }, [
         inp('kcal', 'kcal /100g', '1'), inp('prot', 'Proteína /100g'),
         inp('carb', 'Carbo /100g'), inp('fat', 'Gordura /100g'),
@@ -1105,14 +1208,16 @@ window.App = (function () {
               window.Store.updateCustomFood(editing.id, {
                 name: data.name.trim(),
                 kcal: numOrNull(data.kcal), prot: numOrNull(data.prot), carb: numOrNull(data.carb), fat: numOrNull(data.fat), fiber: numOrNull(data.fiber),
+                labelPhoto: labelPhoto,
               });
               refreshFoods(); m.close(); onSaved && onSaved(editing.id);
             } else {
+              data.labelPhoto = labelPhoto;
               const rec = window.Store.addCustomFood(data);
               refreshFoods(); m.close(); onSaved && onSaved(rec.id);
               if (podeCompartilhar && shareChk.checked) {
                 shareFood(rec).then(r => {
-                  if (!r.ok) alert('Salvo no seu aparelho, mas NÃO compartilhado na base comum: ' + r.detail);
+                  if (!r.ok) toast('Salvo aqui, mas não compartilhado: ' + r.detail, 'error');
                 });
               }
             }
@@ -1189,7 +1294,7 @@ window.App = (function () {
       onchange: async e => {
         const f = e.target.files[0]; e.target.value = '';
         if (!f) return;
-        if (!S.settings.proxyUrl || !S.settings.proxyToken) { alert('Para usar foto, configure o proxy na aba Dados.'); return; }
+        if (!S.settings.proxyUrl || !S.settings.proxyToken) { toast('Para usar foto, configure o proxy na aba Dados.', 'error'); return; }
         photoBtn.disabled = true; const old = photoBtn.textContent; photoBtn.textContent = '⏳…';
         try {
           const b64 = await compressPhoto(f);
@@ -1199,8 +1304,8 @@ window.App = (function () {
             const m = window.Parser.matchFood(it.nome);
             ings.push({ foodText: it.nome, foodId: m.foodId, grams: Math.round(it.gramas), match: m.status });
           });
-          if (data.observacao) alert('Observação do modelo: ' + data.observacao);
-        } catch (err) { alert('Não consegui analisar a foto: ' + err.message); }
+          if (data.observacao) toast(data.observacao);
+        } catch (err) { toast('Não consegui analisar a foto: ' + err.message, 'error'); }
         photoBtn.disabled = false; photoBtn.textContent = old;
         renderRows();
       },
