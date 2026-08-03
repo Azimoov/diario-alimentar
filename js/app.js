@@ -526,15 +526,36 @@ window.App = (function () {
         const g = MEAL_NOMES[item.meal] ? item.meal : 'outros';
         (porMeal[g] = porMeal[g] || []).push({ item, idx });
       });
+      // cada refeição é uma "janela" própria que abre/fecha; o app lembra
+      // quais você deixou fechadas
+      const fechadas = S.settings.mealsFechados || [];
       ordem.forEach(g => {
         const grupo = porMeal[g];
         if (!grupo || !grupo.length) return;
         const tot = window.Nutrition.sumNutrients(grupo.map(x => itemNutrients(x.item)).filter(n => n.hasKcal));
-        list.appendChild(h('div', { class: 'meal-head' }, [
-          h('span', { class: 'meal-name' }, MEAL_NOMES[g]),
-          h('span', { class: 'meal-total' }, round(tot.kcal, 0) + ' kcal'),
-        ]));
-        grupo.forEach(x => list.appendChild(renderItem(x.item, x.idx)));
+        const corpo = h('div', { class: 'meal-body' });
+        grupo.forEach(x => corpo.appendChild(renderItem(x.item, x.idx)));
+        const det = h('details', {
+          class: 'meal-group',
+          open: fechadas.indexOf(g) === -1 ? 'open' : null,
+          ontoggle: e => {
+            const lista = (S.settings.mealsFechados || []).filter(x => x !== g);
+            if (!e.target.open) lista.push(g);
+            S.settings.mealsFechados = lista;
+            window.Store.save();
+          },
+        }, [
+          h('summary', { class: 'meal-head' }, [
+            h('span', { class: 'meal-chev' }, '›'),
+            h('span', { class: 'meal-name' }, MEAL_NOMES[g]),
+            h('span', { class: 'meal-meta' }, [
+              h('span', {}, grupo.length + (grupo.length > 1 ? ' itens' : ' item')),
+              h('span', { class: 'meal-total' }, round(tot.kcal, 0) + ' kcal'),
+            ]),
+          ]),
+          corpo,
+        ]);
+        list.appendChild(det);
       });
     }
     root.appendChild(list);
