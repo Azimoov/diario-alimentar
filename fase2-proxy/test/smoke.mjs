@@ -370,6 +370,39 @@ mock.listen(MOCK_PORT, async () => {
       method: "GET", headers: { Origin: ORIGIN, "X-Session": sessao },
     }), ENV), 401);
 
+    // ---- MAIL_TO_OVERRIDE: recuperação de OUTRA pessoa cai na caixa do dono ----
+    {
+      const EMAIL_OUTRO = "maria@example.com";
+      const akMaria = await derivarAuthKey(EMAIL_OUTRO, "senha-da-maria");
+      await worker.fetch(authReq("signup", { email: EMAIL_OUTRO, authKey: akMaria, invite: "convite-maria" }), ENV);
+      emailsEnviados.length = 0;
+      const ENV_OVERRIDE = { ...ENV, MAIL_TO_OVERRIDE: "dono@example.com" };
+      await check("forgot de outra conta com override", worker.fetch(authReq("forgot", { email: EMAIL_OUTRO }), ENV_OVERRIDE), 200);
+      const msg = emailsEnviados[emailsEnviados.length - 1];
+      const okDestino = msg && msg.to[0] === "dono@example.com";
+      const okIdentifica = msg && msg.subject.includes(EMAIL_OUTRO) && (msg.text || "").includes(EMAIL_OUTRO);
+      const temLink = msg && /#recuperar=([0-9a-f]{64})/.test(msg.text || "");
+      console.log(`${okDestino && okIdentifica && temLink ? "PASS" : "FAIL"}  override manda p/ o dono dizendo de quem é a conta`);
+      if (!(okDestino && okIdentifica && temLink)) { failed++; console.log("      msg:", JSON.stringify(msg)); }
+
+      // o link redirecionado funciona de verdade e é da conta certa
+      const tk = (/#recuperar=([0-9a-f]{64})/.exec(msg.text || "") || [])[1];
+      const akNovaMaria = await derivarAuthKey(EMAIL_OUTRO, "maria-senha-nova");
+      await check("link repassado redefine a senha da pessoa certa",
+        worker.fetch(authReq("reset", { token: tk, authKey: akNovaMaria }), ENV_OVERRIDE), 200,
+        (res, body) => body.email === EMAIL_OUTRO || "conta errada");
+      await check("a pessoa entra com a senha nova",
+        worker.fetch(authReq("login", { email: EMAIL_OUTRO, authKey: akNovaMaria }), ENV), 200);
+
+      // sem override, volta a ir para o e-mail da própria pessoa
+      emailsEnviados.length = 0;
+      await check("sem override vai p/ o e-mail da conta", worker.fetch(authReq("forgot", { email: EMAIL_OUTRO }), ENV), 200);
+      const msg2 = emailsEnviados[emailsEnviados.length - 1];
+      const ok2 = msg2 && msg2.to[0] === EMAIL_OUTRO;
+      console.log(`${ok2 ? "PASS" : "FAIL"}  sem override o destino é a própria pessoa`);
+      if (!ok2) failed++;
+    }
+
     // ---- rate-limit de cadastro: protege o convite de força bruta ----
     {
       const IP_FIXO = "203.0.113.9";

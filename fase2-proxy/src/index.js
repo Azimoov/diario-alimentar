@@ -388,6 +388,17 @@ async function novaSessao(env, uid) {
   return token;
 }
 
+// Para onde o e-mail de recuperação realmente vai.
+// MAIL_TO_OVERRIDE existe por causa de uma limitação de quem envia: sem um
+// domínio verificado, o Resend só entrega no endereço do dono da conta. Com
+// essa variável, TODAS as recuperações caem numa caixa só (a do dono), que
+// repassa o link. Funciona, mas quem recebe consegue entrar na conta alheia
+// — por isso fica desligado por padrão e o texto avisa de quem é o pedido.
+function destinoDoEmail(env, emailDaConta) {
+  const forcado = (env.MAIL_TO_OVERRIDE || "").trim();
+  return forcado || emailDaConta;
+}
+
 async function enviarEmail(env, to, subject, text) {
   if (!env.RESEND_API_KEY) return { ok: false, detail: "RESEND_API_KEY não configurada no Worker." };
   // RESEND_API_URL só existe p/ os testes locais apontarem para um mock
@@ -498,10 +509,20 @@ async function handleAuth(request, env, json, url, ip) {
     );
     const base = (env.APP_BASE_URL || "https://azimoov.github.io/diario-alimentar/").replace(/#.*$/, "");
     const link = base + "#recuperar=" + token;
-    const envio = await enviarEmail(env, acct.email, "Redefinir sua senha do Highlander",
-      "Você pediu para redefinir a senha do Highlander.\n\n"
-      + "Abra este link no seu aparelho (vale por 30 minutos):\n" + link + "\n\n"
-      + "Se não foi você, ignore este e-mail — nada muda.\n");
+    const destino = destinoDoEmail(env, acct.email);
+    const paraTerceiro = destino !== acct.email;
+    const envio = paraTerceiro
+      ? await enviarEmail(env, destino, "Recuperação de senha do Highlander — conta " + acct.email,
+        "Pedido de nova senha da conta " + acct.email + ".\n\n"
+        + "Você está recebendo porque o servidor está configurado para mandar todas as\n"
+        + "recuperações para este endereço. Repasse o link abaixo para a pessoa:\n\n"
+        + link + "\n\n"
+        + "O link vale 30 minutos e funciona UMA vez. Ao abri-lo, quem estiver com ele\n"
+        + "define a senha e entra na conta — então repasse só se o pedido for legítimo.\n")
+      : await enviarEmail(env, destino, "Redefinir sua senha do Highlander",
+        "Você pediu para redefinir a senha do Highlander.\n\n"
+        + "Abra este link no seu aparelho (vale por 30 minutos):\n" + link + "\n\n"
+        + "Se não foi você, ignore este e-mail — nada muda.\n");
     if (!envio.ok) return json({ error: "mail_failed", detail: envio.detail }, 502);
     return json(resposta);
   }

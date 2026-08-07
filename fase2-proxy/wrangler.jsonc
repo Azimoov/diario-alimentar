@@ -35,6 +35,12 @@
     // remetente dos e-mails de recuperação. Precisa ser um domínio verificado
     // no Resend; "onboarding@resend.dev" só envia para o seu próprio e-mail.
     "MAIL_FROM": "Highlander <onboarding@resend.dev>",
+    // Solução TEMPORÁRIA p/ quem ainda não verificou um domínio: manda TODAS
+    // as recuperações para este endereço, que repassa o link à pessoa. Deixe
+    // "" quando tiver domínio verificado — aí cada um recebe o próprio.
+    // ⚠ quem recebe consegue entrar na conta alheia: só use com gente de
+    // confiança, e prefira verificar um domínio.
+    "MAIL_TO_OVERRIDE": "",
     // endereço do app, usado no link de recuperação enviado por e-mail
     "APP_BASE_URL": "https://azimoov.github.io/diario-alimentar/"
   },

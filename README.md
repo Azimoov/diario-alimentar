@@ -326,6 +326,20 @@ Detalhes que sustentam isso:
 **Quem pode entrar:** criar conta exige o `INVITE_CODE` — passe o código para
 quem você quiser incluir. Para fechar a porta, troque o segredo
 (`npx wrangler secret put INVITE_CODE`); contas já criadas continuam valendo.
+Fora o convite, a pessoa não precisa de mais nada: abre o link, cria a conta
+com o e-mail e a senha dela, e usa.
+
+**E-mail de recuperação para outras pessoas.** No Resend, sem um domínio
+verificado só é possível entregar no endereço do dono da conta do Resend.
+Duas saídas:
+
+- **Verificar um domínio** (recomendado) — em Domains → Add Domain, colar uns
+  registros DNS. Depois ajuste `MAIL_FROM` para esse domínio e cada pessoa
+  passa a receber a própria recuperação. É o jeito certo e a entrega é boa.
+- **`MAIL_TO_OVERRIDE`** (paliativo) — todas as recuperações vão para um
+  endereço só, que repassa o link. O e-mail diz de qual conta é o pedido.
+  ⚠ Quem recebe o link **entra na conta da pessoa** — use só com gente de
+  confiança e desligue (`""`) assim que tiver domínio.
 
 **Custo (foto e análise) é de quem mantém o servidor**, pois a chave da API é
 dele. Proteções: `PHOTO_DAILY_LIMIT` (padrão 60/dia para o grupo),
