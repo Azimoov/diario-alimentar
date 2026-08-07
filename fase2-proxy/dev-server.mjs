@@ -18,6 +18,12 @@ const MOCK_MAIL = PORT + 101;
 
 // ---- API da Anthropic simulada -------------------------------------------
 createServer((req, res) => {
+  // validação de chave: aceita qualquer sk-ant-… (é tudo local e sem custo)
+  if (req.method === "GET" && req.url.startsWith("/v1/models")) {
+    const ok = String(req.headers["x-api-key"] || "").startsWith("sk-ant-");
+    res.writeHead(ok ? 200 : 401, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify(ok ? { data: [] } : { error: { message: "invalid x-api-key" } }));
+  }
   let d = "";
   req.on("data", (c) => (d += c));
   req.on("end", () => {

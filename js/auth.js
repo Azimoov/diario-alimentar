@@ -182,6 +182,11 @@ window.Auth = (function () {
     return true;
   }
 
+  // ---- chave da API da própria pessoa (fica só no servidor, cifrada) ----
+  async function statusChave() { return chamar('/account/apikey', { method: 'GET' }); }
+  async function salvarChave(apiKey) { return chamar('/account/apikey', { method: 'PUT', body: { apiKey } }); }
+  async function removerChave() { return chamar('/account/apikey', { method: 'DELETE' }); }
+
   // Envio com atraso: junta várias edições seguidas num só envio.
   //
   // TRAVA IMPORTANTE: nada é enviado antes de `liberarEnvio()`. Ao abrir o
@@ -223,6 +228,7 @@ window.Auth = (function () {
     logado, email, conta, podeUsarProxy, cabecalhosProxy, urlProxy,
     criarConta, entrar, esqueciSenha, redefinirSenha, trocarSenha, sair, validarSessao,
     baixarDados, enviarDados, agendarEnvio, temPendencia, liberarEnvio, travarEnvio,
+    statusChave, salvarChave, removerChave,
     tokenDeRecuperacao, limparHash, derivarAuthKey,
   };
 })();

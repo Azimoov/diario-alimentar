@@ -1123,6 +1123,7 @@ window.App = (function () {
 
     // conta primeiro: é o caminho recomendado para não perder dados
     root.appendChild(renderContaCard());
+    root.appendChild(renderChaveCard());
 
     // export/import + backup automático na nuvem
     const st0 = S.settings;
@@ -1163,8 +1164,8 @@ window.App = (function () {
     root.appendChild(h('div', { class: 'card' }, [
       h('h3', {}, '⚙️ Servidor (avançado)'),
       h('p', { class: 'note' }, window.Auth.logado()
-        ? 'Você está logado — foto, leitura de rótulo e análise já funcionam, nada a preencher aqui. Estes campos só servem para apontar o app para OUTRO servidor, ou para usar o backup sigiloso acima.'
-        : 'Só preencha se você não vai usar conta: endereço de um proxy próprio e a senha dele. Com conta, isto fica em branco e tudo funciona. A chave da API fica sempre no servidor, nunca aqui.'),
+        ? 'Nada a preencher aqui: com a conta e a sua chave acima, tudo já funciona. Estes campos só servem para apontar o app para OUTRO servidor, ou para usar o backup sigiloso acima.'
+        : 'Só preencha se você não vai usar conta: endereço de um proxy próprio e a senha dele. Com conta, isto fica em branco e tudo funciona.'),
       h('div', { class: 'field' }, [
         h('label', { class: 'lbl' }, 'Endereço do servidor (em branco = o padrão do app)'),
         h('input', {
@@ -1863,7 +1864,11 @@ window.App = (function () {
           body: JSON.stringify({ dados: payload }),
         });
         const data = await res.json().catch(() => null);
-        if (!res.ok) throw new Error((data && (data.detail || data.error)) || 'HTTP ' + res.status);
+        if (!res.ok) {
+          const e = new Error((data && (data.detail || data.error)) || 'HTTP ' + res.status);
+          e.semChave = res.status === 402;
+          throw e;
+        }
         S.analysis = { at: new Date().toISOString(), text: data.analise || '', modelo: data.modelo || '' };
         window.Store.save();
         scheduleBackup();   // a análise também vai p/ a nuvem
@@ -1871,13 +1876,16 @@ window.App = (function () {
         renderExLab(); renderExImg(); renderSaude(); // atualiza o "ver última" dos cards
       } catch (err) {
         out.appendChild(h('p', { class: 'note', style: 'color:var(--danger)' }, 'Não consegui analisar: ' + err.message));
+        if (err.semChave) {
+          out.appendChild(h('button', { class: 'btn', onclick: () => { m.close(); goTo('diario', 'dados'); } }, '🔑 Cadastrar minha chave'));
+        }
       }
       goBtn.disabled = false;
       goBtn.textContent = '🔎 Analisar agora';
     });
-    modal('Análise inteligente', h('div', {}, [
-      h('p', { class: 'note' }, 'O app monta um resumo em números — ' + resumo + ' — e envia para o SEU proxy, que consulta a IA. Nomes, fotos e textos fora disso não vão junto.'),
-      h('p', { class: 'hint' }, 'A resposta é apoio para conversar com médico/nutricionista, NÃO diagnóstico. Cada análise custa centavos na sua conta da API.'),
+    const m = modal('Análise inteligente', h('div', {}, [
+      h('p', { class: 'note' }, 'O app monta um resumo em números — ' + resumo + ' — e envia para o servidor, que consulta a IA com a SUA chave. Nomes, fotos e textos fora disso não vão junto.'),
+      h('p', { class: 'hint' }, 'A resposta é apoio para conversar com médico/nutricionista, NÃO diagnóstico. Cada análise custa centavos na sua conta da Anthropic.'),
       h('div', { class: 'btn-row' }, [goBtn]),
       out,
     ]));
@@ -2165,6 +2173,77 @@ window.App = (function () {
     corpo.appendChild(h('div', { class: 'btn-row' }, [btn]));
     corpo.appendChild(msg);
     return m;
+  }
+
+  // ---- cartão da chave da API (uma por pessoa) ----
+  // Cada conta usa a PRÓPRIA chave: o custo de foto e análise cai em quem
+  // usa, não em quem hospeda o app. A chave fica cifrada no servidor e nunca
+  // volta inteira para o navegador nem entra no backup.
+  function renderChaveCard() {
+    const card = h('div', { class: 'card' }, [h('h3', {}, '🔑 Sua chave da Anthropic')]);
+    if (!window.Auth.logado()) {
+      card.appendChild(h('p', { class: 'note' }, 'Entre na sua conta para cadastrar sua chave. Ela é o que faz a foto e a análise funcionarem — e o custo vai para a SUA conta da Anthropic.'));
+      return card;
+    }
+    const status = h('p', { class: 'hint' }, 'Verificando…');
+    const input = h('input', { type: 'password', class: 'in', placeholder: 'sk-ant-…', autocomplete: 'off' });
+    const msg = h('p', { class: 'auth-msg' });
+    const acoes = h('div', { class: 'btn-row' });
+
+    const pintar = (st) => {
+      if (st.configured) {
+        status.className = 'hint';
+        status.textContent = '✅ Chave cadastrada (final …' + st.hint + ')'
+          + (st.updatedAt ? ' · desde ' + new Date(st.updatedAt).toLocaleDateString('pt-BR') : '');
+      } else {
+        status.className = 'hint comp-warn';
+        status.textContent = '⚠ Sem chave: foto, leitura de rótulo e análise não vão funcionar até você cadastrar a sua.';
+      }
+      clear(acoes);
+      const btn = h('button', { class: 'btn primary' }, st.configured ? 'Trocar a chave' : 'Salvar chave');
+      btn.addEventListener('click', async () => {
+        msg.className = 'auth-msg'; msg.textContent = '⏳ testando a chave na Anthropic…';
+        btn.disabled = true;
+        try {
+          await window.Auth.salvarChave(input.value.trim());
+          input.value = '';
+          msg.className = 'auth-msg ok'; msg.textContent = '✅ Chave válida e guardada.';
+          pintar(await window.Auth.statusChave());
+        } catch (e) {
+          msg.className = 'auth-msg erro'; msg.textContent = '⚠ ' + e.message;
+        }
+        btn.disabled = false;
+      });
+      acoes.appendChild(btn);
+      if (st.configured) {
+        acoes.appendChild(h('button', {
+          class: 'btn danger', onclick: async () => {
+            if (!confirm('Remover sua chave? Foto e análise param de funcionar até você cadastrar outra.')) return;
+            try { await window.Auth.removerChave(); pintar(await window.Auth.statusChave()); msg.textContent = ''; }
+            catch (e) { msg.className = 'auth-msg erro'; msg.textContent = '⚠ ' + e.message; }
+          },
+        }, 'Remover'));
+      }
+    };
+
+    card.appendChild(h('p', { class: 'note' }, 'A foto e a análise usam inteligência artificial, que é paga por uso. Cada pessoa cadastra a própria chave e paga só o que usar — normalmente centavos por foto.'));
+    card.appendChild(h('ol', { class: 'import-steps' }, [
+      h('li', {}, [ 'Crie uma conta em ', h('a', { href: 'https://console.anthropic.com', target: '_blank', rel: 'noopener' }, 'console.anthropic.com'), ' e coloque créditos (US$ 5 já duram bastante).' ]),
+      h('li', {}, 'Em API Keys, crie uma chave e copie (começa com sk-ant-).'),
+      h('li', {}, 'Cole abaixo e salve — o app testa na hora se ela funciona.'),
+    ]));
+    card.appendChild(status);
+    card.appendChild(h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Chave da API'), input]));
+    card.appendChild(acoes);
+    card.appendChild(msg);
+    card.appendChild(h('p', { class: 'hint' }, 'A chave fica guardada cifrada no servidor, não sai no backup e nunca é mostrada inteira de volta. Defina um limite de gasto no console da Anthropic para dormir tranquilo.'));
+
+    window.Auth.statusChave().then(pintar).catch(e => {
+      status.className = 'hint comp-warn';
+      status.textContent = '⚠ Não consegui verificar: ' + e.message;
+      clear(acoes);
+    });
+    return card;
   }
 
   // ---- cartão da conta na aba Dados ----

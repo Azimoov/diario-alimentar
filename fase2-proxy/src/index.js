@@ -216,11 +216,10 @@ Regras de honestidade (crítico):
 - Métricas de relógio são estimativas de sensor; trate como tendência, não medida exata.
 - Em PARA LEVAR AO MÉDICO, liste perguntas e temas concretos (incluindo exames com lembrete vencido), sem alarmismo.`;
 
-async function handleAnalyze(request, env, json) {
+async function handleAnalyze(request, env, json, uid) {
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-  if (!env.ANTHROPIC_API_KEY) {
-    return json({ error: "server_not_configured", detail: "ANTHROPIC_API_KEY não configurada no Worker." }, 500);
-  }
+  const cred = await resolverChave(env, uid);
+  if (cred.erro) return json(cred.erro, cred.erro.error === "no_api_key" ? 402 : 500);
   const ip = request.headers.get("CF-Connecting-IP") || "?";
   if (rateLimited("analyze:" + ip, 6)) return json({ error: "rate_limited", detail: "Muitas análises em pouco tempo — aguarde um minuto." }, 429);
 
@@ -231,21 +230,22 @@ async function handleAnalyze(request, env, json) {
   const texto = JSON.stringify(dados);
   if (texto.length > 200_000) return json({ error: "data_too_large", detail: "Resumo grande demais (~200 KB máx)." }, 413);
 
-  // limite diário próprio (proteção de custo, separado do de fotos)
+  // limite diário — por CONTA quando há login (cada um protege o próprio
+  // bolso), global no caminho legado da senha do app
   if (env.DIARIO_KV) {
     const tz = env.TIMEZONE || "America/Sao_Paulo";
     const day = new Date().toLocaleDateString("en-CA", { timeZone: tz });
-    const quotaKey = "analises:" + day;
+    const quotaKey = "analises:" + (uid ? uid + ":" : "") + day;
     const used = parseInt((await env.DIARIO_KV.get(quotaKey)) || "0", 10);
     const limit = parseInt(env.ANALYSIS_DAILY_LIMIT || "20", 10);
     if (used >= limit) {
-      return json({ error: "daily_limit", detail: `Limite diário de ${limit} análises do grupo atingido — tente amanhã.` }, 429);
+      return json({ error: "daily_limit", detail: `Limite de ${limit} análises por dia atingido — tente amanhã.` }, 429);
     }
     await env.DIARIO_KV.put(quotaKey, String(used + 1), { expirationTtl: 172800 });
   }
 
   const client = new Anthropic({
-    apiKey: env.ANTHROPIC_API_KEY,
+    apiKey: cred.chave,
     baseURL: env.ANTHROPIC_BASE_URL || undefined,
     fetch: globalThis.fetch.bind(globalThis),
   });
@@ -360,6 +360,90 @@ async function decryptText(env, uid, rec) {
   const key = await userDataKey(env, uid);
   const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64ToBuf(rec.iv) }, key, b64ToBuf(rec.blob));
   return new TextDecoder().decode(pt);
+}
+
+// ---- chave da API DE CADA PESSOA (BYOK) ----------------------------------
+// Cada conta guarda a própria chave da Anthropic, cifrada com a chave de
+// dados daquele usuário. Assim o custo de foto/análise cai na conta de quem
+// usa, não na de quem hospeda. A chave NUNCA volta para o navegador (só um
+// pedacinho do fim, p/ a pessoa reconhecer qual é) e NUNCA entra no backup.
+async function getUserApiKey(env, uid) {
+  const raw = await env.DIARIO_KV.get("apikey:" + uid);
+  if (!raw) return null;
+  try {
+    const rec = JSON.parse(raw);
+    return { chave: await decryptText(env, uid, rec), hint: rec.hint, updatedAt: rec.updatedAt };
+  } catch { return null; }
+}
+async function setUserApiKey(env, uid, chave) {
+  const cif = await encryptText(env, uid, chave);
+  await env.DIARIO_KV.put("apikey:" + uid, JSON.stringify({
+    ...cif, hint: chave.slice(-4), updatedAt: new Date().toISOString(),
+  }));
+}
+// confere a chave contra a própria API antes de guardar (evita descobrir que
+// está errada só na hora de tirar a foto). GET /v1/models é barato.
+async function validarChaveAnthropic(env, chave) {
+  const base = (env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/+$/, "");
+  let res;
+  try {
+    res = await fetch(base + "/v1/models?limit=1", {
+      headers: { "x-api-key": chave, "anthropic-version": "2023-06-01" },
+    });
+  } catch (e) {
+    return { ok: false, detail: "Não consegui falar com a API da Anthropic agora. Tente de novo." };
+  }
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, detail: "A Anthropic recusou esta chave. Confira se copiou inteira e se ela não foi revogada." };
+  }
+  if (!res.ok) return { ok: false, detail: "A API respondeu HTTP " + res.status + " ao testar a chave." };
+  return { ok: true };
+}
+
+async function handleApiKey(request, env, json, uid) {
+  if (!env.DIARIO_KV) return json({ error: "server_not_configured", detail: "KV não configurado." }, 500);
+
+  if (request.method === "GET") {
+    const k = await getUserApiKey(env, uid);
+    return json({ configured: !!k, hint: k ? k.hint : null, updatedAt: k ? k.updatedAt : null });
+  }
+
+  if (request.method === "PUT" || request.method === "POST") {
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
+    const chave = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+    if (!/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(chave)) {
+      return json({ error: "invalid_key", detail: "Isso não parece uma chave da Anthropic (ela começa com sk-ant-)." }, 400);
+    }
+    const teste = await validarChaveAnthropic(env, chave);
+    if (!teste.ok) return json({ error: "key_rejected", detail: teste.detail }, 400);
+    await setUserApiKey(env, uid, chave);
+    return json({ ok: true, hint: chave.slice(-4) });
+  }
+
+  if (request.method === "DELETE") {
+    await env.DIARIO_KV.delete("apikey:" + uid);
+    return json({ ok: true });
+  }
+
+  return json({ error: "method_not_allowed" }, 405);
+}
+
+// Qual chave usar nesta requisição: a da conta de quem chamou. O caminho
+// legado (senha do app, sem conta) continua usando a chave do servidor.
+async function resolverChave(env, uid) {
+  if (uid) {
+    const k = await getUserApiKey(env, uid);
+    if (k && k.chave) return { chave: k.chave, dona: "conta" };
+    return {
+      erro: {
+        error: "no_api_key",
+        detail: "Sua conta ainda não tem uma chave da API. Vá em Diário → Dados → Sua chave da Anthropic e cadastre a sua — o custo das fotos e análises cai na sua conta, não na de quem hospeda o app.",
+      },
+    };
+  }
+  if (env.ANTHROPIC_API_KEY) return { chave: env.ANTHROPIC_API_KEY, dona: "servidor" };
+  return { erro: { error: "server_not_configured", detail: "Sem chave da API disponível." } };
 }
 
 async function getAccount(env, uid) {
@@ -678,12 +762,17 @@ export default {
     if (url.pathname === "/foods") return handleFoods(request, env, json, uid || givenToken, url);
 
     // ---- análise inteligente (exames × dieta × métricas do app) ----
-    if (url.pathname === "/analyze") return handleAnalyze(request, env, json);
+    if (url.pathname === "/analyze") return handleAnalyze(request, env, json, uid);
+
+    // ---- chave da API da própria pessoa (BYOK) ----
+    if (url.pathname === "/account/apikey") {
+      if (!uid) return json({ error: "no_session", detail: "Esta rota exige login por conta." }, 401);
+      return handleApiKey(request, env, json, uid);
+    }
 
     if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-    if (!env.ANTHROPIC_API_KEY) {
-      return json({ error: "server_not_configured", detail: "ANTHROPIC_API_KEY não configurada no Worker." }, 500);
-    }
+    const cred = await resolverChave(env, uid);
+    if (cred.erro) return json(cred.erro, cred.erro.error === "no_api_key" ? 402 : 500);
 
     if (rateLimited(ip)) return json({ error: "rate_limited", detail: "Muitas fotos em pouco tempo — aguarde um minuto." }, 429);
 
@@ -696,26 +785,27 @@ export default {
     if (image.length > 7_000_000) return json({ error: "image_too_large", detail: "Imagem grande demais (~5 MB máx)." }, 413);
     if (!okTypes.includes(mediaType)) return json({ error: "unsupported_media_type" }, 415);
 
-    // Limite diário de fotos do grupo inteiro (proteção de custo).
+    // Limite diário de fotos — por CONTA quando há login (cada um protege o
+    // próprio bolso), global no caminho legado da senha do app.
     // Best-effort (KV é eventualmente consistente) — a trava definitiva é o
     // limite de gasto no console da Anthropic.
     if (env.DIARIO_KV) {
       const tz = env.TIMEZONE || "America/Sao_Paulo";
       const day = new Date().toLocaleDateString("en-CA", { timeZone: tz });
-      const quotaKey = "fotos:" + day;
+      const quotaKey = "fotos:" + (uid ? uid + ":" : "") + day;
       const used = parseInt((await env.DIARIO_KV.get(quotaKey)) || "0", 10);
       const limit = parseInt(env.PHOTO_DAILY_LIMIT || "60", 10);
       if (used >= limit) {
         return json({
           error: "daily_limit",
-          detail: `Limite diário de ${limit} fotos do grupo atingido — volta amanhã ou registre por texto.`,
+          detail: `Limite de ${limit} fotos por dia atingido — volta amanhã ou registre por texto.`,
         }, 429);
       }
       await env.DIARIO_KV.put(quotaKey, String(used + 1), { expirationTtl: 172800 });
     }
 
     const client = new Anthropic({
-      apiKey: env.ANTHROPIC_API_KEY,
+      apiKey: cred.chave,
       // ANTHROPIC_BASE_URL só é usado nos testes locais (mock); em produção fica indefinida
       baseURL: env.ANTHROPIC_BASE_URL || undefined,
       // Workers + nodejs_compat: sem isto o SDK pode tentar o caminho de rede

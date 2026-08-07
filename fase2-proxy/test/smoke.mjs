@@ -5,9 +5,19 @@ import { createServer } from "node:http";
 import worker from "../src/index.js";
 
 const MOCK_PORT = 8125;
+// chaves fictícias: a "boa" é aceita pelo mock de validação, a outra não
+const CHAVE_BOA = "sk-ant-api03-CHAVE-DE-TESTE-VALIDA-0000000000";
+const CHAVE_RUIM = "sk-ant-api03-CHAVE-DE-TESTE-REVOGADA-000000";
 
 // --- mock da API /v1/messages ---------------------------------------------
 const mock = createServer((req, res) => {
+  // validação de chave (GET /v1/models): aceita só a chave "boa" do teste
+  if (req.method === "GET" && req.url.startsWith("/v1/models")) {
+    const k = req.headers["x-api-key"];
+    const ok = k === CHAVE_BOA;
+    res.writeHead(ok ? 200 : 401, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify(ok ? { data: [] } : { error: { message: "invalid x-api-key" } }));
+  }
   let data = "";
   req.on("data", (c) => (data += c));
   req.on("end", () => {
@@ -304,14 +314,16 @@ mock.listen(MOCK_PORT, async () => {
     }
     await check("dados grandes demais", worker.fetch(dataReq({ body: { state: "x".repeat(8_000_001) } }), ENV), 413);
 
-    // ---- foto/análise funcionam SÓ com a sessão (zero configuração) ----
+    // ---- a sessão SOZINHA já autentica (sem senha do app). Passar daqui
+    // depende só da chave própria da conta, testada na seção BYOK. ----
     {
       const fotoComSessao = new Request("https://proxy.example/", {
         method: "POST",
         headers: { "Content-Type": "application/json", Origin: ORIGIN, "X-Session": sessao },
         body: JSON.stringify({ image: IMG, mediaType: "image/jpeg" }),
       });
-      await check("foto autenticada pela sessão", worker.fetch(fotoComSessao, ENV), 200);
+      await check("sessão autentica a foto (sem senha do app)", worker.fetch(fotoComSessao, ENV), 402,
+        (res, body) => body.error === "no_api_key" || "deveria passar da autenticação e parar só na chave");
     }
 
     // ---- recuperação de senha por e-mail ----
@@ -369,6 +381,68 @@ mock.listen(MOCK_PORT, async () => {
     await check("backup legado não aceita só sessão", worker.fetch(new Request("https://proxy.example/backup", {
       method: "GET", headers: { Origin: ORIGIN, "X-Session": sessao },
     }), ENV), 401);
+
+    // =====================================================================
+    // BYOK: cada conta usa a PRÓPRIA chave da Anthropic
+    // =====================================================================
+    const keyReq = (opts = {}) => new Request("https://proxy.example/account/apikey", {
+      method: opts.method || "PUT",
+      headers: {
+        "Content-Type": "application/json", Origin: ORIGIN,
+        ...(opts.session !== null ? { "X-Session": opts.session || sessao } : {}),
+      },
+      body: (opts.method === "GET" || opts.method === "DELETE") ? undefined
+        : JSON.stringify(opts.body !== undefined ? opts.body : { apiKey: CHAVE_BOA }),
+    });
+    // sem chave própria, foto e análise param — e dizem o porquê
+    const fotoSessao = () => new Request("https://proxy.example/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: ORIGIN, "X-Session": sessao },
+      body: JSON.stringify({ image: IMG, mediaType: "image/jpeg" }),
+    });
+    await check("foto sem chave da conta -> 402", worker.fetch(fotoSessao(), ENV), 402,
+      (res, body) => (body.error === "no_api_key" && /chave da API/i.test(body.detail)) || "mensagem sem orientação");
+    await check("análise sem chave da conta -> 402", worker.fetch(new Request("https://proxy.example/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: ORIGIN, "X-Session": sessao },
+      body: JSON.stringify({ dados: { perfil: {} } }),
+    }), ENV), 402);
+
+    await check("chave ainda não cadastrada", worker.fetch(keyReq({ method: "GET" }), ENV), 200,
+      (res, body) => body.configured === false || "deveria estar vazia");
+    await check("chave com formato errado", worker.fetch(keyReq({ body: { apiKey: "minha-senha-qualquer" } }), ENV), 400,
+      (res, body) => body.error === "invalid_key" || "erro inesperado");
+    await check("chave recusada pela Anthropic", worker.fetch(keyReq({ body: { apiKey: CHAVE_RUIM } }), ENV), 400,
+      (res, body) => (body.error === "key_rejected" && /recusou/i.test(body.detail)) || "deveria testar antes de salvar");
+    await check("chave sem login", worker.fetch(keyReq({ session: null }), ENV), 401);
+    await check("salva a chave válida", worker.fetch(keyReq(), ENV), 200,
+      (res, body) => body.hint === CHAVE_BOA.slice(-4) || "hint errado");
+    await check("status mostra só o final da chave", worker.fetch(keyReq({ method: "GET" }), ENV), 200,
+      (res, body) => (body.configured === true && body.hint === CHAVE_BOA.slice(-4)
+        && !JSON.stringify(body).includes(CHAVE_BOA)) || "vazou a chave inteira");
+    {
+      const dump = [...kvStore.values()].join("|");
+      const ok = !dump.includes(CHAVE_BOA);
+      console.log(`${ok ? "PASS" : "FAIL"}  chave da API cifrada no KV (não aparece em texto claro)`);
+      if (!ok) failed++;
+    }
+    await check("com a chave, a foto volta a funcionar", worker.fetch(fotoSessao(), ENV), 200,
+      (res, body) => Array.isArray(body.itens) || "payload inesperado");
+    // a chave NÃO entra no backup de dados da conta
+    await check("dados da conta não carregam a chave", worker.fetch(dataReq({ method: "GET" }), ENV), 200,
+      (res, body) => !JSON.stringify(body).includes(CHAVE_BOA) || "a chave vazou no backup");
+    // limite diário passa a ser por conta
+    {
+      const hojeTz = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      const uidChaves = [...kvStore.keys()].filter(k => k.startsWith("fotos:") && k.includes(":" + hojeTz));
+      const ok = uidChaves.some(k => k !== "fotos:" + hojeTz);
+      console.log(`${ok ? "PASS" : "FAIL"}  limite de fotos contado por conta -> ${JSON.stringify(uidChaves)}`);
+      if (!ok) failed++;
+    }
+    await check("remove a chave", worker.fetch(keyReq({ method: "DELETE" }), ENV), 200);
+    await check("depois de remover, volta a 402", worker.fetch(fotoSessao(), ENV), 402);
+    // caminho legado (senha do app) segue usando a chave do servidor
+    await check("senha do app ainda usa a chave do servidor", worker.fetch(req(), ENV), 200);
 
     // ---- MAIL_TO_OVERRIDE: recuperação de OUTRA pessoa cai na caixa do dono ----
     {

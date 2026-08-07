@@ -40,7 +40,7 @@
     // "" quando tiver domínio verificado — aí cada um recebe o próprio.
     // ⚠ quem recebe consegue entrar na conta alheia: só use com gente de
     // confiança, e prefira verificar um domínio.
-    "MAIL_TO_OVERRIDE": "",
+    "MAIL_TO_OVERRIDE": "serruyadaniel@gmail.com",
     // endereço do app, usado no link de recuperação enviado por e-mail
     "APP_BASE_URL": "https://azimoov.github.io/diario-alimentar/"
   },

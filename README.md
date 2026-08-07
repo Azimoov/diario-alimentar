@@ -341,10 +341,20 @@ Duas saídas:
   ⚠ Quem recebe o link **entra na conta da pessoa** — use só com gente de
   confiança e desligue (`""`) assim que tiver domínio.
 
-**Custo (foto e análise) é de quem mantém o servidor**, pois a chave da API é
-dele. Proteções: `PHOTO_DAILY_LIMIT` (padrão 60/dia para o grupo),
-`ANALYSIS_DAILY_LIMIT` (padrão 20/dia) e o limite de gasto no console da
-Anthropic.
+**Cada conta usa a PRÓPRIA chave da Anthropic (BYOK).** Foto, leitura de
+rótulo e análise são pagas por uso, e o custo cai em quem usa — não em quem
+hospeda. A pessoa cadastra a chave dela em **Dados → Sua chave da Anthropic**
+(o app testa na hora se funciona); sem chave, essas funções respondem `402`
+com uma mensagem explicando onde cadastrar. Detalhes:
+
+- A chave fica **cifrada no servidor**, na conta daquela pessoa, e **nunca**
+  volta inteira para o navegador (só os 4 últimos caracteres), nunca é
+  guardada no aparelho e nunca entra no backup nem no arquivo exportado.
+- `PHOTO_DAILY_LIMIT` (padrão 60) e `ANALYSIS_DAILY_LIMIT` (padrão 20)
+  passaram a contar **por conta** — cada um protege o próprio bolso. Vale
+  também definir um limite de gasto no console da Anthropic.
+- O caminho legado (senha do app, sem conta) continua usando a
+  `ANTHROPIC_API_KEY` do servidor, se ela estiver configurada.
 
 **Modelo antigo (ainda suportado):** o segredo `APP_TOKEN` aceita várias
 senhas separadas por vírgula (`senha-daniel,senha-maria`), usadas antes das
@@ -416,7 +426,8 @@ ele cria duas contas simultâneas e confere item por item o que atravessa e o
 que não atravessa entre elas. Com os dois servidores acima no ar:
 
 ```
-node fase2-proxy/test/isolamento-contas.mjs
+node fase2-proxy/test/conta-e-login.mjs      # login, sync, recuperação, chave
+node fase2-proxy/test/isolamento-contas.mjs  # o que é compartilhado × individual
 ```
 
 ## Estrutura dos arquivos

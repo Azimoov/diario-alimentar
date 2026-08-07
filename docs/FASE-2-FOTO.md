@@ -108,6 +108,17 @@ senha legada do app):
 | `POST /auth/password` `{authKeyAtual, authKeyNova}` | troca a senha estando logado |
 | `POST /auth/logout` | invalida a sessão |
 | `GET/PUT /account/data` | lê/grava o estado do app (cifrado em repouso) |
+| `GET/PUT/DELETE /account/apikey` | chave da Anthropic **daquela conta** (BYOK) |
+
+**BYOK — cada conta paga a própria IA.** `PUT /account/apikey` valida o
+formato, testa a chave contra `GET /v1/models` (barato) e só então guarda,
+cifrada com a chave de dados do usuário em `apikey:<uid>`. As rotas de foto e
+`/analyze` usam a chave de quem chamou; sem ela devolvem **402
+`no_api_key`** com a orientação de onde cadastrar. O `GET` devolve só
+`{configured, hint}` — os 4 últimos caracteres, nunca a chave. Os contadores
+diários viraram `fotos:<uid>:<dia>` e `analises:<uid>:<dia>`. O caminho
+legado (`X-App-Token`, sem conta) segue usando a `ANTHROPIC_API_KEY` do
+Worker.
 
 **A senha nunca chega ao servidor.** O navegador faz
 `PBKDF2(senha, sal=SHA-256("highlander-auth:"+email), 250k, SHA-256)` e envia
