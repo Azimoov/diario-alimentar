@@ -1,4 +1,4 @@
-# Minha Saúde — diário alimentar, exames e métricas (local-first)
+# Highlander — diário alimentar, exames e métricas (local-first)
 
 Hub pessoal de saúde com **três áreas** na barra de cima:
 
@@ -276,11 +276,27 @@ padrão 60) + limite de gasto no console da Anthropic.
 
 ---
 
+## Nome, ícone e o proxy (nota de manutenção)
+
+O app se chama **Highlander**; o ícone (`icons/icon.svg`, com os PNGs
+derivados) é uma **arte própria** que homenageia a composição do *Queen II* —
+quatro rostos à luz saindo do escuro, em losango. A fotografia original (Mick
+Rock) tem direitos autorais e **não** é usada no repositório.
+
+> O Worker da Fase 2 continua chamado `diario-alimentar-proxy`
+> (`fase2-proxy/wrangler.jsonc`) e sua URL segue
+> `diario-alimentar-proxy.azimoov.workers.dev`. **Não renomeie:** trocar o
+> `name` cria um Worker NOVO no deploy, deixando para trás os segredos
+> (chave da API, senhas) e o KV do backup. O repositório e a URL do GitHub
+> Pages também seguem `diario-alimentar` — renomear o repo mudaria o
+> endereço do site e exigiria reconfigurar `ALLOWED_ORIGINS` no proxy.
+
 ## Estrutura dos arquivos
 
 ```
 index.html          página única (carrega os scripts na ordem)
 app.css             estilo (claro/escuro automático, mobile-first)
+icons/icon.svg      ícone do app (arte própria; gera os PNGs 180/512)
 js/
   db.js             base TACO embutida (GERADA — não editar à mão)
   measures.js       medidas caseiras, pesos/unidade e sinônimos (EDITÁVEL)

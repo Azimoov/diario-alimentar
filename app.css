@@ -48,7 +48,8 @@ body {
   background: var(--card); border-bottom: 1px solid var(--border);
   padding: 10px 14px calc(6px + env(safe-area-inset-top, 0)) 14px;
 }
-.brand { font-weight: 700; font-size: 17px; margin-bottom: 8px; }
+.brand { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 17px; margin-bottom: 8px; letter-spacing: .2px; }
+.brand-icon { flex: 0 0 auto; border-radius: 5px; }
 
 /* nível 1: as áreas do app (Diário · Exames · Métricas) */
 .apps { display: flex; gap: 6px; margin-bottom: 8px; }

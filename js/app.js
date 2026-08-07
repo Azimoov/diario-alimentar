@@ -503,7 +503,7 @@ window.App = (function () {
     const perfilIncompleto = !(p.age > 0) || !(p.height > 0) || !(p.weight > 0);
     if (perfilIncompleto) {
       root.appendChild(h('div', { class: 'card welcome' }, [
-        h('h3', {}, '👋 Bem-vindo(a) ao Diário Alimentar'),
+        h('h3', {}, '👋 Bem-vindo(a) ao Highlander'),
         h('p', { class: 'note' }, 'Seus dados ficam só neste aparelho — ninguém mais vê o que você registra. Para começar:'),
         h('ol', { class: 'welcome-steps' }, [
           h('li', {}, [h('strong', {}, '1. Preencha seu perfil'), ' (sexo, idade, altura, peso) para calcular sua meta diária de calorias.']),
@@ -1161,7 +1161,7 @@ window.App = (function () {
   function doExport() {
     const blob = new Blob([window.Store.exportJSON()], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
-    const a = h('a', { href: url, download: 'diario-alimentar-' + isoLocal(new Date()) + '.json' });
+    const a = h('a', { href: url, download: 'highlander-' + isoLocal(new Date()) + '.json' });
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }

@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Continue'
 Set-Location "C:\Users\serru\Desktop\JOGO dudu\fase2-proxy"
 
 Write-Host ""
-Write-Host "=== Salvar a chave da API no proxy (Diario Alimentar) ===" -ForegroundColor Cyan
+Write-Host "=== Salvar a chave da API no proxy (Highlander) ===" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "1. Copie a chave sk-ant-... (console.anthropic.com)"
 Write-Host "2. Cole aqui com CLIQUE-DIREITO do mouse (a chave fica visivel)"

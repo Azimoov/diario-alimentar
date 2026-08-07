@@ -1,4 +1,4 @@
-# PONTO DE RETOMADA — Diário Alimentar (kcal/macros)
+# PONTO DE RETOMADA — Highlander (diário alimentar, exames e métricas)
 
 _Atualizado em 2026-07-13._
 
