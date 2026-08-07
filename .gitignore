@@ -2,7 +2,9 @@
 .claude/
 
 # dependências e artefatos do proxy (Fase 2)
+# (as duas formas: com barra pega a pasta, sem barra pega symlink de teste)
 node_modules/
+node_modules
 .wrangler/
 .dev.vars
 

@@ -278,10 +278,26 @@ padrão 60) + limite de gasto no console da Anthropic.
 
 ## Nome, ícone e o proxy (nota de manutenção)
 
-O app se chama **Highlander**; o ícone (`icons/icon.svg`, com os PNGs
-derivados) é uma **arte própria** que homenageia a composição do *Queen II* —
-quatro rostos à luz saindo do escuro, em losango. A fotografia original (Mick
-Rock) tem direitos autorais e **não** é usada no repositório.
+O app se chama **Highlander**. O ícone são dois PNGs quadrados em `icons/`
+(`icon-512.png` e `icon-180.png`) — usados pelo manifest, pelo atalho do
+iPhone, pelo favicon e pela miniatura ao lado do nome no topo.
+
+**Para trocar o ícone por uma imagem sua**, há dois caminhos (nenhum precisa
+de ImageMagick/Photoshop):
+
+- **`data/recortar-icone.html`** — abra este arquivo no navegador (funciona
+  direto, sem servidor, inclusive no celular). Escolha a foto, arraste para
+  enquadrar, ajuste o zoom conferindo a prévia de 60 px (o tamanho real na
+  tela de início) e baixe os dois PNGs. A imagem **não sai do aparelho**.
+- **`node data/make-icon.mjs <imagem> [--x=50] [--y=45] [--zoom=1]`** — a
+  mesma coisa por linha de comando (requer `npm i -D playwright`).
+
+Depois de substituir os PNGs em `icons/`, faça commit. No iPhone o ícone da
+tela de início só muda depois de **remover e adicionar o app de novo** — o
+iOS guarda o antigo em cache.
+
+> Se a arte escolhida for fotografia de terceiros, a licença é decisão do
+> dono do app — o projeto não distribui licença de imagem.
 
 > O Worker da Fase 2 continua chamado `diario-alimentar-proxy`
 > (`fase2-proxy/wrangler.jsonc`) e sua URL segue
@@ -296,7 +312,7 @@ Rock) tem direitos autorais e **não** é usada no repositório.
 ```
 index.html          página única (carrega os scripts na ordem)
 app.css             estilo (claro/escuro automático, mobile-first)
-icons/icon.svg      ícone do app (arte própria; gera os PNGs 180/512)
+icons/icon-*.png    ícone do app (512 e 180; trocáveis — veja a seção acima)
 js/
   db.js             base TACO embutida (GERADA — não editar à mão)
   measures.js       medidas caseiras, pesos/unidade e sinônimos (EDITÁVEL)
@@ -310,7 +326,9 @@ data/
   source/*.csv      CSVs originais da TACO (raulfdm/taco-api, MIT)
   build-db.mjs      gera js/db.js a partir dos CSVs
   devserver.mjs     servidor estático só p/ teste local
-  mock-proxy.mjs    proxy falso p/ testar o botão 📷 sem gastar API
+  mock-proxy.mjs    proxy falso p/ testar 📷 e 🔎 sem gastar API
+  recortar-icone.html  recorta uma foto e baixa os PNGs do ícone (offline)
+  make-icon.mjs     o mesmo recorte por linha de comando
 fase2-proxy/        Cloudflare Worker da Fase 2 (guarda a chave da API)
   src/index.js      o proxy em si (CORS, token, validações, chamada de visão)
   test/smoke.mjs    testes locais com API simulada (npm test)
