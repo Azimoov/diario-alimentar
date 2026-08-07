@@ -145,8 +145,16 @@ window.Store = (function () {
   }
 
   // ---- export / import ----
-  function exportJSON() {
-    return JSON.stringify(state, null, 2);
+  // O TOKEN DE SESSÃO nunca sai daqui: ele é uma credencial viva (vale 90
+  // dias) e não é "dado do usuário". Sem isto ele iria para o arquivo que a
+  // pessoa exporta e manda por e-mail, e para o blob guardado na nuvem.
+  // `opts.paraNuvem` também tira o catálogo COMUM de alimentos, que é
+  // compartilhado e vive no servidor — não é dado privado da conta.
+  function exportJSON(opts) {
+    const copia = JSON.parse(JSON.stringify(state));
+    if (copia.settings && copia.settings.account) delete copia.settings.account.session;
+    if (opts && opts.paraNuvem) delete copia.sharedFoods;
+    return JSON.stringify(copia, null, 2);
   }
   function importJSON(text, mode) {
     const incoming = JSON.parse(text); // pode lançar — tratado por quem chama

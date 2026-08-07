@@ -1955,6 +1955,7 @@ window.App = (function () {
       window.Store.importJSON(remoto.state, modo);
       S = window.Store.get();
       refreshFoods(); renderAll();
+      syncSharedFoods();   // o catálogo comum não vem no blob privado: rebusca
     };
 
     if (!remoto || !remoto.state) {
@@ -2208,6 +2209,7 @@ window.App = (function () {
               window.Store.importJSON(r.state, 'replace');
               S = window.Store.get();
               refreshFoods(); renderAll();
+              syncSharedFoods();   // rebusca o catálogo comum
               toast('Restaurado da nuvem ✅', 'ok');
             } catch (e) { toast('Não consegui baixar: ' + e.message, 'error'); }
           },

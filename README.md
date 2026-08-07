@@ -295,21 +295,46 @@ Quem preferir sigilo absoluto tem a opção antiga preservada em
 app, de um jeito que nem o servidor abre — ao custo de que **esquecer essa
 senha é perder o backup**, sem exceção.
 
-## Multiusuário — compartilhando com outras pessoas
+## Multiusuário — o que é compartilhado e o que é individual
 
-O app é multiusuário por natureza: **basta enviar o link**. Cada pessoa que
-abrir o site tem seu próprio diário, perfil e metas, guardados **no aparelho
-dela** (ninguém vê os dados de ninguém — não há servidor de dados). No
-primeiro acesso, um guia de boas-vindas orienta a preencher o perfil.
-Backup é individual: cada um exporta/importa seu JSON na aba Dados.
+Este é o modelo de dados do app, e ele é **verificado por teste automatizado**
+(duas contas reais contra o Worker real; veja "Testes" abaixo):
 
-**Foto (opcional, custo é do dono do proxy):** o segredo `APP_TOKEN` aceita
-**várias senhas separadas por vírgula** (`senha-daniel,senha-maria`) — dê uma
-senha para cada pessoa e ela configura em Dados → Registro por foto. Para
-revogar alguém, regrave o segredo sem a senha da pessoa
-(`npx wrangler secret put APP_TOKEN`). O custo de todas as fotos cai na conta
-de API do dono; proteções: `PHOTO_DAILY_LIMIT` (máx. de fotos/dia do grupo,
-padrão 60) + limite de gasto no console da Anthropic.
+| Dado | Escopo | Onde vive |
+|---|---|---|
+| **Catálogo de alimentos comum** (nome + kcal/macros) | 🌐 **compartilhado** entre todas as contas | `foods-comum` no KV do Worker |
+| Alimentos e receitas que você cadastra | 🔒 individual (só ficam comuns se você **marcar** "compartilhar") | seu blob de conta |
+| Diário (refeições, gramas, kcal) | 🔒 individual | seu blob de conta |
+| Peso, % de gordura e massa magra | 🔒 individual | seu blob de conta |
+| Exames laboratoriais e de imagem, lembretes | 🔒 individual | seu blob de conta |
+| Métricas do Apple Watch / app Saúde | 🔒 individual | seu blob de conta |
+| Perfil, metas e a última análise de IA | 🔒 individual | seu blob de conta |
+
+Detalhes que sustentam isso:
+
+- Cada conta tem seu próprio registro (`data:<uid>`), cifrado com uma chave
+  derivada só para ela. Uma sessão nunca alcança o registro de outra: pedir
+  `/account/data` devolve **apenas** os dados de quem está logado.
+- Ao compartilhar um alimento, sobem **somente** nome e valores nutricionais —
+  nunca foto de rótulo, ingredientes de receita ou qualquer dado de saúde. A
+  autoria fica como um hash anônimo de 6 caracteres.
+- O catálogo comum **não** é copiado para dentro do seu blob privado (ele é
+  cache; o servidor o serve em `/foods`), e o **token de sessão nunca sai do
+  aparelho** — não vai para a nuvem nem para o arquivo que você exporta.
+- Sem conta, nada sai do aparelho: o app segue 100% local.
+
+**Quem pode entrar:** criar conta exige o `INVITE_CODE` — passe o código para
+quem você quiser incluir. Para fechar a porta, troque o segredo
+(`npx wrangler secret put INVITE_CODE`); contas já criadas continuam valendo.
+
+**Custo (foto e análise) é de quem mantém o servidor**, pois a chave da API é
+dele. Proteções: `PHOTO_DAILY_LIMIT` (padrão 60/dia para o grupo),
+`ANALYSIS_DAILY_LIMIT` (padrão 20/dia) e o limite de gasto no console da
+Anthropic.
+
+**Modelo antigo (ainda suportado):** o segredo `APP_TOKEN` aceita várias
+senhas separadas por vírgula (`senha-daniel,senha-maria`), usadas antes das
+contas. Continua funcionando para abrir backups sigilosos antigos.
 
 ---
 
@@ -354,6 +379,31 @@ novo** — o iOS guarda o antigo em cache.
 > (chave da API, senhas) e o KV do backup. O repositório e a URL do GitHub
 > Pages também seguem `diario-alimentar` — renomear o repo mudaria o
 > endereço do site e exigiria reconfigurar `ALLOWED_ORIGINS` no proxy.
+
+## Testes
+
+Nada aqui precisa de conta na Cloudflare, chave de API ou internet.
+
+```
+cd fase2-proxy && npm test      # Worker: contas, login, recuperação de senha,
+                                # dados na nuvem, foto, análise, limites, CORS
+cd fase2-proxy && npm run dev:local   # sobe o Worker REAL em Node (porta 8124)
+node data/devserver.mjs               # serve o app (porta 8123)
+```
+
+Com esses dois no ar, o app roda de verdade contra o Worker de verdade: dá
+para criar conta (convite `convite-local`), sincronizar e testar a
+recuperação de senha — o link do e-mail aparece no terminal do dev-server e
+em `http://localhost:8124/__emails`.
+
+O modelo de dados descrito acima (catálogo comum compartilhado × dados de
+saúde individuais) é coberto por `fase2-proxy/test/isolamento-contas.mjs`:
+ele cria duas contas simultâneas e confere item por item o que atravessa e o
+que não atravessa entre elas. Com os dois servidores acima no ar:
+
+```
+node fase2-proxy/test/isolamento-contas.mjs
+```
 
 ## Estrutura dos arquivos
 

@@ -173,7 +173,9 @@ window.Auth = (function () {
   }
   async function enviarDados() {
     if (!logado()) return false;
-    const state = window.Store.exportJSON();
+    // paraNuvem: sem sessão e sem o catálogo comum de alimentos (esse é
+    // compartilhado e o servidor já o serve em /foods)
+    const state = window.Store.exportJSON({ paraNuvem: true });
     await chamar('/account/data', { method: 'PUT', body: { state, updatedAt: new Date().toISOString() } });
     conta().lastSyncAt = new Date().toISOString();
     window.Store.save();
