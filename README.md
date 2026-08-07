@@ -278,12 +278,20 @@ padrão 60) + limite de gasto no console da Anthropic.
 
 ## Nome, ícone e o proxy (nota de manutenção)
 
-O app se chama **Highlander**. O ícone são dois PNGs quadrados em `icons/`
-(`icon-512.png` e `icon-180.png`) — usados pelo manifest, pelo atalho do
-iPhone, pelo favicon e pela miniatura ao lado do nome no topo.
+O app se chama **Highlander**. O ícone é `icons/icon.svg` — uma silhueta
+simples de espada, desenhada em SVG (sem foto de terceiros, sem questão de
+direito autoral) — e os PNGs derivados dele (`icon-512.png`, `icon-180.png`)
+usados pelo manifest, pelo atalho do iPhone e pela tag `<link rel="icon">`
+(navegadores sem suporte a favicon SVG). O favicon e a miniatura no topo
+apontam para o próprio `.svg` (escalável, nítido em qualquer tamanho).
 
-**Para trocar o ícone por uma imagem sua**, há dois caminhos (nenhum precisa
-de ImageMagick/Photoshop):
+**Para editar o desenho da espada:** abra `icons/icon.svg` — são só 4 formas
+(lâmina, guarda, cabo, pomo) num `<g fill="#eef0ee">`; mude os números do
+`<path>`/`<rect>`/`<circle>` e rode `node data/render-icon-svg.mjs` para
+gerar os dois PNGs de novo (requer `npm i -D playwright`).
+
+**Para trocar por uma FOTO sua** (como era antes desta versão), há dois
+caminhos que não tocam no `.svg` — geram os PNGs direto de uma imagem:
 
 - **`data/recortar-icone.html`** — abra este arquivo no navegador (funciona
   direto, sem servidor, inclusive no celular). Escolha a foto, arraste para
@@ -291,10 +299,13 @@ de ImageMagick/Photoshop):
   tela de início) e baixe os dois PNGs. A imagem **não sai do aparelho**.
 - **`node data/make-icon.mjs <imagem> [--x=50] [--y=45] [--zoom=1]`** — a
   mesma coisa por linha de comando (requer `npm i -D playwright`).
+  Nesse caso, troque também o `<link rel="icon">` e o `.brand-icon` em
+  `index.html` para apontar para o PNG (o navegador não sabe recortar foto
+  em SVG) — veja o histórico do repositório para o formato exato.
 
-Depois de substituir os PNGs em `icons/`, faça commit. No iPhone o ícone da
-tela de início só muda depois de **remover e adicionar o app de novo** — o
-iOS guarda o antigo em cache.
+Depois de trocar os PNGs (por qualquer caminho), faça commit. No iPhone o
+ícone da tela de início só muda depois de **remover e adicionar o app de
+novo** — o iOS guarda o antigo em cache.
 
 > Se a arte escolhida for fotografia de terceiros, a licença é decisão do
 > dono do app — o projeto não distribui licença de imagem.
@@ -312,7 +323,8 @@ iOS guarda o antigo em cache.
 ```
 index.html          página única (carrega os scripts na ordem)
 app.css             estilo (claro/escuro automático, mobile-first)
-icons/icon-*.png    ícone do app (512 e 180; trocáveis — veja a seção acima)
+icons/icon.svg      ícone do app: silhueta de espada (fonte editável)
+icons/icon-*.png    PNGs gerados do svg (512 e 180) — veja a seção acima
 js/
   db.js             base TACO embutida (GERADA — não editar à mão)
   measures.js       medidas caseiras, pesos/unidade e sinônimos (EDITÁVEL)
