@@ -101,6 +101,12 @@ em `data/source*` e rode `node data/build-db.mjs`. Não edite `js/db.js` à mão
   receita (pesados crus, correto) também não.
 - **Média móvel de 7 dias** no gráfico de peso: o peso diário oscila ±1 kg por
   água/glicogênio; a linha de tendência é o sinal que importa.
+- **Composição corporal (opcional)** — junto do peso, na aba Hoje, dá para
+  registrar **% de gordura** e **% de massa magra** (da balança de
+  bioimpedância ou avaliação física). Com o peso do dia preenchido o app
+  mostra o equivalente em kg, e cada série vira um gráfico próprio no
+  Histórico. Nada é derivado sozinho: só entra o que você medir, e se
+  gordura + massa magra somarem mais de 100% o app avisa.
 
 ## Como o app calcula a meta
 

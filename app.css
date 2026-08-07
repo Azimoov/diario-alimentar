@@ -168,8 +168,11 @@ input[type=number] { width: 100%; }
 .mb-label { font-size: 12px; fill: var(--muted); }
 .mb-val { font-size: 12px; fill: var(--fg); font-variant-numeric: tabular-nums; }
 
-.weight-row { display: flex; align-items: center; gap: 10px; }
-.w-input { max-width: 130px; }
+/* peso + composição corporal (aba Hoje) */
+.comp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.comp-grid .field { justify-content: flex-end; } /* alinha inputs quando um rótulo quebra linha */
+.comp-derived { margin: 8px 0 4px; }
+.comp-warn { color: var(--warn); }
 
 /* ---- Perfil ---- */
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -261,6 +264,7 @@ input[type=number] { width: 100%; }
 }
 @media (max-width: 380px) {
   .form-grid { grid-template-columns: 1fr; }
+  .comp-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 480px) {
   .tabs { gap: 4px; }

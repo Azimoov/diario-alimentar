@@ -715,23 +715,66 @@ window.App = (function () {
   }
 
   function renderWeightInput() {
+    const pct = () => S.bodyComp[currentDate] || {};
+    const fmt1 = v => String(round(v, 1)).replace('.', ',');
+
+    // linha derivada: com o peso do dia + %, mostra o equivalente em kg — só
+    // do que foi preenchido (não derivamos massa magra de 100−gordura sozinhos)
+    const derived = h('p', { class: 'hint comp-derived' });
+    function updateDerived() {
+      const w = S.weights[currentDate], c = pct();
+      const parts = [];
+      if (w > 0 && c.fat != null) parts.push('≈ ' + fmt1(w * c.fat / 100) + ' kg de gordura');
+      if (w > 0 && c.lean != null) parts.push('≈ ' + fmt1(w * c.lean / 100) + ' kg de massa magra');
+      const excede = c.fat != null && c.lean != null && c.fat + c.lean > 100.5;
+      derived.textContent = excede
+        ? 'gordura + massa magra somam ' + fmt1(c.fat + c.lean) + '% — confira os valores'
+        : parts.join(' · ');
+      derived.className = 'hint comp-derived' + (excede ? ' comp-warn' : '');
+      derived.style.display = derived.textContent ? '' : 'none';
+    }
+
+    function parseNum(raw) {
+      if (raw === '') return null;
+      const n = Number(String(raw).replace(',', '.'));
+      return Number.isFinite(n) ? n : null;
+    }
+    function setPct(key, raw) {
+      const v = parseNum(raw);
+      const entry = Object.assign({}, pct());
+      if (v == null) delete entry[key];
+      else entry[key] = v;
+      if (entry.fat == null && entry.lean == null) delete S.bodyComp[currentDate];
+      else S.bodyComp[currentDate] = entry;
+      window.Store.save(); updateDerived(); renderHist();
+    }
+    function numField(label, value, attrs, on) {
+      return h('div', { class: 'field' }, [
+        h('label', { class: 'lbl' }, label),
+        h('input', Object.assign({
+          type: 'number', min: '0', step: '0.1',
+          value: value != null ? value : '',
+          onchange: e => on(e.target.value),
+        }, attrs)),
+      ]);
+    }
+
     const card = h('div', { class: 'card weight-card' }, [
-      h('label', { class: 'lbl' }, 'Peso corporal em ' + fmtBR(currentDate) + ' (kg)'),
-      h('div', { class: 'weight-row' }, [
-        h('input', {
-          type: 'number', min: '0', step: '0.1', class: 'w-input',
-          value: S.weights[currentDate] != null ? S.weights[currentDate] : '',
-          placeholder: 'ex.: 82.4',
-          onchange: e => {
-            const v = e.target.value;
-            if (v === '') delete S.weights[currentDate];
-            else S.weights[currentDate] = Number(String(v).replace(',', '.'));
-            window.Store.save(); renderHist();
-          },
+      h('h3', {}, 'Peso e composição corporal'),
+      h('div', { class: 'comp-grid' }, [
+        numField('Peso (kg)', S.weights[currentDate], { placeholder: 'ex.: 82.4' }, raw => {
+          const v = parseNum(raw);
+          if (v == null) delete S.weights[currentDate];
+          else S.weights[currentDate] = v;
+          window.Store.save(); updateDerived(); renderHist();
         }),
-        h('span', { class: 'hint' }, 'opcional — registre quando pesar'),
+        numField('Gordura (%)', pct().fat, { max: '100', placeholder: 'ex.: 24.5' }, raw => setPct('fat', raw)),
+        numField('Massa magra (%)', pct().lean, { max: '100', placeholder: 'ex.: 72' }, raw => setPct('lean', raw)),
       ]),
+      derived,
+      h('p', { class: 'hint' }, 'Valores de ' + fmtBR(currentDate) + ' — opcionais, registre quando medir. Gordura e massa magra: da balança de bioimpedância ou avaliação física.'),
     ]);
+    updateDerived();
     return card;
   }
 
@@ -779,6 +822,23 @@ window.App = (function () {
       }),
       weightSeries.length >= 3 ? h('p', { class: 'hint' }, 'Pontos: pesagens · linha verde: média de 7 dias (a tendência que importa)') : null,
     ]));
+
+    // composição corporal (opcional): os gráficos só aparecem se houver registro
+    const bcDates = Object.keys(S.bodyComp || {}).sort();
+    const fatSeries = bcDates.filter(d => S.bodyComp[d].fat != null).map(date => ({ date, value: S.bodyComp[date].fat }));
+    const leanSeries = bcDates.filter(d => S.bodyComp[d].lean != null).map(date => ({ date, value: S.bodyComp[date].lean }));
+    if (fatSeries.length) {
+      root.appendChild(h('div', { class: 'card' }, [
+        h('h3', {}, 'Gordura corporal (%)'),
+        window.Charts.lineChart(fatSeries, { color: 'var(--g)', unit: ' %', decimals: 1 }),
+      ]));
+    }
+    if (leanSeries.length) {
+      root.appendChild(h('div', { class: 'card' }, [
+        h('h3', {}, 'Massa magra (%)'),
+        window.Charts.lineChart(leanSeries, { color: 'var(--p)', unit: ' %', decimals: 1 }),
+      ]));
+    }
 
     // tabela resumida (últimos 14 dias com registro)
     const dates = Object.keys(S.days).filter(d => (S.days[d].items || []).length).sort().reverse().slice(0, 14);

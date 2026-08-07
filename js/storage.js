@@ -19,6 +19,7 @@ window.Store = (function () {
       },
       days: {},             // 'YYYY-MM-DD' -> { items:[{raw,foodId,grams}], weight:null }
       weights: {},          // 'YYYY-MM-DD' -> kg (peso corporal)
+      bodyComp: {},         // 'YYYY-MM-DD' -> { fat:%, lean:% } (composição corporal, campos opcionais)
       customFoods: [],      // {id:'c1', name, kcal, prot, carb, fat, fiber}
       sharedFoods: [],      // cache da base COMUM (compartilhada via proxy)
       // Fase 2 (foto): endereço do SEU proxy + senha do app. A chave da API
@@ -46,6 +47,7 @@ window.Store = (function () {
     state.goal = Object.assign({}, d.goal, state.goal || {});
     state.days = state.days || {};
     state.weights = state.weights || {};
+    state.bodyComp = state.bodyComp || {};
     state.customFoods = state.customFoods || [];
     state.sharedFoods = state.sharedFoods || [];
     state.settings = Object.assign({}, d.settings, state.settings || {});
@@ -134,6 +136,7 @@ window.Store = (function () {
     if (mode === 'merge') {
       state.days = Object.assign({}, state.days, incoming.days || {});
       state.weights = Object.assign({}, state.weights, incoming.weights || {});
+      state.bodyComp = Object.assign({}, state.bodyComp, incoming.bodyComp || {});
       // custom foods: evita duplicar por nome
       const names = new Set(state.customFoods.map(f => f.norm));
       (incoming.customFoods || []).forEach(f => {
