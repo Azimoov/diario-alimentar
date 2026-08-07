@@ -90,6 +90,53 @@ Defina um limite de gasto no console da Anthropic por segurança.
   senha `senha-local` no app local — testa o fluxo completo do botão 📷 e
   do botão 🔎 Analisar sem gastar API.
 
+## Contas e login (`/auth/*`, `/account/data`)
+
+Adicionado depois da Fase 2. Resolve o problema real de perder tudo ao
+remover o app do iPhone (ou trocar de aparelho) e não ter como recuperar.
+
+**Rotas** (as de `/auth/` são as únicas públicas; o resto exige sessão ou a
+senha legada do app):
+
+| Rota | O que faz |
+|---|---|
+| `POST /auth/signup` `{email, authKey, invite}` | cria conta; exige `INVITE_CODE` |
+| `POST /auth/login` `{email, authKey}` | devolve `{session}` |
+| `GET /auth/me` | valida a sessão guardada no aparelho |
+| `POST /auth/forgot` `{email}` | manda o link por e-mail (resposta sempre igual, sem enumerar cadastro) |
+| `POST /auth/reset` `{token, authKey}` | troca a senha; link de uso único, 30 min |
+| `POST /auth/password` `{authKeyAtual, authKeyNova}` | troca a senha estando logado |
+| `POST /auth/logout` | invalida a sessão |
+| `GET/PUT /account/data` | lê/grava o estado do app (cifrado em repouso) |
+
+**A senha nunca chega ao servidor.** O navegador faz
+`PBKDF2(senha, sal=SHA-256("highlander-auth:"+email), 250k, SHA-256)` e envia
+só o `authKey`; o Worker guarda `HMAC(pepper, authKey)`, com o pepper
+derivado de `DATA_KEY`. Duas vantagens: um dump do KV não dá login a
+ninguém, e o custo de CPU por requisição fica desprezível — **PBKDF2 no
+servidor estouraria o limite de 10 ms de CPU do plano grátis do Workers**.
+
+**Dados cifrados em repouso, mas recuperáveis.** `/account/data` guarda o
+estado com AES-GCM, chave = `HMAC(DATA_KEY, "data-key:"+uid)`. Como a chave
+é do servidor e não da senha, redefinir a senha **não** perde os dados — é
+exatamente o trade-off aceito (veja a seção de conta no README).
+
+**Chaves no KV:** `acct:<uid>`, `sess:<sha256(token)>` (TTL 90 dias),
+`reset:<sha256(token)>` (TTL 30 min), `data:<uid>`, onde `uid` = SHA-256 do
+e-mail normalizado. O `backup:<sha256(senha)>` do modelo antigo fica
+**intocado** — backups anteriores continuam restauráveis com a senha do app.
+
+**Proteções:** convite obrigatório no cadastro; rate-limit por IP (5/min
+cadastro, 10/min login, 4/min recuperação); mensagem de erro genérica no
+login; comparação de segredos em tempo constante; `/account/data` limitado a
+~8 MB.
+
+**Testar sem deploy:** `npm run dev:local` sobe o Worker REAL em Node
+(`dev-server.mjs`) com KV em memória, API simulada e e-mails capturados —
+o link de recuperação aparece no terminal e em `GET /__emails`. No app,
+aponte Dados → servidor para `http://localhost:8124` e use o convite
+`convite-local`.
+
 ## Análise inteligente (`POST /analyze`)
 
 Usada pelo botão **🔎 Analisar meus dados** (áreas Exames e Métricas). O app

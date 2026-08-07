@@ -258,6 +258,43 @@ cruzamentos, o que levar ao médico e lacunas. A resposta fica guardada para
 reler offline. **Não é diagnóstico.** Proteções: mesma senha do app,
 rate-limit e limite diário próprio (`ANALYSIS_DAILY_LIMIT`, padrão 20/dia).
 
+## Conta e login (recomendado) — nunca mais perder dados
+
+Sem conta, o app é 100% local: rápido e privado, mas os dados existem só
+naquele navegador — e no iPhone **remover o app da tela de início apaga
+tudo**. Com conta, você entra com e-mail e senha e o histórico volta.
+
+- **Zero configuração.** O endereço do servidor já vem embutido no app; a
+  pessoa só faz login. Foto, leitura de rótulo e análise passam a funcionar
+  com a mesma sessão — sem preencher proxy nem senha do app.
+- **Sincronização automática.** Toda alteração sobe sozinha poucos segundos
+  depois de salvar. O chip no topo mostra `☁ seu@email` (em dia) ou
+  `↻ seu@email` (enviando).
+- **Cadastro só com convite.** Precisa do `INVITE_CODE` — é o que impede
+  estranhos criando conta e gastando a API de quem paga o servidor.
+- **Recuperação por e-mail.** "Esqueci a senha" manda um link válido por 30
+  minutos; ao abri-lo o app pede a senha nova e **os dados continuam lá**.
+- **A senha não sai do aparelho.** O PBKDF2 (250 mil iterações) roda no
+  navegador; o servidor recebe só o resultado e guarda um HMAC dele. Um
+  vazamento do banco não dá login a ninguém.
+- **Conflito nunca é resolvido no escuro.** Se o aparelho e a nuvem tiverem
+  versões diferentes, o app pergunta: juntar (padrão, não descarta nada),
+  usar a da nuvem, ou usar a do aparelho.
+
+### O trade-off, dito com clareza
+
+Para que "esqueci minha senha" funcione de verdade, os dados na nuvem são
+cifrados com uma chave **do servidor** (`DATA_KEY`), não com a sua senha.
+Isso significa que **quem administra o Worker consegue ler os dados** das
+contas. Não existe recuperação de senha e sigilo absoluto ao mesmo tempo:
+qualquer app que ofereça reset de senha e devolva seus dados está neste
+mesmo modelo.
+
+Quem preferir sigilo absoluto tem a opção antiga preservada em
+**Dados → Backup sigiloso**: o diário é cifrado no aparelho com a senha do
+app, de um jeito que nem o servidor abre — ao custo de que **esquecer essa
+senha é perder o backup**, sem exceção.
+
 ## Multiusuário — compartilhando com outras pessoas
 
 O app é multiusuário por natureza: **basta enviar o link**. Cada pessoa que
@@ -333,6 +370,7 @@ js/
   storage.js        persistência (localStorage) + export/import
   charts.js         gráficos em SVG puro (sem biblioteca)
   health.js         lê o export do app Saúde (zip/xml) e agrega por dia
+  auth.js           conta/login, PBKDF2 no aparelho e sync com a nuvem
   app.js            interface e orquestração (3 áreas: Diário/Exames/Métricas)
 data/
   source/*.csv      CSVs originais da TACO (raulfdm/taco-api, MIT)
@@ -341,8 +379,9 @@ data/
   mock-proxy.mjs    proxy falso p/ testar 📷 e 🔎 sem gastar API
   recortar-icone.html  recorta uma foto e baixa os PNGs do ícone (offline)
   make-icon.mjs     o mesmo recorte por linha de comando
-fase2-proxy/        Cloudflare Worker da Fase 2 (guarda a chave da API)
-  src/index.js      o proxy em si (CORS, token, validações, chamada de visão)
+fase2-proxy/        Cloudflare Worker (chave da API, contas e backup)
+  src/index.js      o proxy em si (contas, CORS, validações, visão, análise)
+  dev-server.mjs    roda o Worker REAL em Node p/ testar login sem deploy
   test/smoke.mjs    testes locais com API simulada (npm test)
 docs/FASE-2-FOTO.md arquitetura, deploy e custos da Fase 2
 ```

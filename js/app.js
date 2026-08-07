@@ -105,7 +105,36 @@ window.App = (function () {
     currentDate = isoLocal(new Date());
     bindTabs();
     renderAll();
+    atualizarStatusConta();
     syncSharedFoods(); // base comum: atualiza em segundo plano (cache p/ offline)
+    iniciarConta();
+  }
+
+  // Conta: link de recuperação tem prioridade (a pessoa chegou aqui pelo
+  // e-mail justamente porque está trancada fora). Depois valida a sessão
+  // guardada e traz o que houver de novo na nuvem.
+  let modalRecuperacao = null;
+  function tratarLinkDeRecuperacao() {
+    const token = window.Auth.tokenDeRecuperacao();
+    if (!token || modalRecuperacao) return false;
+    modalRecuperacao = abrirRedefinicao(token);
+    return true;
+  }
+
+  async function iniciarConta() {
+    // Se o app JÁ ESTÁ ABERTO e a pessoa toca no link do e-mail, o navegador
+    // só troca o #hash — não recarrega nada. Sem isto, o link "não faz nada".
+    window.addEventListener('hashchange', tratarLinkDeRecuperacao);
+    if (tratarLinkDeRecuperacao()) return;
+    if (!window.Auth.logado()) return;
+    const ok = await window.Auth.validarSessao();
+    atualizarStatusConta();
+    if (!ok) {
+      renderDados();
+      if (!window.Auth.logado()) toast('Sua sessão expirou — entre de novo para voltar a sincronizar.', 'error');
+      return;
+    }
+    await sincronizarAoEntrar(null);   // compara datas e decide/pergunta
   }
 
   function refreshFoods() { window.Parser.setFoods(window.Store.combinedFoods()); }
@@ -196,10 +225,10 @@ window.App = (function () {
   // grupo: ficam no proxy e sincronizam a cada abertura do app (com cache
   // local p/ funcionar offline).
   async function syncSharedFoods() {
-    if (!S.settings.proxyUrl || !S.settings.proxyToken) return;
+    if (!window.Auth.podeUsarProxy()) return;
     try {
-      const res = await fetch(S.settings.proxyUrl.replace(/\/+$/, '') + '/foods', {
-        headers: { 'X-App-Token': S.settings.proxyToken },
+      const res = await fetch(window.Auth.urlProxy('/foods'), {
+        headers: window.Auth.cabecalhosProxy(),
       });
       if (!res.ok) return;
       const data = await res.json();
@@ -210,9 +239,9 @@ window.App = (function () {
     } catch (e) { /* offline — usa o cache local */ }
   }
   async function shareFood(food) {
-    const res = await fetch(S.settings.proxyUrl.replace(/\/+$/, '') + '/foods', {
+    const res = await fetch(window.Auth.urlProxy('/foods'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-App-Token': S.settings.proxyToken },
+      headers: window.Auth.cabecalhosProxy({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({
         name: food.name,
         kcal: Number(food.kcal), prot: Number(food.prot) || undefined,
@@ -256,8 +285,15 @@ window.App = (function () {
     return _td.decode(pt);
   }
 
+  // Gancho único de "os dados mudaram": chamado depois de toda mutação.
+  // Cuida da conta (envio automático p/ a nuvem) e, se estiver ligado, do
+  // backup cifrado legado por senha do app.
   let backupTimer = null;
   function scheduleBackup() {
+    if (window.Auth) {
+      window.Auth.agendarEnvio();
+      atualizarStatusConta();
+    }
     if (!S.settings || !S.settings.autoBackup || !S.settings.proxyUrl || !S.settings.proxyToken) return;
     if (!(window.crypto && crypto.subtle)) return; // exige contexto seguro (https)
     clearTimeout(backupTimer);
@@ -338,9 +374,9 @@ window.App = (function () {
     // embalagem de um deles, o modelo devolve o nome e o app reaproveita
     // o alimento já cadastrado (com os valores conferidos por você)
     const produtos = (S.customFoods || []).filter(f => f.labelPhoto).map(f => f.name);
-    const res = await fetch(S.settings.proxyUrl, {
+    const res = await fetch(window.Auth.urlProxy(), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-App-Token': S.settings.proxyToken },
+      headers: window.Auth.cabecalhosProxy({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ image: base64, mediaType: 'image/jpeg', mode: mode || 'refeicao', produtos }),
     });
     let data = null;
@@ -532,8 +568,8 @@ window.App = (function () {
         h('button', {
           class: 'btn', id: 'photo-btn', title: 'Registrar por foto (Fase 2)',
           onclick: () => {
-            if (!S.settings.proxyUrl || !S.settings.proxyToken) {
-              toast('Para usar foto, configure o proxy e a senha na aba Dados.', 'error');
+            if (!window.Auth.podeUsarProxy()) {
+              toast('Para usar foto, entre na sua conta (toque em “entrar”, no topo).', 'error');
               return;
             }
             photoInput.click();
@@ -1085,6 +1121,9 @@ window.App = (function () {
     const root = $('#tab-dados');
     clear(root);
 
+    // conta primeiro: é o caminho recomendado para não perder dados
+    root.appendChild(renderContaCard());
+
     // export/import + backup automático na nuvem
     const st0 = S.settings;
     const bkChk = h('input', {
@@ -1098,11 +1137,13 @@ window.App = (function () {
     });
     if (st0.autoBackup) bkChk.checked = true;
     const io = h('div', { class: 'card' }, [
-      h('h3', {}, 'Backup dos seus dados'),
-      h('p', { class: 'note' }, 'Os dados vivem neste aparelho. ⚠ No iPhone, REMOVER o app da tela de início APAGA os dados locais — ligue o backup automático abaixo para ficar protegido.'),
+      h('h3', {}, 'Backup e arquivos'),
+      h('p', { class: 'note' }, window.Auth.logado()
+        ? '✅ Sua conta já guarda tudo na nuvem automaticamente. O que está aqui embaixo é extra: arquivo no seu aparelho e o modo sigiloso.'
+        : '⚠ Sem conta, os dados existem SÓ aqui — e no iPhone, REMOVER o app da tela de início APAGA tudo. O jeito seguro é entrar na conta (cartão acima); as opções abaixo são alternativas manuais.'),
       h('div', { class: 'adaptive-toggle' }, [
         bkChk,
-        h('label', { for: 'auto-backup' }, ' ☁ Backup automático na nuvem — o diário é criptografado NESTE aparelho com a sua senha do app e guardado no seu proxy. O servidor não consegue ler. Requer proxy + senha configurados abaixo.'),
+        h('label', { for: 'auto-backup' }, ' 🔒 Backup sigiloso (modo antigo) — o diário é criptografado NESTE aparelho com a senha do app e guardado no proxy, de um jeito que NEM o servidor consegue ler. Em troca, não há recuperação: esquecer essa senha é perder o backup. Requer proxy + senha do app preenchidos abaixo.'),
       ]),
       h('p', { class: 'hint', id: 'bk-status' },
         st0.autoBackup
@@ -1120,14 +1161,16 @@ window.App = (function () {
     // Fase 2: registro por foto
     const st = S.settings;
     root.appendChild(h('div', { class: 'card' }, [
-      h('h3', {}, '📷 Registro por foto (Fase 2)'),
-      h('p', { class: 'note' }, 'Opcional. Requer o SEU proxy publicado (veja fase2-proxy/ no projeto). A chave da API fica só no proxy — aqui você informa apenas o endereço dele e a senha do app.'),
+      h('h3', {}, '⚙️ Servidor (avançado)'),
+      h('p', { class: 'note' }, window.Auth.logado()
+        ? 'Você está logado — foto, leitura de rótulo e análise já funcionam, nada a preencher aqui. Estes campos só servem para apontar o app para OUTRO servidor, ou para usar o backup sigiloso acima.'
+        : 'Só preencha se você não vai usar conta: endereço de um proxy próprio e a senha dele. Com conta, isto fica em branco e tudo funciona. A chave da API fica sempre no servidor, nunca aqui.'),
       h('div', { class: 'field' }, [
-        h('label', { class: 'lbl' }, 'Endereço do proxy'),
+        h('label', { class: 'lbl' }, 'Endereço do servidor (em branco = o padrão do app)'),
         h('input', {
-          type: 'url', class: 'in', placeholder: 'https://seu-proxy.workers.dev',
+          type: 'url', class: 'in', placeholder: window.Auth.PROXY_PADRAO,
           value: st.proxyUrl || '',
-          onchange: e => { st.proxyUrl = e.target.value.trim(); window.Store.save(); },
+          onchange: e => { st.proxyUrl = e.target.value.trim(); window.Store.save(); renderDados(); },
         }),
       ]),
       h('div', { class: 'field' }, [
@@ -1138,7 +1181,7 @@ window.App = (function () {
           onchange: e => { st.proxyToken = e.target.value.trim(); window.Store.save(); },
         }),
       ]),
-      h('p', { class: 'hint' }, 'Cada foto analisada tem custo (centavos) cobrado na sua conta da API. Itens de foto entram sempre como estimativa editável.'),
+      h('p', { class: 'hint' }, 'Cada foto ou análise custa centavos na conta de API de quem mantém o servidor. Itens de foto entram sempre como estimativa editável.'),
     ]));
 
     // fontes / sobre
@@ -1798,8 +1841,8 @@ window.App = (function () {
   }
 
   function openAnalysisModal() {
-    if (!S.settings.proxyUrl || !S.settings.proxyToken) {
-      toast('Para usar a análise, configure o proxy e a senha em Diário → Dados.', 'error');
+    if (!window.Auth.podeUsarProxy()) {
+      toast('Para usar a análise, entre na sua conta (toque em “entrar”, no topo).', 'error');
       return;
     }
     const payload = buildAnalysisPayload();
@@ -1814,15 +1857,16 @@ window.App = (function () {
       goBtn.textContent = '⏳ analisando (até ~1 min)…';
       clear(out);
       try {
-        const res = await fetch(S.settings.proxyUrl.replace(/\/+$/, '') + '/analyze', {
+        const res = await fetch(window.Auth.urlProxy('/analyze'), {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-App-Token': S.settings.proxyToken },
+          headers: window.Auth.cabecalhosProxy({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({ dados: payload }),
         });
         const data = await res.json().catch(() => null);
         if (!res.ok) throw new Error((data && (data.detail || data.error)) || 'HTTP ' + res.status);
         S.analysis = { at: new Date().toISOString(), text: data.analise || '', modelo: data.modelo || '' };
         window.Store.save();
+        scheduleBackup();   // a análise também vai p/ a nuvem
         renderAnalysisInto(out, S.analysis);
         renderExLab(); renderExImg(); renderSaude(); // atualiza o "ver última" dos cards
       } catch (err) {
@@ -1853,10 +1897,339 @@ window.App = (function () {
     ]);
   }
 
+  // ================= CONTA (login por e-mail) =================
+  // Uma conta resolve o que a senha do proxy não resolvia: entrar num aparelho
+  // novo e ter tudo de volta, e recuperar acesso por e-mail se esquecer a
+  // senha. Enquanto não há login, o app funciona 100% offline como sempre.
+
+  function contaInfo() { return window.Auth.conta(); }
+
+  // chip no topo: em quem estou logado (ou convite p/ entrar)
+  function atualizarStatusConta() {
+    const chip = $('#conta-chip');
+    if (!chip) return;
+    chip.hidden = false;
+    if (window.Auth.logado()) {
+      const pend = window.Auth.temPendencia();
+      chip.className = 'conta-chip on';
+      chip.textContent = (pend ? '↻ ' : '☁ ') + window.Auth.email();
+      chip.title = pend
+        ? 'Alterações ainda não enviadas para a nuvem — toque para ver a conta.'
+        : 'Sincronizado com a nuvem. Toque para ver a conta.';
+    } else {
+      chip.className = 'conta-chip off';
+      chip.textContent = 'entrar';
+      chip.title = 'Entrar para guardar seus dados na nuvem e não perder nada.';
+    }
+    chip.onclick = () => { if (window.Auth.logado()) goTo('diario', 'dados'); else abrirLogin(); };
+  }
+
+  // ---- decide o que fazer quando a nuvem e o aparelho têm dados ----
+  function temDadosLocais() {
+    return Object.keys(S.days || {}).some(d => (S.days[d].items || []).length)
+      || Object.keys(S.weights || {}).length > 0
+      || (S.customFoods || []).length > 0
+      || (S.labExams || []).length > 0
+      || (S.imgExams || []).length > 0;
+  }
+
+  // Resolve o encontro entre o que está aqui e o que está na nuvem.
+  // Chamada ao entrar (login/cadastro/reset) e ao abrir o app já logado.
+  // Só libera o envio automático DEPOIS de decidir — antes disso, um envio
+  // cego poderia apagar da nuvem o que foi feito em outro aparelho.
+  async function sincronizarAoEntrar(msgEl) {
+    const diz = (t) => { if (msgEl) { msgEl.className = 'auth-msg'; msgEl.textContent = t; } };
+    window.Auth.travarEnvio();
+    diz('Buscando seus dados na nuvem…');
+    let remoto = null;
+    try {
+      remoto = await window.Auth.baixarDados();
+    } catch (e) {
+      // offline: não libera envio automático — melhor ficar pendente do que
+      // arriscar sobrescrever a nuvem sem saber o que tem lá
+      diz('Entrou, mas não consegui falar com a nuvem agora: ' + e.message + ' Suas alterações vão subir quando a conexão voltar.');
+      return;
+    }
+
+    const aplicar = (modo) => {
+      window.Store.importJSON(remoto.state, modo);
+      S = window.Store.get();
+      refreshFoods(); renderAll();
+    };
+
+    if (!remoto || !remoto.state) {
+      // conta nova: o que existe aqui vira a base na nuvem
+      window.Auth.liberarEnvio();
+      try { await window.Auth.enviarDados(); } catch (e) { /* sobe depois */ }
+      atualizarStatusConta(); diz('');
+      return;
+    }
+    if (!temDadosLocais()) {
+      aplicar('replace');
+      window.Auth.liberarEnvio();
+      atualizarStatusConta();
+      toast('Seus dados voltaram da nuvem ✅', 'ok');
+      diz('');
+      return;
+    }
+
+    // Os dois lados têm dados. Se a nuvem não mudou desde o último envio
+    // DESTE aparelho, o local é a versão mais nova — segue sem incomodar.
+    const c = contaInfo();
+    const nuvemNova = !c.lastSyncAt || !remoto.updatedAt
+      || new Date(remoto.updatedAt) > new Date(c.lastSyncAt);
+    if (!nuvemNova) {
+      window.Auth.liberarEnvio();
+      atualizarStatusConta(); diz('');
+      return;
+    }
+
+    // Conflito real: nunca decidir sozinho — é aqui que se perde histórico.
+    diz('');
+    const quando = remoto.updatedAt ? new Date(remoto.updatedAt).toLocaleString('pt-BR') : '?';
+    const fecharCom = (fn) => () => { fn(); window.Auth.liberarEnvio(); atualizarStatusConta(); m.close(); };
+    const corpo = h('div', {}, [
+      h('p', { class: 'note' }, 'Este aparelho tem dados, e a nuvem tem uma versão mais recente (de ' + quando + ') — provavelmente de outro aparelho. O que fazer?'),
+      h('div', { class: 'btn-row' }, [
+        h('button', {
+          class: 'btn primary',
+          onclick: fecharCom(() => { aplicar('merge'); window.Auth.agendarEnvio(); toast('Dados juntados ✅', 'ok'); }),
+        }, '⇄ Juntar os dois (recomendado)'),
+        h('button', {
+          class: 'btn',
+          onclick: () => {
+            if (!confirm('Isso APAGA os dados deste aparelho e usa os da nuvem. Continuar?')) return;
+            fecharCom(() => { aplicar('replace'); toast('Dados da nuvem aplicados ✅', 'ok'); })();
+          },
+        }, '☁ Usar só os da nuvem'),
+        h('button', {
+          class: 'btn',
+          onclick: () => {
+            if (!confirm('Isso vai SOBRESCREVER na nuvem a versão de ' + quando + ' com os dados deste aparelho. Continuar?')) return;
+            fecharCom(() => {
+              window.Auth.enviarDados().then(() => toast('Nuvem atualizada com este aparelho ✅', 'ok'))
+                .catch(e => toast('Não consegui enviar: ' + e.message, 'error'));
+            })();
+          },
+        }, '📱 Usar só os deste aparelho'),
+      ]),
+      h('p', { class: 'hint' }, '“Juntar” soma dias, pesagens, exames, métricas e alimentos dos dois lados, sem duplicar registros iguais. É a única opção que não descarta nada.'),
+    ]);
+    const m = modal('Dados em dois lugares', corpo);
+  }
+
+  // ---- tela de entrar / criar conta / esqueci a senha ----
+  function abrirLogin(abaInicial) {
+    let aba = abaInicial || 'entrar';
+    const corpo = h('div', {});
+    const m = modal('Sua conta', corpo);
+
+    function campo(label, attrs) {
+      const inp = h('input', Object.assign({ class: 'in' }, attrs));
+      return { wrap: h('div', { class: 'field' }, [h('label', { class: 'lbl' }, label), inp]), inp };
+    }
+
+    function render() {
+      clear(corpo);
+      const tabs = h('div', { class: 'auth-tabs' }, [
+        h('button', { class: aba === 'entrar' ? 'active' : '', onclick: () => { aba = 'entrar'; render(); } }, 'Entrar'),
+        h('button', { class: aba === 'criar' ? 'active' : '', onclick: () => { aba = 'criar'; render(); } }, 'Criar conta'),
+        h('button', { class: aba === 'esqueci' ? 'active' : '', onclick: () => { aba = 'esqueci'; render(); } }, 'Esqueci'),
+      ]);
+      corpo.appendChild(tabs);
+      const msg = h('p', { class: 'auth-msg' });
+      const emailF = campo('E-mail', { type: 'email', inputmode: 'email', autocomplete: 'email', placeholder: 'voce@exemplo.com', value: window.Auth.email() || '' });
+
+      function comBotao(texto, acao, extras) {
+        const btn = h('button', { class: 'btn primary' }, texto);
+        btn.addEventListener('click', async () => {
+          msg.className = 'auth-msg';
+          msg.textContent = '⏳ um instante…';
+          corpo.classList.add('auth-busy');
+          try {
+            await acao();
+          } catch (e) {
+            msg.className = 'auth-msg erro';
+            msg.textContent = '⚠ ' + e.message;
+          }
+          corpo.classList.remove('auth-busy');
+        });
+        return h('div', {}, [h('div', { class: 'btn-row' }, [btn].concat(extras || [])), msg]);
+      }
+
+      if (aba === 'entrar') {
+        const senhaF = campo('Senha', { type: 'password', autocomplete: 'current-password', placeholder: 'sua senha' });
+        corpo.appendChild(h('p', { class: 'note' }, 'Entre para guardar tudo na nuvem e recuperar seus dados em qualquer aparelho.'));
+        corpo.appendChild(emailF.wrap);
+        corpo.appendChild(senhaF.wrap);
+        corpo.appendChild(comBotao('Entrar', async () => {
+          await window.Auth.entrar(emailF.inp.value.trim(), senhaF.inp.value);
+          atualizarStatusConta(); renderDados();
+          msg.className = 'auth-msg ok';
+          await sincronizarAoEntrar(msg);
+          if (!msg.textContent) m.close();
+        }));
+      } else if (aba === 'criar') {
+        const senhaF = campo('Senha (mínimo 8 caracteres)', { type: 'password', autocomplete: 'new-password', placeholder: 'escolha uma senha' });
+        const senha2F = campo('Repita a senha', { type: 'password', autocomplete: 'new-password' });
+        const convF = campo('Código de convite', { type: 'text', placeholder: 'o código que o dono do app te passou' });
+        corpo.appendChild(h('p', { class: 'note' }, 'A conta guarda seu histórico na nuvem e permite recuperar a senha por e-mail. Use um e-mail que você realmente acessa — é por ele que a recuperação funciona.'));
+        corpo.appendChild(emailF.wrap);
+        corpo.appendChild(senhaF.wrap);
+        corpo.appendChild(senha2F.wrap);
+        corpo.appendChild(convF.wrap);
+        corpo.appendChild(comBotao('Criar conta', async () => {
+          const senha = senhaF.inp.value;
+          if (senha.length < 8) throw new Error('A senha precisa ter pelo menos 8 caracteres.');
+          if (senha !== senha2F.inp.value) throw new Error('As duas senhas não são iguais.');
+          await window.Auth.criarConta(emailF.inp.value.trim(), senha, convF.inp.value.trim());
+          atualizarStatusConta(); renderDados();
+          await sincronizarAoEntrar(msg);
+          toast('Conta criada ✅ Seus dados agora ficam na nuvem.', 'ok');
+          if (!msg.textContent) m.close();
+        }));
+        corpo.appendChild(h('p', { class: 'hint' }, 'Honestidade: neste modelo, quem administra o servidor consegue ler os dados guardados — é o preço de poder recuperar a senha. Quem quiser sigilo absoluto pode usar o backup por senha do app, mais abaixo na aba Dados, que ninguém consegue abrir (nem para recuperar).'));
+      } else {
+        corpo.appendChild(h('p', { class: 'note' }, 'Enviamos um link para o seu e-mail. Ele vale por 30 minutos e abre a tela de nova senha aqui mesmo.'));
+        corpo.appendChild(emailF.wrap);
+        corpo.appendChild(comBotao('Enviar link de recuperação', async () => {
+          await window.Auth.esqueciSenha(emailF.inp.value.trim());
+          msg.className = 'auth-msg ok';
+          msg.textContent = '✅ Se existe conta com esse e-mail, o link já foi enviado. Confira a caixa de entrada (e o spam).';
+        }));
+      }
+    }
+    render();
+    return m;
+  }
+
+  // ---- nova senha (aberta pelo link do e-mail) ----
+  function abrirRedefinicao(token) {
+    const corpo = h('div', {});
+    const m = modal('Criar nova senha', corpo, () => { modalRecuperacao = null; });
+    const msg = h('p', { class: 'auth-msg' });
+    const emailI = h('input', { class: 'in', type: 'email', inputmode: 'email', placeholder: 'voce@exemplo.com', value: window.Auth.email() || '' });
+    const s1 = h('input', { class: 'in', type: 'password', autocomplete: 'new-password', placeholder: 'nova senha (mín. 8)' });
+    const s2 = h('input', { class: 'in', type: 'password', autocomplete: 'new-password', placeholder: 'repita a nova senha' });
+    const btn = h('button', { class: 'btn primary' }, 'Salvar nova senha');
+    btn.addEventListener('click', async () => {
+      msg.className = 'auth-msg'; msg.textContent = '⏳ um instante…';
+      corpo.classList.add('auth-busy');
+      try {
+        if (s1.value.length < 8) throw new Error('A senha precisa ter pelo menos 8 caracteres.');
+        if (s1.value !== s2.value) throw new Error('As duas senhas não são iguais.');
+        await window.Auth.redefinirSenha(token, emailI.value.trim(), s1.value);
+        window.Auth.limparHash();
+        atualizarStatusConta(); renderDados();
+        await sincronizarAoEntrar(msg);
+        toast('Senha trocada e você já está dentro ✅', 'ok');
+        if (!msg.textContent) m.close();
+      } catch (e) {
+        msg.className = 'auth-msg erro';
+        msg.textContent = '⚠ ' + e.message;
+      }
+      corpo.classList.remove('auth-busy');
+    });
+    corpo.appendChild(h('p', { class: 'note' }, 'Confirme o e-mail da conta e escolha a nova senha. O e-mail é necessário porque a senha é preparada aqui no aparelho antes de sair.'));
+    corpo.appendChild(h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'E-mail da conta'), emailI]));
+    corpo.appendChild(h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Nova senha'), s1]));
+    corpo.appendChild(h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Repita'), s2]));
+    corpo.appendChild(h('div', { class: 'btn-row' }, [btn]));
+    corpo.appendChild(msg);
+    corpo.appendChild(h('p', { class: 'hint' }, 'Seus dados na nuvem continuam lá — trocar a senha não apaga nada.'));
+    return m;
+  }
+
+  function abrirTrocaDeSenha() {
+    const corpo = h('div', {});
+    const m = modal('Trocar senha', corpo);
+    const msg = h('p', { class: 'auth-msg' });
+    const atual = h('input', { class: 'in', type: 'password', autocomplete: 'current-password' });
+    const nova = h('input', { class: 'in', type: 'password', autocomplete: 'new-password' });
+    const btn = h('button', { class: 'btn primary' }, 'Salvar');
+    btn.addEventListener('click', async () => {
+      msg.className = 'auth-msg'; msg.textContent = '⏳…';
+      try {
+        if (nova.value.length < 8) throw new Error('A senha nova precisa ter pelo menos 8 caracteres.');
+        await window.Auth.trocarSenha(atual.value, nova.value);
+        m.close();
+        toast('Senha trocada ✅', 'ok');
+      } catch (e) {
+        msg.className = 'auth-msg erro';
+        msg.textContent = '⚠ ' + e.message;
+      }
+    });
+    corpo.appendChild(h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Senha atual'), atual]));
+    corpo.appendChild(h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Senha nova'), nova]));
+    corpo.appendChild(h('div', { class: 'btn-row' }, [btn]));
+    corpo.appendChild(msg);
+    return m;
+  }
+
+  // ---- cartão da conta na aba Dados ----
+  function renderContaCard() {
+    const c = contaInfo();
+    if (!window.Auth.logado()) {
+      return h('div', { class: 'card' }, [
+        h('h3', {}, '👤 Sua conta'),
+        h('p', { class: 'note' }, 'Sem conta, seus dados existem SÓ neste aparelho — e desaparecem se você remover o app da tela de início ou trocar de celular. Com conta, tudo fica guardado na nuvem e volta com um login.'),
+        h('div', { class: 'btn-row' }, [
+          h('button', { class: 'btn primary', onclick: () => abrirLogin('entrar') }, 'Entrar'),
+          h('button', { class: 'btn', onclick: () => abrirLogin('criar') }, 'Criar conta'),
+        ]),
+        h('p', { class: 'hint' }, 'Precisa de um código de convite (o dono do app te passa). A recuperação de senha é por e-mail.'),
+      ]);
+    }
+    const pend = window.Auth.temPendencia();
+    return h('div', { class: 'card' }, [
+      h('h3', {}, '👤 Sua conta'),
+      h('div', { class: 'conta-linha' }, [
+        h('div', {}, [
+          h('div', {}, [h('span', { class: 'sync-dot' + (pend ? ' pend' : '') }), ' ', h('strong', {}, c.email)]),
+          h('div', { class: 'hint' }, pend
+            ? 'Enviando alterações…'
+            : (c.lastSyncAt ? 'Sincronizado em ' + new Date(c.lastSyncAt).toLocaleString('pt-BR') : 'Aguardando o primeiro envio…')),
+        ]),
+      ]),
+      h('div', { class: 'btn-row' }, [
+        h('button', {
+          class: 'btn', onclick: async () => {
+            try { await window.Auth.enviarDados(); atualizarStatusConta(); renderDados(); toast('Enviado para a nuvem ✅', 'ok'); }
+            catch (e) { toast('Não consegui enviar: ' + e.message, 'error'); }
+          },
+        }, '☁ Enviar agora'),
+        h('button', {
+          class: 'btn', onclick: async () => {
+            try {
+              const r = await window.Auth.baixarDados();
+              if (!r || !r.state) { toast('Esta conta ainda não tem dados na nuvem.', 'error'); return; }
+              const quando = r.updatedAt ? new Date(r.updatedAt).toLocaleString('pt-BR') : '?';
+              if (!confirm('Restaurar os dados de ' + quando + '?\n\nIsto SUBSTITUI os dados deste aparelho.')) return;
+              window.Store.importJSON(r.state, 'replace');
+              S = window.Store.get();
+              refreshFoods(); renderAll();
+              toast('Restaurado da nuvem ✅', 'ok');
+            } catch (e) { toast('Não consegui baixar: ' + e.message, 'error'); }
+          },
+        }, '⬇ Restaurar da nuvem'),
+        h('button', { class: 'btn', onclick: abrirTrocaDeSenha }, '🔑 Trocar senha'),
+        h('button', {
+          class: 'btn danger', onclick: async () => {
+            if (!confirm('Sair da conta neste aparelho?\n\nOs dados continuam na nuvem e aqui — você pode entrar de novo quando quiser.')) return;
+            await window.Auth.sair();
+            atualizarStatusConta(); renderDados();
+            toast('Você saiu da conta.', 'ok');
+          },
+        }, 'Sair'),
+      ]),
+      h('p', { class: 'hint' }, 'Tudo que você registra é enviado sozinho, poucos segundos depois de salvar.'),
+    ]);
+  }
+
   // ================= MODAIS =================
-  function modal(title, bodyNode) {
+  function modal(title, bodyNode, aoFechar) {
     const back = h('div', { class: 'modal-back', onclick: e => { if (e.target === back) close(); } });
-    function close() { back.remove(); }
+    function close() { back.remove(); if (aoFechar) aoFechar(); }
     back.appendChild(h('div', { class: 'modal' }, [
       h('div', { class: 'modal-head' }, [h('h3', {}, title), h('button', { class: 'icon-btn', onclick: close }, '✕')]),
       bodyNode,
@@ -1964,8 +2337,8 @@ window.App = (function () {
     const scanBtn = h('button', {
       class: 'btn',
       onclick: () => {
-        if (!S.settings.proxyUrl || !S.settings.proxyToken) {
-          toast('Para ler rótulo por foto, configure o proxy na aba Dados.', 'error');
+        if (!window.Auth.podeUsarProxy()) {
+          toast('Para ler rótulo por foto, entre na sua conta (toque em “entrar”, no topo).', 'error');
           return;
         }
         labelIn.click();
@@ -1973,7 +2346,7 @@ window.App = (function () {
     }, '📷 Fotografar tabela nutricional');
 
     // compartilhar na base comum (só p/ alimentos novos, com proxy configurado)
-    const podeCompartilhar = !editing && S.settings.proxyUrl && S.settings.proxyToken;
+    const podeCompartilhar = !editing && window.Auth.podeUsarProxy();
     const shareChk = h('input', { type: 'checkbox', id: 'share-food' });
     if (podeCompartilhar) shareChk.checked = true;
 
@@ -2090,7 +2463,7 @@ window.App = (function () {
       onchange: async e => {
         const f = e.target.files[0]; e.target.value = '';
         if (!f) return;
-        if (!S.settings.proxyUrl || !S.settings.proxyToken) { toast('Para usar foto, configure o proxy na aba Dados.', 'error'); return; }
+        if (!window.Auth.podeUsarProxy()) { toast('Para usar foto, entre na sua conta (toque em “entrar”, no topo).', 'error'); return; }
         photoBtn.disabled = true; const old = photoBtn.textContent; photoBtn.textContent = '⏳…';
         try {
           const b64 = await compressPhoto(f);
@@ -2209,6 +2582,7 @@ window.App = (function () {
     init, addPhotoItems, compressPhoto, analyzePhoto, computeRecipe, openRecipeForm,
     applyLabelToForm, pushBackup, restoreBackup,
     buildAnalysisPayload, reminderDue, goTo,
+    atualizarStatusConta, abrirLogin, sincronizarAoEntrar,
   };
 })();
 

@@ -1,9 +1,18 @@
-// Configuração do Cloudflare Worker (proxy da Fase 2, multiusuário).
+// Configuração do Cloudflare Worker (proxy da Fase 2 + contas).
 // SEGREDOS (nunca ficam neste arquivo nem no git):
 //   npx wrangler secret put ANTHROPIC_API_KEY   <- chave da API (só o dono digita)
-//   npx wrangler secret put APP_TOKEN           <- senha(s) do app: uma por
-//     pessoa, separadas por vírgula (ex.: "senha-daniel,senha-maria").
-//     Para revogar alguém, regrave o segredo sem a senha da pessoa.
+//   npx wrangler secret put DATA_KEY            <- chave que cifra os dados das
+//     contas em repouso. Gere algo longo e aleatório e GUARDE: se ela mudar,
+//     os dados guardados na nuvem ficam ilegíveis (as contas continuam, os
+//     dados não). É esta chave que permite recuperar senha sem perder nada.
+//   npx wrangler secret put INVITE_CODE         <- código(s) de convite para
+//     criar conta, separados por vírgula. Sem isso ninguém se cadastra.
+//     Use algo difícil de chutar: é o que impede estranho gastando sua API.
+//   npx wrangler secret put RESEND_API_KEY      <- chave do Resend, p/ enviar
+//     o e-mail de recuperação de senha (resend.com, plano grátis serve).
+//   npx wrangler secret put APP_TOKEN           <- LEGADO. Senha(s) do app do
+//     modelo antigo (backup cifrado no aparelho, sem recuperação). Opcional
+//     se todos usarem conta; mantenha para abrir backups antigos.
 {
   "name": "diario-alimentar-proxy",
   "main": "src/index.js",
@@ -22,7 +31,12 @@
     // máx. de fotos analisadas por dia, somando todos os usuários
     "PHOTO_DAILY_LIMIT": "60",
     // máx. de análises inteligentes (/analyze) por dia, somando todos
-    "ANALYSIS_DAILY_LIMIT": "20"
+    "ANALYSIS_DAILY_LIMIT": "20",
+    // remetente dos e-mails de recuperação. Precisa ser um domínio verificado
+    // no Resend; "onboarding@resend.dev" só envia para o seu próprio e-mail.
+    "MAIL_FROM": "Highlander <onboarding@resend.dev>",
+    // endereço do app, usado no link de recuperação enviado por e-mail
+    "APP_BASE_URL": "https://azimoov.github.io/diario-alimentar/"
   },
   // contador do limite diário de fotos
   "kv_namespaces": [

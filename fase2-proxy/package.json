@@ -5,6 +5,7 @@
   "description": "Proxy serverless (Cloudflare Worker) da Fase 2 — guarda a chave da API e analisa fotos de refeicoes. A chave NUNCA vai para o front-end.",
   "scripts": {
     "dev": "wrangler dev",
+    "dev:local": "node dev-server.mjs",
     "deploy": "wrangler deploy",
     "test": "node test/smoke.mjs"
   },
