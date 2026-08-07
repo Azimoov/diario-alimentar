@@ -14,21 +14,24 @@ const mock = createServer((req, res) => {
     const body = JSON.parse(data || "{}");
     // detecta o modo pelo system prompt que o worker enviou
     const isRotulo = String(body.system || "").includes("tabelas nutricionais");
-    const conteudo = isRotulo
-      ? { nome: "Whey Teste", base: "porcao", porcao_g: 30, kcal: 120, prot: 24, carb: 3, fat: 1.5, fiber: 0, observacao: "" }
-      : {
-          itens: [
-            { nome: "arroz branco cozido", gramas: 150, confianca: "media" },
-            { nome: "feijão carioca cozido", gramas: 100, confianca: "media" },
-            { nome: "peito de frango grelhado", gramas: 120, confianca: "alta" },
-          ],
-          observacao: "",
-        };
+    const isAnalise = String(body.system || "").includes("dados de saúde PESSOAIS");
+    const texto = isAnalise
+      ? "VISÃO GERAL\n– Teste local do mock.\n\nEXAMES\n– Sem dados suficientes."
+      : JSON.stringify(isRotulo
+        ? { nome: "Whey Teste", base: "porcao", porcao_g: 30, kcal: 120, prot: 24, carb: 3, fat: 1.5, fiber: 0, observacao: "" }
+        : {
+            itens: [
+              { nome: "arroz branco cozido", gramas: 150, confianca: "media" },
+              { nome: "feijão carioca cozido", gramas: 100, confianca: "media" },
+              { nome: "peito de frango grelhado", gramas: 120, confianca: "alta" },
+            ],
+            observacao: "",
+          });
     const payload = {
       id: "msg_mock", type: "message", role: "assistant",
       model: body.model || "claude-opus-4-8",
       stop_reason: "end_turn",
-      content: [{ type: "text", text: JSON.stringify(conteudo) }],
+      content: [{ type: "text", text: texto }],
       usage: { input_tokens: 1500, output_tokens: 120 },
     };
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -57,7 +60,7 @@ const ORIGIN = "http://localhost:8123";
 const IMG = "aGVsbG8="; // base64 qualquer — o mock não valida a imagem
 
 function req(opts = {}) {
-  return new Request("https://proxy.example/analyze", {
+  return new Request("https://proxy.example/", {
     method: opts.method || "POST",
     headers: {
       "Content-Type": "application/json",
@@ -162,6 +165,31 @@ mock.listen(MOCK_PORT, async () => {
     }), ENV), 200, (res, body) =>
       (body.rotulo && body.rotulo.base === "porcao" && body.rotulo.porcao_g === 30
         && body.rotulo.kcal === 120 && body.rotulo.prot === 24) || "payload rótulo inesperado");
+
+    // ---- análise inteligente (/analyze) ----
+    const anReq = (opts = {}) => new Request("https://proxy.example/analyze", {
+      method: opts.method || "POST",
+      headers: { "Content-Type": "application/json", Origin: ORIGIN, "X-App-Token": opts.token || "token-teste" },
+      body: opts.method === "GET" ? undefined :
+        (opts.body !== undefined ? opts.body : JSON.stringify({ dados: { perfil: { idade: 40 }, examesLaboratoriais: [] } })),
+    });
+    await check("análise caminho feliz", worker.fetch(anReq(), ENV), 200, (res, body) =>
+      (typeof body.analise === "string" && body.analise.includes("VISÃO GERAL")
+        && body.modelo === "claude-opus-4-8") || "payload de análise inesperado");
+    await check("análise sem dados", worker.fetch(anReq({ body: JSON.stringify({}) }), ENV), 400);
+    await check("análise GET bloqueado", worker.fetch(anReq({ method: "GET" }), ENV), 405);
+    await check("análise resumo grande demais", worker.fetch(anReq({
+      body: JSON.stringify({ dados: { blob: "x".repeat(200_001) } }),
+    }), ENV), 413);
+    {
+      const usadas = parseInt(kvStore.get("analises:" + hoje) || "0", 10);
+      const ok = usadas === 1; // só o caminho feliz consome cota
+      console.log(`${ok ? "PASS" : "FAIL"}  contador de análises incrementa -> ${usadas}`);
+      if (!ok) failed++;
+    }
+    kvStore.set("analises:" + hoje, "20");
+    await check("análise limite diário", worker.fetch(anReq(), ENV), 429);
+    kvStore.delete("analises:" + hoje);
   } finally {
     mock.close();
     console.log(failed ? `\n${failed} teste(s) FALHARAM` : "\nTodos os testes passaram.");

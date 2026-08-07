@@ -116,17 +116,42 @@ window.App = (function () {
     renderAlimentos();
     renderPerfil();
     renderDados();
+    renderExLab();
+    renderExImg();
+    renderSaude();
+    updateNavBadges();
   }
 
+  // ---- navegação em dois níveis: área (Diário · Exames · Métricas) + abas ----
+  let currentApp = 'diario';
+  const APP_TAB = { diario: 'hoje', exames: 'exlab', saude: 'saude' }; // aba lembrada por área
   function bindTabs() {
+    document.querySelectorAll('.app-btn').forEach(btn => {
+      btn.addEventListener('click', () => { currentApp = btn.dataset.app; applyNav(); });
+    });
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.querySelectorAll('.tab').forEach(s => s.classList.remove('active'));
-        btn.classList.add('active');
-        $('#tab-' + btn.dataset.tab).classList.add('active');
+        const app = btn.closest('nav.tabs').dataset.app;
+        currentApp = app;
+        APP_TAB[app] = btn.dataset.tab;
+        applyNav();
       });
     });
+    applyNav();
+  }
+  function applyNav() {
+    const tab = APP_TAB[currentApp];
+    document.querySelectorAll('.app-btn').forEach(b => b.classList.toggle('active', b.dataset.app === currentApp));
+    document.querySelectorAll('nav.tabs').forEach(n => { n.hidden = n.dataset.app !== currentApp; });
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.tab').forEach(s => s.classList.toggle('active', s.id === 'tab-' + tab));
+  }
+  function goTo(app, tab) { currentApp = app; if (tab) APP_TAB[app] = tab; applyNav(); }
+  // bolinha no botão Exames quando há lembrete vencido
+  function updateNavBadges() {
+    const n = (S.examReminders || []).filter(r => reminderDue(r).days <= 0).length;
+    const dot = document.querySelector('.app-btn[data-app="exames"] .dot');
+    if (dot) dot.hidden = !n;
   }
 
   // ================= ABA HOJE =================
@@ -459,6 +484,17 @@ window.App = (function () {
       h('button', { class: 'icon-btn', disabled: isToday ? 'disabled' : null, onclick: () => { if (!isToday) { currentDate = shiftDate(currentDate, 1); renderHoje(); } } }, '›'),
       isToday ? null : h('button', { class: 'link-btn', onclick: () => { currentDate = isoLocal(new Date()); renderHoje(); } }, 'hoje'),
     ]));
+
+    // ----- exame vencido? aviso discreto que leva à área Exames -----
+    const vencidos = (S.examReminders || []).filter(r => reminderDue(r).days <= 0);
+    if (vencidos.length) {
+      root.appendChild(h('button', {
+        class: 'due-banner',
+        onclick: () => goTo('exames', vencidos[0].kind === 'img' ? 'eximg' : 'exlab'),
+      }, '🔔 ' + (vencidos.length === 1
+        ? 'Está na hora de repetir: ' + vencidos[0].name + ' — toque para ver'
+        : vencidos.length + ' exames para repetir — toque para ver')));
+    }
 
     // ----- entrada de texto -----
     // ----- boas-vindas no primeiro uso (multiusuário: cada aparelho é de
@@ -1157,6 +1193,666 @@ window.App = (function () {
     renderAll();
   }
 
+  // ================= ÁREA EXAMES =================
+  // Duas abas: Laboratoriais (1 linha por analito — vira gráfico de evolução)
+  // e Imagem (data + resumo do laudo). Lembretes "repetir a cada N meses"
+  // avisam aqui, na aba Hoje e com a bolinha no botão Exames.
+  const ANALITOS_COMUNS = [
+    'Glicose em jejum', 'Hemoglobina glicada (HbA1c)', 'Insulina', 'Colesterol total',
+    'HDL', 'LDL', 'Triglicerídeos', 'TSH', 'T4 livre', 'Creatinina', 'Ureia',
+    'TGO (AST)', 'TGP (ALT)', 'GGT', 'Vitamina D (25-OH)', 'Vitamina B12',
+    'Ferritina', 'Ferro', 'Ácido úrico', 'Hemoglobina', 'Hematócrito',
+    'Leucócitos', 'Plaquetas', 'PCR ultrassensível', 'Testosterona total',
+    'Sódio', 'Potássio',
+  ];
+  const IMAGEM_COMUNS = [
+    'Ultrassom de abdome total', 'Ultrassom de tireoide', 'Raio-X de tórax',
+    'Tomografia', 'Ressonância magnética', 'Densitometria óssea',
+    'Ecocardiograma', 'Teste ergométrico', 'Eletrocardiograma',
+    'Angiotomografia de coronárias', 'Endoscopia digestiva alta',
+    'Colonoscopia', 'Mamografia', 'Doppler de carótidas',
+  ];
+
+  function uid(prefix) { return prefix + Date.now().toString(36) + Math.floor(Math.random() * 1296).toString(36); }
+  function numFromText(raw) {
+    const n = Number(String(raw).trim().replace(',', '.'));
+    return Number.isFinite(n) ? n : null; // "não reagente" fica só como texto
+  }
+  function addMonths(iso, months) {
+    const d = new Date(iso + 'T12:00:00');
+    d.setMonth(d.getMonth() + months);
+    return isoLocal(d);
+  }
+  function reminderDue(r) {
+    const due = addMonths(r.baseDate, r.months);
+    const days = Math.round((new Date(due + 'T12:00:00') - new Date(isoLocal(new Date()) + 'T12:00:00')) / 86400000);
+    return { due, days }; // days <= 0 → vencido (ou vence hoje)
+  }
+  // salvar + repintar tudo que mostra exames/lembretes (inclui backup automático)
+  function saveExams() {
+    window.Store.save();
+    scheduleBackup();
+    renderExLab(); renderExImg(); updateNavBadges(); renderHoje();
+  }
+  // exame novo do mesmo nome empurra o lembrete p/ frente (a contagem recomeça)
+  function bumpReminders(kind, norm, date) {
+    (S.examReminders || []).forEach(r => {
+      if (r.kind === kind && r.norm === norm && date > r.baseDate) r.baseDate = date;
+    });
+  }
+  function sugestoesDeNomes(kind) {
+    const proprios = (kind === 'lab' ? S.labExams : S.imgExams).map(x => x.name);
+    const base = kind === 'lab'
+      ? ['Hemograma completo', 'Perfil lipídico', 'Check-up de sangue'].concat(ANALITOS_COMUNS)
+      : IMAGEM_COMUNS;
+    return [...new Set(proprios.concat(base))];
+  }
+
+  // ---- lembretes (card compartilhado pelas duas abas, filtrado por tipo) ----
+  function renderRemindersCard(kind) {
+    const card = h('div', { class: 'card' }, [h('h3', {}, '🔔 Lembretes de repetição')]);
+    const list = (S.examReminders || []).filter(r => r.kind === kind)
+      .map(r => ({ r, d: reminderDue(r) }))
+      .sort((a, b) => a.d.days - b.d.days);
+    if (!list.length) {
+      card.appendChild(h('p', { class: 'note' }, 'Nenhum lembrete ainda. Crie um para o app avisar quando chegar a hora de repetir (ex.: a cada 12 meses). O aviso aparece aqui, na aba Hoje e na bolinha do botão Exames.'));
+    }
+    list.forEach(({ r, d }) => {
+      const cls = d.days <= 0 ? ' due' : (d.days <= 30 ? ' soon' : '');
+      const quando = d.days < 0 ? '🔔 está na hora! venceu ' + fmtBR(d.due) + ' (' + (-d.days) + ' dia(s) atrás)'
+        : d.days === 0 ? '🔔 está na hora! vence HOJE'
+        : 'próximo em ' + fmtBR(d.due) + ' (faltam ' + d.days + ' dia(s))';
+      card.appendChild(h('div', { class: 'rem-item' + cls }, [
+        h('div', { class: 'rem-info' }, [
+          h('div', {}, [h('strong', {}, r.name), ' · a cada ' + r.months + (r.months === 1 ? ' mês' : ' meses')]),
+          h('div', { class: 'rem-when' }, 'último: ' + fmtBR(r.baseDate) + ' · ' + quando),
+        ]),
+        h('div', { class: 'rem-actions' }, [
+          h('button', { class: 'link-btn', title: 'Fiz o exame hoje — recomeça a contagem', onclick: () => { r.baseDate = isoLocal(new Date()); saveExams(); } }, '✓ feito hoje'),
+          h('button', { class: 'del', title: 'Remover lembrete', onclick: () => { if (confirm('Remover o lembrete de ' + r.name + '?')) { S.examReminders = S.examReminders.filter(x => x.id !== r.id); saveExams(); } } }, '✕'),
+        ]),
+      ]));
+    });
+
+    const nameIn = h('input', { class: 'in', type: 'text', list: 'dl-rem-' + kind, placeholder: kind === 'lab' ? 'ex.: Hemograma completo' : 'ex.: Ultrassom de abdome total' });
+    const monthsIn = h('input', { class: 'in', type: 'number', min: '1', step: '1', placeholder: 'ex.: 12' });
+    const baseIn = h('input', { class: 'in', type: 'date', value: isoLocal(new Date()) });
+    // escolheu um exame já anotado? "último feito" vira a data mais recente dele
+    nameIn.addEventListener('change', () => {
+      const norm = window.Parser.normalize(nameIn.value);
+      const datas = (kind === 'lab' ? S.labExams : S.imgExams).filter(x => x.norm === norm).map(x => x.date).sort();
+      if (datas.length) baseIn.value = datas[datas.length - 1];
+    });
+    card.appendChild(h('details', { class: 'exam-group' }, [
+      h('summary', {}, [h('span', { class: 'meal-chev' }, '›'), '+ Novo lembrete']),
+      h('div', { class: 'exam-form-grid', style: 'margin-top:8px' }, [
+        h('div', { class: 'field span2' }, [
+          h('label', { class: 'lbl' }, 'Exame'), nameIn,
+          h('datalist', { id: 'dl-rem-' + kind }, sugestoesDeNomes(kind).map(n => h('option', { value: n }))),
+        ]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Repetir a cada (meses)'), monthsIn]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Último feito em'), baseIn]),
+        h('div', { class: 'span2' }, h('button', {
+          class: 'btn primary',
+          onclick: () => {
+            const name = nameIn.value.trim();
+            const months = Number(String(monthsIn.value).replace(',', '.'));
+            if (!name) { toast('Dê um nome ao exame.', 'error'); return; }
+            if (!(months >= 1)) { toast('Informe de quantos em quantos meses repetir (mínimo 1).', 'error'); return; }
+            S.examReminders.push({ id: uid('r'), name, norm: window.Parser.normalize(name), kind, months: Math.round(months), baseDate: baseIn.value || isoLocal(new Date()) });
+            saveExams();
+            toast('Lembrete criado ✅', 'ok');
+          },
+        }, 'Criar lembrete')),
+      ]),
+    ]));
+    return card;
+  }
+
+  // ---- exames LABORATORIAIS ----
+  let labDraftDate = null;   // mantém a data entre um analito e o próximo
+  let labEvoSel = null;      // analito escolhido no gráfico de evolução
+
+  function renderExLab() {
+    const root = $('#tab-exlab');
+    if (!root) return;
+    clear(root);
+    root.appendChild(renderRemindersCard('lab'));
+    root.appendChild(renderLabForm());
+    const evo = renderLabEvolution();
+    if (evo) root.appendChild(evo);
+    root.appendChild(renderLabHistory());
+    root.appendChild(renderAnalysisCard());
+  }
+
+  function renderLabForm() {
+    const dateIn = h('input', { class: 'in', type: 'date', value: labDraftDate || isoLocal(new Date()), onchange: e => { labDraftDate = e.target.value; } });
+    const nameIn = h('input', { class: 'in', type: 'text', list: 'dl-analitos', placeholder: 'ex.: Glicose em jejum' });
+    const valueIn = h('input', { class: 'in', type: 'text', inputmode: 'decimal', placeholder: 'ex.: 92 (ou “não reagente”)' });
+    const unitIn = h('input', { class: 'in', type: 'text', placeholder: 'ex.: mg/dL' });
+    const loIn = h('input', { class: 'in', type: 'number', step: 'any', placeholder: 'opcional' });
+    const hiIn = h('input', { class: 'in', type: 'number', step: 'any', placeholder: 'opcional' });
+    const obsIn = h('input', { class: 'in', type: 'text', placeholder: 'opcional, ex.: em jejum de 12 h' });
+    // analito repetido: puxa unidade e faixa do lançamento anterior
+    nameIn.addEventListener('change', () => {
+      const norm = window.Parser.normalize(nameIn.value);
+      const prev = S.labExams.filter(x => x.norm === norm).sort((a, b) => (a.date < b.date ? -1 : 1)).pop();
+      if (!prev) return;
+      if (!unitIn.value) unitIn.value = prev.unit || '';
+      if (!loIn.value && prev.refLow != null) loIn.value = prev.refLow;
+      if (!hiIn.value && prev.refHigh != null) hiIn.value = prev.refHigh;
+    });
+    return h('div', { class: 'card' }, [
+      h('h3', {}, '➕ Novo resultado'),
+      h('p', { class: 'note' }, 'Um analito por vez — a data fica travada, então dá para lançar o laudo inteiro em sequência. A faixa de referência é a impressa no SEU laudo (varia por laboratório); o app só compara com o que você anotar.'),
+      h('div', { class: 'exam-form-grid' }, [
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Data da coleta'), dateIn]),
+        h('div', { class: 'field' }, [
+          h('label', { class: 'lbl' }, 'Exame / analito'), nameIn,
+          h('datalist', { id: 'dl-analitos' }, sugestoesDeNomes('lab').map(n => h('option', { value: n }))),
+        ]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Resultado'), valueIn]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Unidade'), unitIn]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Referência mín.'), loIn]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Referência máx.'), hiIn]),
+        h('div', { class: 'field span2' }, [h('label', { class: 'lbl' }, 'Observação'), obsIn]),
+        h('div', { class: 'span2' }, h('button', {
+          class: 'btn primary',
+          onclick: () => {
+            const name = nameIn.value.trim();
+            const raw = valueIn.value.trim();
+            if (!name) { toast('Qual exame? Preencha o nome.', 'error'); return; }
+            if (!raw) { toast('Preencha o resultado.', 'error'); return; }
+            const date = dateIn.value || isoLocal(new Date());
+            const norm = window.Parser.normalize(name);
+            labDraftDate = date;
+            S.labExams.push({
+              id: uid('l'), date, name, norm, value: raw, num: numFromText(raw),
+              unit: unitIn.value.trim(), refLow: numOrNull(loIn.value), refHigh: numOrNull(hiIn.value),
+              obs: obsIn.value.trim(),
+            });
+            bumpReminders('lab', norm, date);
+            saveExams();
+            toast(name + ' anotado ✅ Pode lançar o próximo analito.', 'ok');
+          },
+        }, '+ Adicionar resultado')),
+      ]),
+    ]);
+  }
+
+  function labBadge(x) {
+    if (x.num == null || (x.refLow == null && x.refHigh == null)) return null;
+    if (x.refHigh != null && x.num > x.refHigh) return badge('↑ acima', 'error');
+    if (x.refLow != null && x.num < x.refLow) return badge('↓ abaixo', 'error');
+    return h('span', { class: 'badge badge-ok', title: 'dentro da referência anotada' }, '✓');
+  }
+
+  function renderLabHistory() {
+    const card = h('div', { class: 'card' }, [h('h3', {}, '📋 Resultados por coleta')]);
+    if (!S.labExams.length) {
+      card.appendChild(h('p', { class: 'empty' }, 'Nenhum resultado anotado ainda.'));
+      return card;
+    }
+    const byDate = {};
+    S.labExams.forEach(x => (byDate[x.date] = byDate[x.date] || []).push(x));
+    Object.keys(byDate).sort().reverse().forEach((date, di) => {
+      const rows = byDate[date];
+      const tb = h('tbody');
+      rows.forEach(x => {
+        tb.appendChild(h('tr', {}, [
+          h('td', { title: x.obs || '' }, x.name + (x.obs ? ' *' : '')),
+          h('td', {}, [String(x.value) + (x.unit ? ' ' + x.unit : ''), ' ', labBadge(x)]),
+          h('td', {}, (x.refLow != null || x.refHigh != null)
+            ? (x.refLow != null ? x.refLow : '—') + ' a ' + (x.refHigh != null ? x.refHigh : '—')
+            : '—'),
+          h('td', {}, h('button', { class: 'del', title: 'Remover', onclick: () => { if (confirm('Remover ' + x.name + ' de ' + fmtBR(date) + '?')) { S.labExams = S.labExams.filter(y => y.id !== x.id); saveExams(); } } }, '✕')),
+        ]));
+      });
+      card.appendChild(h('details', { class: 'exam-group', open: di === 0 ? 'open' : null }, [
+        h('summary', {}, [h('span', { class: 'meal-chev' }, '›'), '🧪 ' + fmtBR(date), h('span', { class: 'g-meta' }, rows.length + ' analito(s)')]),
+        h('table', { class: 'histtable exam-table' }, [
+          h('thead', {}, h('tr', {}, [h('th', {}, 'Exame'), h('th', {}, 'Resultado'), h('th', {}, 'Referência'), h('th', {}, '')])),
+          tb,
+        ]),
+      ]));
+    });
+    return card;
+  }
+
+  function renderLabEvolution() {
+    const byNorm = {};
+    S.labExams.filter(x => x.num != null).forEach(x => (byNorm[x.norm] = byNorm[x.norm] || []).push(x));
+    const opcoes = Object.keys(byNorm).filter(k => byNorm[k].length >= 2).sort();
+    if (!opcoes.length) return null;
+    if (!labEvoSel || opcoes.indexOf(labEvoSel) === -1) labEvoSel = opcoes[0];
+    const rows = byNorm[labEvoSel].sort((a, b) => (a.date < b.date ? -1 : 1));
+    const porData = {};
+    rows.forEach(x => { porData[x.date] = x.num; }); // mesmo dia repetido: vale o último
+    const series = Object.keys(porData).sort().map(date => ({ date, value: porData[date] }));
+    const ultimo = rows[rows.length - 1];
+    const maxAbs = Math.max(...series.map(p => Math.abs(p.value)));
+    const dec = maxAbs >= 100 ? 0 : (maxAbs >= 10 ? 1 : 2);
+    const flat = v => [{ date: series[0].date, value: v }, { date: series[series.length - 1].date, value: v }];
+    const extra = [];
+    if (ultimo.refLow != null) extra.push({ series: flat(ultimo.refLow), color: 'var(--warn)', width: 1.5, dash: '5 4' });
+    if (ultimo.refHigh != null) extra.push({ series: flat(ultimo.refHigh), color: 'var(--warn)', width: 1.5, dash: '5 4' });
+    return h('div', { class: 'card' }, [
+      h('h3', {}, '📈 Evolução'),
+      h('select', { class: 'in', onchange: e => { labEvoSel = e.target.value; renderExLab(); } },
+        opcoes.map(k => h('option', { value: k, selected: k === labEvoSel ? 'selected' : null }, byNorm[k][byNorm[k].length - 1].name))),
+      window.Charts.lineChart(series, { color: 'var(--p)', unit: ultimo.unit ? ' ' + ultimo.unit : '', decimals: dec, extra }),
+      extra.length ? h('p', { class: 'hint' }, 'Tracejado: faixa de referência anotada no exame mais recente. Toque no gráfico para ver cada valor.') : h('p', { class: 'hint' }, 'Toque no gráfico para ver cada valor.'),
+    ]);
+  }
+
+  // ---- exames de IMAGEM ----
+  let imgDraftDate = null;
+
+  function renderExImg() {
+    const root = $('#tab-eximg');
+    if (!root) return;
+    clear(root);
+    root.appendChild(renderRemindersCard('img'));
+    root.appendChild(renderImgForm());
+    root.appendChild(renderImgList());
+    root.appendChild(renderAnalysisCard());
+  }
+
+  function renderImgForm() {
+    const dateIn = h('input', { class: 'in', type: 'date', value: imgDraftDate || isoLocal(new Date()), onchange: e => { imgDraftDate = e.target.value; } });
+    const nameIn = h('input', { class: 'in', type: 'text', list: 'dl-imagem', placeholder: 'ex.: Ultrassom de abdome total' });
+    const placeIn = h('input', { class: 'in', type: 'text', placeholder: 'opcional' });
+    const reportIn = h('textarea', { rows: '4', placeholder: 'conclusão do laudo, achados, medidas…' });
+    return h('div', { class: 'card' }, [
+      h('h3', {}, '➕ Novo exame de imagem'),
+      h('p', { class: 'note' }, 'Anote a conclusão do laudo com suas palavras (ou copie o trecho que importa). Fica tudo neste aparelho.'),
+      h('div', { class: 'exam-form-grid' }, [
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Data'), dateIn]),
+        h('div', { class: 'field' }, [
+          h('label', { class: 'lbl' }, 'Exame'), nameIn,
+          h('datalist', { id: 'dl-imagem' }, sugestoesDeNomes('img').map(n => h('option', { value: n }))),
+        ]),
+        h('div', { class: 'field span2' }, [h('label', { class: 'lbl' }, 'Local / clínica'), placeIn]),
+        h('div', { class: 'field span2' }, [h('label', { class: 'lbl' }, 'Resumo do laudo'), reportIn]),
+        h('div', { class: 'span2' }, h('button', {
+          class: 'btn primary',
+          onclick: () => {
+            const name = nameIn.value.trim();
+            if (!name) { toast('Qual exame? Preencha o nome.', 'error'); return; }
+            const date = dateIn.value || isoLocal(new Date());
+            const norm = window.Parser.normalize(name);
+            imgDraftDate = date;
+            S.imgExams.push({ id: uid('i'), date, name, norm, place: placeIn.value.trim(), report: reportIn.value.trim() });
+            bumpReminders('img', norm, date);
+            saveExams();
+            toast(name + ' anotado ✅', 'ok');
+          },
+        }, '+ Adicionar exame')),
+      ]),
+    ]);
+  }
+
+  function renderImgList() {
+    const card = h('div', { class: 'card' }, [h('h3', {}, '📋 Exames de imagem')]);
+    if (!S.imgExams.length) {
+      card.appendChild(h('p', { class: 'empty' }, 'Nenhum exame de imagem anotado ainda.'));
+      return card;
+    }
+    S.imgExams.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).forEach((x, i) => {
+      const body = h('div');
+      const view = () => {
+        clear(body);
+        body.appendChild(x.report ? h('p', { class: 'exam-report' }, x.report) : h('p', { class: 'hint' }, 'Sem resumo do laudo.'));
+        if (x.place) body.appendChild(h('p', { class: 'hint' }, '📍 ' + x.place));
+        body.appendChild(h('div', { class: 'btn-row' }, [
+          h('button', { class: 'link-btn', onclick: edit }, '✏️ editar'),
+          h('button', { class: 'link-btn danger', onclick: () => { if (confirm('Remover ' + x.name + ' de ' + fmtBR(x.date) + '?')) { S.imgExams = S.imgExams.filter(y => y.id !== x.id); saveExams(); } } }, 'remover'),
+        ]));
+      };
+      const edit = () => {
+        clear(body);
+        const ta = h('textarea', { rows: '5' }, x.report || '');
+        const pl = h('input', { class: 'in', type: 'text', value: x.place || '', placeholder: 'local/clínica' });
+        body.appendChild(h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Resumo do laudo'), ta]));
+        body.appendChild(h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Local / clínica'), pl]));
+        body.appendChild(h('div', { class: 'btn-row' }, [
+          h('button', { class: 'btn primary', onclick: () => { x.report = ta.value.trim(); x.place = pl.value.trim(); saveExams(); } }, 'Salvar'),
+          h('button', { class: 'btn', onclick: view }, 'Cancelar'),
+        ]));
+      };
+      view();
+      card.appendChild(h('details', { class: 'exam-group', open: i === 0 ? 'open' : null }, [
+        h('summary', {}, [h('span', { class: 'meal-chev' }, '›'), '🩻 ' + fmtBR(x.date) + ' — ' + x.name]),
+        body,
+      ]));
+    });
+    return card;
+  }
+
+  // ================= ÁREA MÉTRICAS DE SAÚDE (Apple Health) =================
+  const METRIC_VIEW = {
+    steps:     { label: 'Passos por dia', unit: '', dec: 0 },
+    kcalOut:   { label: 'Energia ativa (kcal/dia)', unit: ' kcal', dec: 0 },
+    kcalBasal: { label: 'Energia basal (kcal/dia)', unit: ' kcal', dec: 0 },
+    exMin:     { label: 'Exercício (min/dia)', unit: ' min', dec: 0 },
+    sleepMin:  { label: 'Sono (horas por noite)', unit: ' h', dec: 1, conv: v => v / 60 },
+    hrRest:    { label: 'FC de repouso (bpm)', unit: ' bpm', dec: 0 },
+    hrv:       { label: 'Variabilidade da FC (ms)', unit: ' ms', dec: 1 },
+    vo2max:    { label: 'VO₂máx (mL/kg·min)', unit: '', dec: 1 },
+    distKm:    { label: 'Distância (km/dia)', unit: ' km', dec: 1 },
+  };
+  let saudeMetric = 'steps';
+  let saudePeriod = '90';
+  let healthImporting = false;
+
+  function mediaDe(arr) { return arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null; }
+  function fmtDec(v, dec) { return v == null ? '—' : String(round(v, dec)).replace('.', ','); }
+
+  function renderSaude() {
+    const root = $('#tab-saude');
+    if (!root) return;
+    clear(root);
+    root.appendChild(renderHealthImport());
+    const dates = Object.keys(S.health.daily || {}).sort();
+    if (dates.length) {
+      root.appendChild(renderHealthStats(dates));
+      root.appendChild(renderHealthChart(dates));
+      const bal = renderEnergyBalance();
+      if (bal) root.appendChild(bal);
+    }
+    root.appendChild(renderAnalysisCard());
+  }
+
+  function renderHealthImport() {
+    const bar = h('div', { class: 'progress-bar' });
+    const track = h('div', { class: 'progress-track', style: 'display:none' }, bar);
+    const periodo = h('select', { class: 'in' }, [
+      ['1', 'último 1 ano'], ['2', 'últimos 2 anos'], ['3', 'últimos 3 anos'],
+      ['5', 'últimos 5 anos'], ['0', 'tudo que houver'],
+    ].map(([v, t]) => h('option', { value: v, selected: v === '3' ? 'selected' : null }, t)));
+    const fileIn = h('input', {
+      type: 'file', accept: '.zip,.xml,application/zip,text/xml,application/xml', style: 'display:none',
+      onchange: e => { const f = e.target.files[0]; e.target.value = ''; if (f) doImport(f); },
+    });
+    const pickBtn = h('button', { class: 'btn primary', onclick: () => fileIn.click() }, '📂 Escolher export.zip (ou export.xml)');
+
+    async function doImport(file) {
+      if (healthImporting) return;
+      healthImporting = true;
+      pickBtn.disabled = true;
+      pickBtn.textContent = '⏳ lendo o arquivo…';
+      track.style.display = '';
+      const anos = Number(periodo.value);
+      const fromDate = anos ? shiftDate(isoLocal(new Date()), -Math.round(anos * 365.25)) : null;
+      try {
+        const res = await window.HealthKit.parseExportFile(file, {
+          fromDate,
+          onProgress: f => { bar.style.width = Math.round(f * 100) + '%'; },
+        });
+        if (!res.records) throw new Error('nenhum registro reconhecido — este é o export do app Saúde?');
+        Object.assign(S.health.daily, res.daily); // mescla por dia: reimportar atualiza
+        S.health.lastImportAt = new Date().toISOString();
+        window.Store.save();
+        scheduleBackup();
+        healthImporting = false;
+        toast('Importado: ' + Object.keys(res.daily).length + ' dia(s), de ' + fmtBR(res.firstDate) + ' a ' + fmtBR(res.lastDate) + ' ✅', 'ok');
+        renderSaude();
+      } catch (err) {
+        healthImporting = false;
+        pickBtn.disabled = false;
+        pickBtn.textContent = '📂 Escolher export.zip (ou export.xml)';
+        track.style.display = 'none';
+        toast('Não consegui importar: ' + err.message, 'error');
+      }
+    }
+
+    const card = h('div', { class: 'card' }, [
+      h('h3', {}, '⌚ Importar do app Saúde (iPhone)'),
+      h('p', { class: 'note' }, 'Passos, energia, sono, FC de repouso, VO₂máx e mais — do Apple Watch e do iPhone — para cruzar com a dieta e os exames. O arquivo é processado NESTE aparelho; nada sobe para servidor nenhum.'),
+      h('ol', { class: 'import-steps' }, [
+        h('li', {}, 'No iPhone, abra o app Saúde e toque na sua foto de perfil (canto superior direito).'),
+        h('li', {}, 'Toque em “Exportar Todos os Dados de Saúde” e salve o export.zip (em Arquivos).'),
+        h('li', {}, 'Volte aqui e escolha o arquivo — exports grandes levam 1–2 minutos.'),
+      ]),
+      h('div', { class: 'exam-form-grid' }, [
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Importar período'), periodo]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Arquivo do export'), pickBtn]),
+      ]),
+      fileIn, track,
+      h('p', { class: 'hint' }, S.health.lastImportAt
+        ? 'Última importação: ' + new Date(S.health.lastImportAt).toLocaleString('pt-BR') + ' · ' + Object.keys(S.health.daily).length + ' dia(s) guardados. Reimportar atualiza os dias repetidos.'
+        : 'Nenhuma importação ainda.'),
+      h('p', { class: 'hint' }, 'Honestidade: energia e sono do relógio são ESTIMATIVAS do sensor. Em dias com iPhone + Watch juntos, o app usa a maior fonte (não soma as duas) para não contar em dobro.'),
+    ]);
+    return card;
+  }
+
+  function renderHealthStats(dates) {
+    const ultimos = dates.slice(-30);
+    const val = (k) => {
+      const v = ultimos.map(d => S.health.daily[d][k]).filter(x => x != null);
+      return v.length ? mediaDe(v) : null;
+    };
+    const sono = val('sleepMin');
+    const grid = h('div', { class: 'results' }, [
+      statBox('Passos', val('steps') != null ? Math.round(val('steps')) : null, 'por dia'),
+      statBox('Ativa', val('kcalOut') != null ? Math.round(val('kcalOut')) : null, 'kcal/dia'),
+      statBox('Exercício', val('exMin') != null ? Math.round(val('exMin')) : null, 'min/dia'),
+      statBox('Sono', sono != null ? fmtDec(sono / 60, 1) : null, 'h/noite'),
+      statBox('FC repouso', val('hrRest') != null ? Math.round(val('hrRest')) : null, 'bpm'),
+      statBox('VO₂máx', val('vo2max') != null ? fmtDec(val('vo2max'), 1) : null, 'mL/kg·min'),
+    ]);
+    return h('div', { class: 'card' }, [
+      h('h3', {}, '📊 Médias — últimos 30 dias com dados'),
+      grid,
+      h('p', { class: 'hint' }, 'Período: ' + fmtBR(ultimos[0]) + ' a ' + fmtBR(ultimos[ultimos.length - 1]) + '. Médias só dos dias em que a métrica existe.'),
+    ]);
+  }
+
+  function movingAvg(series, dias) {
+    return series.map(p => {
+      const d0 = new Date(p.date + 'T12:00:00');
+      const vals = series.filter(q => {
+        const diff = (d0 - new Date(q.date + 'T12:00:00')) / 86400000;
+        return diff >= 0 && diff < dias;
+      }).map(q => q.value);
+      return { date: p.date, value: Math.round(mediaDe(vals) * 100) / 100 };
+    });
+  }
+
+  function renderHealthChart(dates) {
+    const daily = S.health.daily;
+    const disponiveis = Object.keys(METRIC_VIEW).filter(k => dates.some(d => daily[d][k] != null));
+    if (!disponiveis.length) return h('div');
+    if (disponiveis.indexOf(saudeMetric) === -1) saudeMetric = disponiveis[0];
+    const mv = METRIC_VIEW[saudeMetric];
+    const corte = saudePeriod === '0' ? null : shiftDate(isoLocal(new Date()), -Number(saudePeriod));
+    const series = dates
+      .filter(d => !corte || d >= corte)
+      .map(d => ({ date: d, value: daily[d][saudeMetric] != null ? (mv.conv ? mv.conv(daily[d][saudeMetric]) : daily[d][saudeMetric]) : null }))
+      .filter(p => p.value != null);
+    const ma = series.length >= 7 ? movingAvg(series, 7) : null;
+    return h('div', { class: 'card' }, [
+      h('h3', {}, '📈 Métricas dia a dia'),
+      h('div', { class: 'metric-controls' }, [
+        h('select', { class: 'in', onchange: e => { saudeMetric = e.target.value; renderSaude(); } },
+          disponiveis.map(k => h('option', { value: k, selected: k === saudeMetric ? 'selected' : null }, METRIC_VIEW[k].label))),
+        h('select', { class: 'in', onchange: e => { saudePeriod = e.target.value; renderSaude(); } }, [
+          ['30', '30 dias'], ['90', '90 dias'], ['365', '1 ano'], ['0', 'tudo'],
+        ].map(([v, t]) => h('option', { value: v, selected: v === saudePeriod ? 'selected' : null }, t))),
+      ]),
+      window.Charts.lineChart(series, {
+        color: 'var(--accent)', unit: mv.unit, decimals: mv.dec,
+        width: 1.5, lineOpacity: 0.4, pointR: 2.5,
+        extra: ma ? [{ series: ma, color: 'var(--p)', width: 2.5 }] : [],
+        empty: 'Sem dados neste período',
+      }),
+      ma ? h('p', { class: 'hint' }, 'Linha azul: média de 7 dias. Toque no gráfico para ver cada dia.') : null,
+    ]);
+  }
+
+  function renderEnergyBalance() {
+    const daily = S.health.daily;
+    const kcalMap = dailyKcalMap();
+    const overlap = Object.keys(daily)
+      .filter(d => kcalMap[d] > 0 && daily[d].kcalOut != null && daily[d].kcalBasal != null)
+      .sort().slice(-30);
+    if (overlap.length < 7) return null;
+    const inAvg = Math.round(mediaDe(overlap.map(d => kcalMap[d])));
+    const outAvg = Math.round(mediaDe(overlap.map(d => daily[d].kcalOut + daily[d].kcalBasal)));
+    const saldo = inAvg - outAvg;
+    return h('div', { class: 'card' }, [
+      h('h3', {}, '⚖️ Saldo energético — diário × relógio'),
+      h('div', { class: 'results' }, [
+        statBox('Ingerido', inAvg, 'kcal/dia (diário)'),
+        statBox('Gasto', outAvg, 'kcal/dia (relógio)'),
+        statBox('Saldo', (saldo > 0 ? '+' : '') + saldo, 'kcal/dia'),
+      ]),
+      h('p', { class: 'hint' }, 'Média dos últimos ' + overlap.length + ' dias com diário E relógio no mesmo dia. Gasto = energia basal + ativa estimadas pelo Watch — estimativa, não medida clínica. Saldo negativo ≈ déficit. Compare com o TDEE real da aba Perfil.'),
+    ]);
+  }
+
+  // ================= ANÁLISE IA (exames × dieta × métricas) =================
+  // Um botão: monta um RESUMO local dos seus dados e manda pro SEU proxy, que
+  // consulta a IA e devolve uma leitura em texto puro. Guardamos a última
+  // resposta p/ reler offline. NÃO é diagnóstico — é pauta p/ levar ao médico.
+  function buildAnalysisPayload() {
+    const hoje = isoLocal(new Date());
+    const corte90 = shiftDate(hoje, -90);
+    const porDia = Object.keys(S.days).filter(d => d >= corte90 && (S.days[d].items || []).length).sort().map(d => {
+      const items = S.days[d].items || [];
+      const tot = window.Nutrition.sumNutrients(items.map(itemNutrients).filter(n => n.hasKcal));
+      return { kcal: Math.round(tot.kcal), prot: Math.round(tot.prot), carb: Math.round(tot.carb), fat: Math.round(tot.fat) };
+    }).filter(x => x.kcal > 0);
+    const eg = effectiveGoal();
+    const dieta = {
+      diasRegistradosUlt90d: porDia.length,
+      mediaKcalDia: porDia.length ? Math.round(mediaDe(porDia.map(x => x.kcal))) : null,
+      mediaProteinaGDia: porDia.length ? Math.round(mediaDe(porDia.map(x => x.prot))) : null,
+      mediaCarboGDia: porDia.length ? Math.round(mediaDe(porDia.map(x => x.carb))) : null,
+      mediaGorduraGDia: porDia.length ? Math.round(mediaDe(porDia.map(x => x.fat))) : null,
+      metaKcalDia: eg.goalK || null,
+      tdeeRealObservado: eg.adaptive && eg.adaptive.ok ? eg.adaptive.tdee : null,
+    };
+    const wDates = Object.keys(S.weights).sort();
+    const peso = wDates.length ? {
+      primeiraPesagem: { data: wDates[0], kg: S.weights[wDates[0]] },
+      ultimaPesagem: { data: wDates[wDates.length - 1], kg: S.weights[wDates[wDates.length - 1]] },
+      totalPesagens: wDates.length,
+    } : null;
+    const bcDates = Object.keys(S.bodyComp).sort();
+    const bcLast = bcDates.length ? bcDates[bcDates.length - 1] : null;
+    const composicao = bcLast ? {
+      data: bcLast,
+      gorduraPct: S.bodyComp[bcLast].fat != null ? S.bodyComp[bcLast].fat : null,
+      massaMagraPct: S.bodyComp[bcLast].lean != null ? S.bodyComp[bcLast].lean : null,
+    } : null;
+    const byNorm = {};
+    S.labExams.forEach(x => (byNorm[x.norm] = byNorm[x.norm] || []).push(x));
+    const labs = Object.keys(byNorm).sort().map(k => {
+      const rows = byNorm[k].sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-6);
+      const last = rows[rows.length - 1];
+      return {
+        exame: last.name,
+        unidade: last.unit || null,
+        resultados: rows.map(x => ({ data: x.date, valor: x.value, refMin: x.refLow, refMax: x.refHigh, obs: x.obs || undefined })),
+      };
+    });
+    const imagem = S.imgExams.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 12).map(x => ({
+      data: x.date, exame: x.name, local: x.place || undefined,
+      resumoLaudo: (x.report || '').slice(0, 500) || undefined,
+    }));
+    const hDates = Object.keys(S.health.daily || {}).sort();
+    const ult30 = hDates.slice(-30).map(d => S.health.daily[d]);
+    const met = k => {
+      const v = ult30.map(x => x[k]).filter(x => x != null);
+      return v.length ? Math.round(mediaDe(v) * 10) / 10 : null;
+    };
+    const metricas = hDates.length ? {
+      diasComDados: hDates.length,
+      periodo: { de: hDates[0], ate: hDates[hDates.length - 1] },
+      medias30dMaisRecentes: {
+        passosDia: met('steps'), kcalAtivasDia: met('kcalOut'), kcalBasaisDia: met('kcalBasal'),
+        exercicioMinDia: met('exMin'), sonoMinNoite: met('sleepMin'), fcRepousoBpm: met('hrRest'),
+        variabilidadeFcMs: met('hrv'), vo2max: met('vo2max'), distanciaKmDia: met('distKm'),
+      },
+    } : null;
+    const p = S.profile;
+    return {
+      geradoEm: hoje,
+      perfil: { sexo: p.sex === 'f' ? 'feminino' : 'masculino', idade: p.age, alturaCm: p.height, pesoAtualKg: p.weight, fatorAtividade: p.activity },
+      dieta,
+      peso,
+      composicaoCorporal: composicao,
+      examesLaboratoriais: labs,
+      examesImagem: imagem,
+      metricasRelogio: metricas,
+      lembretesVencidos: (S.examReminders || []).filter(r => reminderDue(r).days <= 0).map(r => r.name + ' (venceu em ' + fmtBR(reminderDue(r).due) + ')'),
+    };
+  }
+
+  function renderAnalysisInto(box, a) {
+    clear(box);
+    box.appendChild(h('div', { class: 'analysis-text' }, a.text));
+    box.appendChild(h('p', { class: 'hint' }, 'Gerado em ' + new Date(a.at).toLocaleString('pt-BR') + (a.modelo ? ' · modelo ' + a.modelo : '') + '. Não é diagnóstico — leve os pontos ao seu médico.'));
+  }
+
+  function openAnalysisModal() {
+    if (!S.settings.proxyUrl || !S.settings.proxyToken) {
+      toast('Para usar a análise, configure o proxy e a senha em Diário → Dados.', 'error');
+      return;
+    }
+    const payload = buildAnalysisPayload();
+    const resumo = payload.examesLaboratoriais.length + ' exame(s) de laboratório · '
+      + payload.examesImagem.length + ' de imagem · '
+      + payload.dieta.diasRegistradosUlt90d + ' dia(s) de diário (últimos 90) · '
+      + (payload.metricasRelogio ? payload.metricasRelogio.diasComDados + ' dia(s) de métricas do relógio' : 'sem métricas do relógio');
+    const out = h('div');
+    const goBtn = h('button', { class: 'btn primary' }, '🔎 Analisar agora');
+    goBtn.addEventListener('click', async () => {
+      goBtn.disabled = true;
+      goBtn.textContent = '⏳ analisando (até ~1 min)…';
+      clear(out);
+      try {
+        const res = await fetch(S.settings.proxyUrl.replace(/\/+$/, '') + '/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-App-Token': S.settings.proxyToken },
+          body: JSON.stringify({ dados: payload }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error((data && (data.detail || data.error)) || 'HTTP ' + res.status);
+        S.analysis = { at: new Date().toISOString(), text: data.analise || '', modelo: data.modelo || '' };
+        window.Store.save();
+        renderAnalysisInto(out, S.analysis);
+        renderExLab(); renderExImg(); renderSaude(); // atualiza o "ver última" dos cards
+      } catch (err) {
+        out.appendChild(h('p', { class: 'note', style: 'color:var(--danger)' }, 'Não consegui analisar: ' + err.message));
+      }
+      goBtn.disabled = false;
+      goBtn.textContent = '🔎 Analisar agora';
+    });
+    modal('Análise inteligente', h('div', {}, [
+      h('p', { class: 'note' }, 'O app monta um resumo em números — ' + resumo + ' — e envia para o SEU proxy, que consulta a IA. Nomes, fotos e textos fora disso não vão junto.'),
+      h('p', { class: 'hint' }, 'A resposta é apoio para conversar com médico/nutricionista, NÃO diagnóstico. Cada análise custa centavos na sua conta da API.'),
+      h('div', { class: 'btn-row' }, [goBtn]),
+      out,
+    ]));
+  }
+
+  function renderAnalysisCard() {
+    return h('div', { class: 'card' }, [
+      h('h3', {}, '🔎 Análise inteligente'),
+      h('p', { class: 'note' }, 'Um botão: a IA cruza exames, dieta registrada, peso/composição e métricas do relógio, e devolve pontos de atenção para levar ao médico. Usa o seu proxy (Diário → Dados) — a chave da API nunca fica no app.'),
+      h('div', { class: 'btn-row' }, [
+        h('button', { class: 'btn primary', onclick: openAnalysisModal }, '🔎 Analisar meus dados'),
+        S.analysis ? h('button', {
+          class: 'btn',
+          onclick: () => { const box = h('div'); renderAnalysisInto(box, S.analysis); modal('Última análise', box); },
+        }, '📄 Ver última (' + fmtBR(S.analysis.at.slice(0, 10)) + ')') : null,
+      ]),
+    ]);
+  }
+
   // ================= MODAIS =================
   function modal(title, bodyNode) {
     const back = h('div', { class: 'modal-back', onclick: e => { if (e.target === back) close(); } });
@@ -1509,7 +2205,11 @@ window.App = (function () {
   }
 
   // funções expostas p/ testes automatizados
-  return { init, addPhotoItems, compressPhoto, analyzePhoto, computeRecipe, openRecipeForm, applyLabelToForm, pushBackup, restoreBackup };
+  return {
+    init, addPhotoItems, compressPhoto, analyzePhoto, computeRecipe, openRecipeForm,
+    applyLabelToForm, pushBackup, restoreBackup,
+    buildAnalysisPayload, reminderDue, goTo,
+  };
 })();
 
 document.addEventListener('DOMContentLoaded', window.App.init);

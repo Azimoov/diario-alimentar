@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Diário Alimentar — kcal e macros</title>
-  <meta name="description" content="Diário alimentar local-first com base TACO. Registro por texto, cálculo de kcal e macros, meta por Mifflin-St Jeor." />
+  <title>Minha Saúde — diário alimentar, exames e métricas</title>
+  <meta name="description" content="Hub de saúde local-first: diário alimentar (base TACO), exames laboratoriais e de imagem com lembretes, e métricas do app Saúde do iPhone." />
   <meta name="color-scheme" content="light dark" />
   <meta name="theme-color" content="#2f7d55" />
   <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
@@ -14,13 +14,22 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">🍎 Diário Alimentar</div>
-    <nav class="tabs">
+    <div class="brand">🍎 Minha Saúde</div>
+    <nav class="apps">
+      <button class="app-btn active" data-app="diario">🍽️ Diário</button>
+      <button class="app-btn" data-app="exames">🧪 Exames<span class="dot" hidden></span></button>
+      <button class="app-btn" data-app="saude">❤️ Métricas</button>
+    </nav>
+    <nav class="tabs" data-app="diario">
       <button class="tab-btn active" data-tab="hoje">Hoje</button>
       <button class="tab-btn" data-tab="hist">Histórico</button>
       <button class="tab-btn" data-tab="alimentos">Alimentos</button>
       <button class="tab-btn" data-tab="perfil">Perfil</button>
       <button class="tab-btn" data-tab="dados">Dados</button>
+    </nav>
+    <nav class="tabs" data-app="exames" hidden>
+      <button class="tab-btn" data-tab="exlab">🧪 Laboratoriais</button>
+      <button class="tab-btn" data-tab="eximg">🩻 Imagem</button>
     </nav>
   </header>
 
@@ -30,19 +39,23 @@
     <section id="tab-alimentos" class="tab"></section>
     <section id="tab-perfil" class="tab"></section>
     <section id="tab-dados" class="tab"></section>
+    <section id="tab-exlab" class="tab"></section>
+    <section id="tab-eximg" class="tab"></section>
+    <section id="tab-saude" class="tab"></section>
   </main>
 
   <footer class="foot">
-    Dados só neste aparelho · Base TACO 4ª ed. (NEPA/UNICAMP) · Fase 1 sem IA/servidor
+    Dados só neste aparelho · Base TACO 4ª ed. (NEPA/UNICAMP) · IA opcional via seu proxy
   </footer>
 
-  <!-- ordem importa: base -> medidas -> parser -> cálculo -> storage -> charts -> app -->
+  <!-- ordem importa: base -> medidas -> parser -> cálculo -> storage -> charts -> health -> app -->
   <script src="js/db.js"></script>
   <script src="js/measures.js"></script>
   <script src="js/parser.js"></script>
   <script src="js/nutrition.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/charts.js"></script>
+  <script src="js/health.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

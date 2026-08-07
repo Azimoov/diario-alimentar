@@ -86,10 +86,14 @@ window.Charts = (function () {
     let minY = Math.min(...allPts.map(p => p.value));
     let maxY = Math.max(...allPts.map(p => p.value));
     if (opts.goalLine != null) { minY = Math.min(minY, opts.goalLine); maxY = Math.max(maxY, opts.goalLine); }
-    const pad = (maxY - minY) * 0.15 || 10;
-    minY = Math.floor((minY - pad) / 10) * 10;
-    maxY = Math.ceil((maxY + pad) / 10) * 10;
+    // limites "redondos" proporcionais à magnitude da série — funciona igual
+    // para kcal (milhares), peso (dezenas) e analitos pequenos (ex.: 0,9–1,3)
+    const pad = (maxY - minY) * 0.15 || Math.abs(maxY) * 0.1 || 1;
+    const step = Math.pow(10, Math.floor(Math.log10((maxY - minY + 2 * pad) || 1))) / 10;
+    minY = Math.floor((minY - pad) / step) * step;
+    maxY = Math.ceil((maxY + pad) / step) * step;
     if (opts.zeroBase) minY = 0;
+    const axDec = step >= 1 ? 0 : (step >= 0.1 ? 1 : 2); // casas decimais do eixo
 
     const sx = v => padL + (maxX === minX ? (W - padL - padR) / 2 : (v - minX) / (maxX - minX) * (W - padL - padR));
     const sy = v => padT + (1 - (v - minY) / (maxY - minY || 1)) * (H - padT - padB);
@@ -99,7 +103,7 @@ window.Charts = (function () {
       const val = minY + (maxY - minY) * i / 3;
       const y = sy(val);
       svg.appendChild(el('line', { x1: padL, y1: y, x2: W - padR, y2: y, stroke: 'var(--track)', 'stroke-width': 1 }));
-      svg.appendChild(txt(padL - 6, y + 4, Math.round(val), { 'text-anchor': 'end', class: 'lc-axis' }));
+      svg.appendChild(txt(padL - 6, y + 4, val.toFixed(axDec).replace('.', ','), { 'text-anchor': 'end', class: 'lc-axis' }));
     }
     // linha de meta
     if (opts.goalLine != null) {

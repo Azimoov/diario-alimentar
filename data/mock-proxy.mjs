@@ -56,6 +56,21 @@ createServer((req, res) => {
       return res.end(JSON.stringify(b || { error: "no_backup", detail: "Nenhum backup." }));
     }
   }
+  // ---- /analyze (análise inteligente — resposta fixa de teste) ----
+  if (req.url.startsWith("/analyze") && req.method === "POST") {
+    let d = ""; req.on("data", c => d += c);
+    return req.on("end", () => {
+      const b = JSON.parse(d || "{}");
+      const nLabs = ((b.dados && b.dados.examesLaboratoriais) || []).length;
+      console.log("análise recebida:", (d.length / 1024).toFixed(1), "KB de resumo,", nLabs, "exame(s) lab");
+      res.writeHead(200, { ...CORS, "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        analise: "VISÃO GERAL\n– Resposta FIXA do proxy falso (teste local, sem custo).\n– Recebi "
+          + nLabs + " exame(s) de laboratório no resumo.\n\nEXAMES\n– Nada real analisado aqui.\n\nPARA LEVAR AO MÉDICO\n– Nada: isto é o mock.",
+        modelo: "mock",
+      }));
+    });
+  }
   if (req.method !== "POST") { res.writeHead(405, CORS); return res.end(); }
   let data = "";
   req.on("data", (c) => (data += c));

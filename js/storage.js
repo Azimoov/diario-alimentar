@@ -20,6 +20,13 @@ window.Store = (function () {
       days: {},             // 'YYYY-MM-DD' -> { items:[{raw,foodId,grams}], weight:null }
       weights: {},          // 'YYYY-MM-DD' -> kg (peso corporal)
       bodyComp: {},         // 'YYYY-MM-DD' -> { fat:%, lean:% } (composição corporal, campos opcionais)
+      // ---- área Exames ----
+      labExams: [],         // [{id, date, name, norm, value, num, unit, refLow, refHigh, obs}] — 1 linha por analito
+      imgExams: [],         // [{id, date, name, norm, place, report}] — exames de imagem c/ resumo do laudo
+      examReminders: [],    // [{id, name, norm, kind:'lab'|'img', months, baseDate}] — "repetir a cada N meses"
+      // ---- área Métricas de saúde (Apple Health) ----
+      health: { daily: {}, lastImportAt: null }, // daily: 'YYYY-MM-DD' -> {steps, distKm, kcalOut, kcalBasal, exMin, hrRest, hrv, vo2max, sleepMin}
+      analysis: null,       // {at, text, modelo} — última análise IA (guardada p/ reler offline)
       customFoods: [],      // {id:'c1', name, kcal, prot, carb, fat, fiber}
       sharedFoods: [],      // cache da base COMUM (compartilhada via proxy)
       // Fase 2 (foto): endereço do SEU proxy + senha do app. A chave da API
@@ -48,6 +55,11 @@ window.Store = (function () {
     state.days = state.days || {};
     state.weights = state.weights || {};
     state.bodyComp = state.bodyComp || {};
+    state.labExams = state.labExams || [];
+    state.imgExams = state.imgExams || [];
+    state.examReminders = state.examReminders || [];
+    state.health = Object.assign({}, d.health, state.health || {});
+    state.health.daily = state.health.daily || {};
     state.customFoods = state.customFoods || [];
     state.sharedFoods = state.sharedFoods || [];
     state.settings = Object.assign({}, d.settings, state.settings || {});
@@ -137,6 +149,18 @@ window.Store = (function () {
       state.days = Object.assign({}, state.days, incoming.days || {});
       state.weights = Object.assign({}, state.weights, incoming.weights || {});
       state.bodyComp = Object.assign({}, state.bodyComp, incoming.bodyComp || {});
+      // listas de exames/lembretes: mescla por id (não duplica o que já existe)
+      const mergeById = (cur, inc) => {
+        const ids = new Set(cur.map(x => x && x.id));
+        (Array.isArray(inc) ? inc : []).forEach(x => { if (x && x.id && !ids.has(x.id)) cur.push(x); });
+      };
+      mergeById(state.labExams, incoming.labExams);
+      mergeById(state.imgExams, incoming.imgExams);
+      mergeById(state.examReminders, incoming.examReminders);
+      if (incoming.health && incoming.health.daily) {
+        state.health.daily = Object.assign({}, state.health.daily, incoming.health.daily);
+        if (incoming.health.lastImportAt) state.health.lastImportAt = incoming.health.lastImportAt;
+      }
       // custom foods: evita duplicar por nome
       const names = new Set(state.customFoods.map(f => f.norm));
       (incoming.customFoods || []).forEach(f => {

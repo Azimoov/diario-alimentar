@@ -20,7 +20,9 @@
     // fuso p/ contar o dia do limite de fotos
     "TIMEZONE": "America/Sao_Paulo",
     // máx. de fotos analisadas por dia, somando todos os usuários
-    "PHOTO_DAILY_LIMIT": "60"
+    "PHOTO_DAILY_LIMIT": "60",
+    // máx. de análises inteligentes (/analyze) por dia, somando todos
+    "ANALYSIS_DAILY_LIMIT": "20"
   },
   // contador do limite diário de fotos
   "kv_namespaces": [

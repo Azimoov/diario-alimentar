@@ -1,13 +1,26 @@
-# Diário Alimentar — kcal e macros (local-first, sem IA)
+# Minha Saúde — diário alimentar, exames e métricas (local-first)
 
-Ferramenta pessoal de diário alimentar para perda de peso. Você registra o que
-comeu em **texto em linguagem natural** (ex.: `150 g patinho`, `120g arroz`,
-`1 ovo`, `meia xícara de feijão`), e o app calcula **calorias e macros (P/C/G)**
-por item e por dia, mostra em **gráficos** o total do dia vs. sua meta e a
-distribuição de macros, e guarda o **histórico** no seu aparelho.
+Hub pessoal de saúde com **três áreas** na barra de cima:
 
-- **Sem IA, sem servidor, sem chave de API.** O texto é interpretado por um
-  parser local (regex + normalização). App 100% estático.
+- **🍽️ Diário** — o diário alimentar original: registro em **texto em
+  linguagem natural** (ex.: `150 g patinho`, `120g arroz`, `1 ovo`), kcal e
+  macros (P/C/G) por item e por dia, gráficos vs. meta, peso e composição
+  corporal, histórico.
+- **🧪 Exames** — duas abas: **Laboratoriais** (um analito por linha, com
+  faixa de referência do SEU laudo e gráfico de evolução) e **Imagem**
+  (data + resumo do laudo). **Lembretes de repetição** ("a cada N meses")
+  avisam na própria área, na aba Hoje e com uma bolinha no botão Exames.
+- **❤️ Métricas** — importa o **export do app Saúde do iPhone**
+  (Apple Watch: passos, energia, sono, FC de repouso, VO₂máx…), agrega por
+  dia NESTE aparelho e cruza com o diário (saldo energético).
+
+Em qualquer área de exames/métricas, o botão **🔎 Analisar meus dados**
+(opcional, requer o proxy da Fase 2) manda um resumo numérico para a IA
+cruzar exames × dieta × métricas e devolver pontos para levar ao médico.
+
+- **Núcleo sem IA, sem servidor, sem chave de API.** O texto é interpretado
+  por um parser local (regex + normalização). App 100% estático; IA é
+  estritamente opcional, via o SEU proxy.
 - **Local-first.** Todos os seus dados ficam no aparelho (localStorage). Você
   exporta/importa um JSON para ter o backup e ser dono do dado.
 - **Base de alimentos real:** TACO 4ª edição (NEPA/UNICAMP). Nenhum valor
@@ -197,6 +210,54 @@ de pronto** se puder pesar (assados perdem água no forno — sem isso o app usa
 a soma dos ingredientes e avisa que é estimativa). Editar a receita recalcula
 tudo; digitar o nome exato da receita casa direto, sem pedir confirmação.
 
+## Exames — laboratoriais, de imagem e lembretes
+
+Área **🧪 Exames**, para a vida inteira de laudos:
+
+- **Laboratoriais:** um analito por linha (`Glicose em jejum · 92 mg/dL ·
+  ref. 70–99`). A data fica travada entre um lançamento e outro para digitar
+  o laudo inteiro em sequência; nome repetido puxa unidade e faixa do
+  lançamento anterior. Valores numéricos com 2+ coletas viram **gráfico de
+  evolução** com a faixa de referência tracejada. Fora da faixa ganha badge
+  (↑/↓) — **somente comparando com a faixa que VOCÊ anotou do laudo** (elas
+  variam por laboratório; o app não inventa referência). Resultados
+  qualitativos ("não reagente") são aceitos como texto.
+- **Imagem:** data, tipo (com sugestões), local e um resumo do laudo em
+  texto — editável depois.
+- **Lembretes:** "repetir a cada N meses". Registrar um exame com o mesmo
+  nome reinicia a contagem sozinho; ao vencer, aparece aviso na área, um
+  banner na aba Hoje e a bolinha no botão Exames. (Aviso é dentro do app —
+  não há notificação de sistema; o app é estático, sem servidor.)
+
+## Métricas de saúde — importar do app Saúde (iPhone)
+
+Área **❤️ Métricas**: no iPhone, app Saúde → sua foto de perfil →
+**“Exportar Todos os Dados de Saúde”** → escolha o `export.zip` aqui (ou o
+`export.xml`, se preferir descompactar no app Arquivos). O arquivo é lido em
+**streaming, neste aparelho** (o zip é aberto com `DecompressionStream`
+nativo — sem biblioteca, sem upload), e vira **métricas diárias compactas**:
+passos, distância, energia ativa/basal, minutos de exercício, sono, FC de
+repouso, variabilidade (HRV) e VO₂máx.
+
+- **Sem dupla contagem:** iPhone e Watch registram passos/energia em
+  paralelo; em cada dia o app soma por fonte e usa a MAIOR — aproximação
+  conservadora do total do app Saúde.
+- **Honestidade:** energia e sono do relógio são estimativas de sensor; o
+  app apresenta como vieram e diz isso na tela.
+- **Cruzamento imediato:** card de **saldo energético** (média ingerida do
+  diário × gasto estimado do relógio nos dias em que os dois existem) e
+  gráficos por métrica com média de 7 dias.
+
+## Análise inteligente (opcional — usa o seu proxy)
+
+O botão **🔎 Analisar meus dados** monta um resumo numérico local (médias da
+dieta, peso/composição, exames com as faixas anotadas, métricas do relógio,
+lembretes vencidos) e envia ao SEU proxy (`POST /analyze`), que consulta a
+IA e devolve uma leitura em texto puro: visão geral, evolução de exames,
+cruzamentos, o que levar ao médico e lacunas. A resposta fica guardada para
+reler offline. **Não é diagnóstico.** Proteções: mesma senha do app,
+rate-limit e limite diário próprio (`ANALYSIS_DAILY_LIMIT`, padrão 20/dia).
+
 ## Multiusuário — compartilhando com outras pessoas
 
 O app é multiusuário por natureza: **basta enviar o link**. Cada pessoa que
@@ -227,7 +288,8 @@ js/
   nutrition.js      Mifflin-St Jeor, TDEE, meta e macros
   storage.js        persistência (localStorage) + export/import
   charts.js         gráficos em SVG puro (sem biblioteca)
-  app.js            interface e orquestração
+  health.js         lê o export do app Saúde (zip/xml) e agrega por dia
+  app.js            interface e orquestração (3 áreas: Diário/Exames/Métricas)
 data/
   source/*.csv      CSVs originais da TACO (raulfdm/taco-api, MIT)
   build-db.mjs      gera js/db.js a partir dos CSVs

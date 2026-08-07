@@ -49,12 +49,29 @@ body {
   padding: 10px 14px calc(6px + env(safe-area-inset-top, 0)) 14px;
 }
 .brand { font-weight: 700; font-size: 17px; margin-bottom: 8px; }
-.tabs { display: flex; gap: 6px; }
-.tab-btn {
-  flex: 1; padding: 9px 6px; border: 1px solid var(--border); background: transparent;
-  color: var(--muted); border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer;
+
+/* nível 1: as áreas do app (Diário · Exames · Métricas) */
+.apps { display: flex; gap: 6px; margin-bottom: 8px; }
+.app-btn {
+  position: relative; flex: 1; padding: 9px 6px;
+  border: 1px solid var(--border); background: transparent;
+  color: var(--muted); border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer;
 }
-.tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.app-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.app-btn .dot {
+  position: absolute; top: 6px; right: 8px; width: 8px; height: 8px;
+  border-radius: 50%; background: var(--danger); pointer-events: none;
+}
+.app-btn.active .dot { background: #fff; }
+
+/* nível 2: abas da área ativa */
+.tabs { display: flex; gap: 6px; }
+.tabs[hidden] { display: none; }
+.tab-btn {
+  flex: 1; padding: 8px 6px; border: 1px solid transparent; background: transparent;
+  color: var(--muted); border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.tab-btn.active { background: var(--accent-weak); color: var(--accent); border-color: var(--accent); }
 
 main { max-width: 720px; margin: 0 auto; padding: 14px 12px 40px; }
 .tab { display: none; }
@@ -235,6 +252,58 @@ input[type=number] { width: 100%; }
 .rec-row .item-name { flex: 1 1 160px; }
 .rec-row .hint { flex-basis: 100%; }
 .rec-warn { border-left-color: var(--warn); }
+
+/* ---- Exames ---- */
+.exam-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.exam-form-grid .span2 { grid-column: 1 / -1; }
+.exam-group { margin-bottom: 4px; }
+.exam-group summary {
+  display: flex; align-items: center; gap: 8px; padding: 9px 2px; cursor: pointer;
+  list-style: none; font-weight: 700; font-size: 14px; border-top: 1px solid var(--border);
+}
+.exam-group summary::-webkit-details-marker { display: none; }
+.exam-group .meal-chev { font-size: 16px; }
+.exam-group[open] > summary .meal-chev { transform: rotate(90deg); }
+.exam-group .g-meta { margin-left: auto; color: var(--muted); font-weight: 600; font-size: 12px; }
+.exam-table td:first-child { max-width: 40vw; overflow-wrap: break-word; }
+.exam-report { white-space: pre-wrap; font-size: 14px; margin: 6px 0; }
+.badge-ok { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
+.badge-muted { background: color-mix(in srgb, var(--muted) 14%, transparent); color: var(--muted); }
+
+/* lembretes de repetição */
+.rem-item {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 9px 10px; margin-bottom: 6px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-left: 4px solid var(--muted); border-radius: 10px; font-size: 14px;
+}
+.rem-item.due { border-left-color: var(--danger); }
+.rem-item.soon { border-left-color: var(--warn); }
+.rem-info { flex: 1 1 180px; min-width: 0; }
+.rem-when { font-size: 12px; color: var(--muted); }
+.rem-item.due .rem-when { color: var(--danger); font-weight: 700; }
+.rem-item.soon .rem-when { color: var(--warn); font-weight: 700; }
+.rem-actions { display: flex; gap: 2px; align-items: center; }
+
+/* aviso na aba Hoje quando há exame vencido */
+.due-banner {
+  display: block; width: 100%; text-align: left; cursor: pointer;
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  border: 1px solid var(--warn); color: var(--warn);
+  padding: 10px 12px; border-radius: 10px; font-size: 13px; font-weight: 600;
+  margin-bottom: 12px;
+}
+
+/* ---- Métricas de saúde ---- */
+.progress-track { height: 8px; border-radius: 999px; background: var(--track); overflow: hidden; margin: 8px 0; }
+.progress-bar { height: 100%; width: 0; background: var(--accent); transition: width .2s ease; }
+.import-steps { margin: 8px 0; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.import-steps li { margin-bottom: 4px; }
+.metric-controls { display: flex; gap: 8px; margin-bottom: 8px; }
+.metric-controls select { flex: 1; }
+
+/* ---- Análise IA ---- */
+.analysis-text { white-space: pre-wrap; font-size: 14px; line-height: 1.5; }
 
 /* ---- Boas-vindas (primeiro uso) ---- */
 .welcome { border-left: 4px solid var(--accent); }

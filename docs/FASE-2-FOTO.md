@@ -85,6 +85,22 @@ Defina um limite de gasto no console da Anthropic por segurança.
 
 - `cd fase2-proxy && npm test` — testa o Worker contra uma API simulada
   (CORS, token, validações, caminho feliz).
-- `node data/mock-proxy.mjs` + configurar `http://localhost:8124/analyze` e
-  senha `senha-local` no app local — testa o fluxo completo do botão 📷 sem
-  gastar API.
+- `node data/mock-proxy.mjs` + configurar `http://localhost:8124` (a RAIZ,
+  sem caminho — o app monta `/foods`, `/backup` e `/analyze` sozinho) e
+  senha `senha-local` no app local — testa o fluxo completo do botão 📷 e
+  do botão 🔎 Analisar sem gastar API.
+
+## Análise inteligente (`POST /analyze`)
+
+Usada pelo botão **🔎 Analisar meus dados** (áreas Exames e Métricas). O app
+monta um resumo numérico local — médias da dieta, peso/composição, exames
+anotados (com as faixas de referência do usuário), métricas do relógio e
+lembretes vencidos — e envia `{dados: {…}}`; o Worker chama a IA com um
+prompt de honestidade (sem diagnóstico, sem inventar faixas de referência,
+texto puro) e devolve `{analise, modelo}`.
+
+- Mesmas proteções da foto: senha, CORS, rate-limit (6/min por IP).
+- Limite diário próprio: `ANALYSIS_DAILY_LIMIT` (padrão 20/dia do grupo,
+  contado no KV em `analises:AAAA-MM-DD`).
+- Custo bem menor que foto (só texto, ~2–8k tokens por análise).
+- Payload limitado a ~200 KB.

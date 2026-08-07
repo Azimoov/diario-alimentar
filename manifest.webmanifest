@@ -1,7 +1,7 @@
 {
-  "name": "Diário Alimentar",
-  "short_name": "Diário",
-  "description": "Diário alimentar local-first: kcal e macros com base TACO/TBCA/USDA.",
+  "name": "Minha Saúde",
+  "short_name": "Minha Saúde",
+  "description": "Hub de saúde local-first: diário alimentar (TACO/TBCA/USDA), exames com lembretes e métricas do app Saúde.",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#256448",

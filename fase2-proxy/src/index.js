@@ -195,6 +195,93 @@ async function handleFoods(request, env, json, token, url) {
   return json({ error: "method_not_allowed" }, 405);
 }
 
+// ---- análise inteligente (exames × dieta × métricas) ----------------------
+// POST /analyze {dados: {...}} — o app monta um RESUMO numérico local
+// (exames anotados, médias da dieta, peso/composição, métricas do relógio)
+// e recebe uma leitura em TEXTO PURO. Sem imagem: custo bem menor que a foto.
+const SYSTEM_ANALISE = `Você analisa dados de saúde PESSOAIS que o próprio dono coletou num app local: diário alimentar (kcal/macros), peso e composição corporal, exames laboratoriais e de imagem anotados à mão, métricas de Apple Watch/iPhone e lembretes de exames.
+
+Sua tarefa: uma leitura honesta e útil, cruzando as fontes. Você NÃO é o médico da pessoa; NÃO faça diagnóstico nem prescreva tratamento, suplemento ou dose.
+
+Formato da resposta (obrigatório):
+- Português do Brasil, TEXTO PURO: sem markdown, sem asteriscos, sem tabelas.
+- Seções com título em MAIÚSCULAS, nesta ordem: VISÃO GERAL, EXAMES, CRUZAMENTOS, PARA LEVAR AO MÉDICO, LACUNAS.
+- Itens começam com "– ". Máximo ~500 palavras no total.
+
+Regras de honestidade (crítico):
+- Use SOMENTE os dados recebidos. Não invente valores nem "faixas normais": se um exame veio sem faixa de referência anotada, diga isso e não classifique o valor.
+- "Fora da faixa" = comparado apenas com refMin/refMax que o usuário anotou do próprio laudo.
+- Correlação não é causa — deixe isso claro ao cruzar dieta × exames.
+- Dados insuficientes (poucos dias de diário, exame único sem histórico): aponte a limitação em vez de especular.
+- Métricas de relógio são estimativas de sensor; trate como tendência, não medida exata.
+- Em PARA LEVAR AO MÉDICO, liste perguntas e temas concretos (incluindo exames com lembrete vencido), sem alarmismo.`;
+
+async function handleAnalyze(request, env, json) {
+  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+  if (!env.ANTHROPIC_API_KEY) {
+    return json({ error: "server_not_configured", detail: "ANTHROPIC_API_KEY não configurada no Worker." }, 500);
+  }
+  const ip = request.headers.get("CF-Connecting-IP") || "?";
+  if (rateLimited("analyze:" + ip, 6)) return json({ error: "rate_limited", detail: "Muitas análises em pouco tempo — aguarde um minuto." }, 429);
+
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
+  const dados = body && body.dados;
+  if (!dados || typeof dados !== "object") return json({ error: "missing_data", detail: "Envie {dados: {…}}." }, 400);
+  const texto = JSON.stringify(dados);
+  if (texto.length > 200_000) return json({ error: "data_too_large", detail: "Resumo grande demais (~200 KB máx)." }, 413);
+
+  // limite diário próprio (proteção de custo, separado do de fotos)
+  if (env.DIARIO_KV) {
+    const tz = env.TIMEZONE || "America/Sao_Paulo";
+    const day = new Date().toLocaleDateString("en-CA", { timeZone: tz });
+    const quotaKey = "analises:" + day;
+    const used = parseInt((await env.DIARIO_KV.get(quotaKey)) || "0", 10);
+    const limit = parseInt(env.ANALYSIS_DAILY_LIMIT || "20", 10);
+    if (used >= limit) {
+      return json({ error: "daily_limit", detail: `Limite diário de ${limit} análises do grupo atingido — tente amanhã.` }, 429);
+    }
+    await env.DIARIO_KV.put(quotaKey, String(used + 1), { expirationTtl: 172800 });
+  }
+
+  const client = new Anthropic({
+    apiKey: env.ANTHROPIC_API_KEY,
+    baseURL: env.ANTHROPIC_BASE_URL || undefined,
+    fetch: globalThis.fetch.bind(globalThis),
+  });
+  let msg;
+  try {
+    msg = await client.messages.create({
+      model: env.CLAUDE_MODEL || "claude-opus-4-8",
+      max_tokens: 3000,
+      thinking: { type: "adaptive" },
+      system: SYSTEM_ANALISE,
+      messages: [{ role: "user", content: "DADOS (JSON):\n" + texto }],
+    });
+  } catch (err) {
+    console.log("ERRO API /analyze:", err && err.status, String((err && err.message) || err).slice(0, 300));
+    if (err instanceof Anthropic.RateLimitError) {
+      return json({ error: "upstream_rate_limited", detail: "API ocupada — tente de novo em instantes." }, 429);
+    }
+    if (err instanceof Anthropic.AuthenticationError) {
+      return json({ error: "upstream_auth", detail: "Chave da API inválida no Worker." }, 500);
+    }
+    if (err instanceof Anthropic.APIError) {
+      return json({ error: "upstream_error", status: err.status, detail: err.message }, 502);
+    }
+    return json({ error: "upstream_error", detail: String((err && err.message) || err) }, 502);
+  }
+  if (msg.stop_reason === "refusal") {
+    console.log("RECUSA /analyze:", JSON.stringify(msg.stop_details || null));
+    return json({ error: "refused", detail: "O modelo recusou analisar estes dados." }, 502);
+  }
+  const analise = (msg.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+  if (!analise) {
+    return json({ error: "empty_response", detail: "Resposta sem conteúdo (stop: " + msg.stop_reason + ")." }, 502);
+  }
+  return json({ analise, modelo: msg.model });
+}
+
 // rate-limit simples em memória (por isolate — best-effort, não é garantia)
 const hits = new Map();
 function rateLimited(ip, max = 15, windowMs = 60_000) {
@@ -244,6 +331,9 @@ export default {
 
     // ---- base COMUM de alimentos (compartilhada entre todos os usuários) ----
     if (url.pathname === "/foods") return handleFoods(request, env, json, givenToken, url);
+
+    // ---- análise inteligente (exames × dieta × métricas do app) ----
+    if (url.pathname === "/analyze") return handleAnalyze(request, env, json);
 
     if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
     if (!env.ANTHROPIC_API_KEY) {
