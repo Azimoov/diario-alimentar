@@ -33,7 +33,12 @@ window.Store = (function () {
       // fica só no proxy — aqui nunca entra chave nenhuma.
       // autoBackup: diário cifrado no aparelho e guardado no proxy.
       // mealsFechados: refeições que o usuário deixou recolhidas na aba Hoje
-      settings: { proxyUrl: '', proxyToken: '', autoBackup: false, lastBackupAt: null, mealsFechados: [] },
+      // account: conta com login (e-mail + sessão). A senha não fica guardada
+      // em lugar nenhum — só o token de sessão devolvido pelo servidor.
+      settings: {
+        proxyUrl: '', proxyToken: '', autoBackup: false, lastBackupAt: null, mealsFechados: [],
+        account: { email: null, session: null, lastSyncAt: null },
+      },
       createdAt: new Date().toISOString(),
     };
   }
@@ -63,6 +68,7 @@ window.Store = (function () {
     state.customFoods = state.customFoods || [];
     state.sharedFoods = state.sharedFoods || [];
     state.settings = Object.assign({}, d.settings, state.settings || {});
+    state.settings.account = Object.assign({}, d.settings.account, state.settings.account || {});
     return state;
   }
 
@@ -139,14 +145,53 @@ window.Store = (function () {
   }
 
   // ---- export / import ----
-  function exportJSON() {
-    return JSON.stringify(state, null, 2);
+  // O TOKEN DE SESSÃO nunca sai daqui: ele é uma credencial viva (vale 90
+  // dias) e não é "dado do usuário". Sem isto ele iria para o arquivo que a
+  // pessoa exporta e manda por e-mail, e para o blob guardado na nuvem.
+  // `opts.paraNuvem` também tira o catálogo COMUM de alimentos, que é
+  // compartilhado e vive no servidor — não é dado privado da conta.
+  function exportJSON(opts) {
+    const copia = JSON.parse(JSON.stringify(state));
+    if (copia.settings && copia.settings.account) delete copia.settings.account.session;
+    if (opts && opts.paraNuvem) delete copia.sharedFoods;
+    return JSON.stringify(copia, null, 2);
   }
   function importJSON(text, mode) {
     const incoming = JSON.parse(text); // pode lançar — tratado por quem chama
     if (typeof incoming !== 'object' || !incoming) throw new Error('Arquivo inválido.');
+    // A CONTA/SESSÃO é deste aparelho e nunca vem de fora: um backup carrega o
+    // token de quem o gerou, e aplicá-lo deslogaria (ou pior, logaria como
+    // outra pessoa). Guardamos o valor local e recolocamos depois.
+    const contaLocal = (state && state.settings && state.settings.account)
+      ? Object.assign({}, state.settings.account) : null;
     if (mode === 'merge') {
-      state.days = Object.assign({}, state.days, incoming.days || {});
+      // Dias precisam de cuidado: dois aparelhos escrevem no MESMO dia, e um
+      // Object.assign trocaria o dia inteiro (perdendo os itens do outro lado).
+      // Juntamos item a item, contando repetições por assinatura: quem comeu
+      // dois cafés iguais continua com dois, mas o mesmo item vindo dos dois
+      // lados não vira quatro.
+      const assinatura = (it) => [it.foodId, it.grams, it.meal || '', it.foodText || it.raw || ''].join('|');
+      const mesclarItens = (locais, vindos) => {
+        const conta = new Map();
+        locais.forEach(it => conta.set(assinatura(it), (conta.get(assinatura(it)) || 0) + 1));
+        const extras = [];
+        const vistos = new Map();
+        vindos.forEach(it => {
+          const k = assinatura(it);
+          vistos.set(k, (vistos.get(k) || 0) + 1);
+          if (vistos.get(k) > (conta.get(k) || 0)) extras.push(it);
+        });
+        return locais.concat(extras);
+      };
+      const diasVindos = incoming.days || {};
+      Object.keys(diasVindos).forEach(date => {
+        const vindo = diasVindos[date] || {};
+        const atual = state.days[date];
+        if (!atual) { state.days[date] = vindo; return; }
+        state.days[date] = Object.assign({}, vindo, atual, {
+          items: mesclarItens(atual.items || [], vindo.items || []),
+        });
+      });
       state.weights = Object.assign({}, state.weights, incoming.weights || {});
       state.bodyComp = Object.assign({}, state.bodyComp, incoming.bodyComp || {});
       // listas de exames/lembretes: mescla por id (não duplica o que já existe)
@@ -173,6 +218,8 @@ window.Store = (function () {
       state = Object.assign(defaults(), incoming);
       state.schema = SCHEMA;
     }
+    state.settings = Object.assign({}, defaults().settings, state.settings || {});
+    state.settings.account = contaLocal || defaults().settings.account;
     save();
     return state;
   }

@@ -258,21 +258,107 @@ cruzamentos, o que levar ao médico e lacunas. A resposta fica guardada para
 reler offline. **Não é diagnóstico.** Proteções: mesma senha do app,
 rate-limit e limite diário próprio (`ANALYSIS_DAILY_LIMIT`, padrão 20/dia).
 
-## Multiusuário — compartilhando com outras pessoas
+## Conta e login (recomendado) — nunca mais perder dados
 
-O app é multiusuário por natureza: **basta enviar o link**. Cada pessoa que
-abrir o site tem seu próprio diário, perfil e metas, guardados **no aparelho
-dela** (ninguém vê os dados de ninguém — não há servidor de dados). No
-primeiro acesso, um guia de boas-vindas orienta a preencher o perfil.
-Backup é individual: cada um exporta/importa seu JSON na aba Dados.
+Sem conta, o app é 100% local: rápido e privado, mas os dados existem só
+naquele navegador — e no iPhone **remover o app da tela de início apaga
+tudo**. Com conta, você entra com e-mail e senha e o histórico volta.
 
-**Foto (opcional, custo é do dono do proxy):** o segredo `APP_TOKEN` aceita
-**várias senhas separadas por vírgula** (`senha-daniel,senha-maria`) — dê uma
-senha para cada pessoa e ela configura em Dados → Registro por foto. Para
-revogar alguém, regrave o segredo sem a senha da pessoa
-(`npx wrangler secret put APP_TOKEN`). O custo de todas as fotos cai na conta
-de API do dono; proteções: `PHOTO_DAILY_LIMIT` (máx. de fotos/dia do grupo,
-padrão 60) + limite de gasto no console da Anthropic.
+- **Zero configuração.** O endereço do servidor já vem embutido no app; a
+  pessoa só faz login. Foto, leitura de rótulo e análise passam a funcionar
+  com a mesma sessão — sem preencher proxy nem senha do app.
+- **Sincronização automática.** Toda alteração sobe sozinha poucos segundos
+  depois de salvar. O chip no topo mostra `☁ seu@email` (em dia) ou
+  `↻ seu@email` (enviando).
+- **Cadastro só com convite.** Precisa do `INVITE_CODE` — é o que impede
+  estranhos criando conta e gastando a API de quem paga o servidor.
+- **Recuperação por e-mail.** "Esqueci a senha" manda um link válido por 30
+  minutos; ao abri-lo o app pede a senha nova e **os dados continuam lá**.
+- **A senha não sai do aparelho.** O PBKDF2 (250 mil iterações) roda no
+  navegador; o servidor recebe só o resultado e guarda um HMAC dele. Um
+  vazamento do banco não dá login a ninguém.
+- **Conflito nunca é resolvido no escuro.** Se o aparelho e a nuvem tiverem
+  versões diferentes, o app pergunta: juntar (padrão, não descarta nada),
+  usar a da nuvem, ou usar a do aparelho.
+
+### O trade-off, dito com clareza
+
+Para que "esqueci minha senha" funcione de verdade, os dados na nuvem são
+cifrados com uma chave **do servidor** (`DATA_KEY`), não com a sua senha.
+Isso significa que **quem administra o Worker consegue ler os dados** das
+contas. Não existe recuperação de senha e sigilo absoluto ao mesmo tempo:
+qualquer app que ofereça reset de senha e devolva seus dados está neste
+mesmo modelo.
+
+Quem preferir sigilo absoluto tem a opção antiga preservada em
+**Dados → Backup sigiloso**: o diário é cifrado no aparelho com a senha do
+app, de um jeito que nem o servidor abre — ao custo de que **esquecer essa
+senha é perder o backup**, sem exceção.
+
+## Multiusuário — o que é compartilhado e o que é individual
+
+Este é o modelo de dados do app, e ele é **verificado por teste automatizado**
+(duas contas reais contra o Worker real; veja "Testes" abaixo):
+
+| Dado | Escopo | Onde vive |
+|---|---|---|
+| **Catálogo de alimentos comum** (nome + kcal/macros) | 🌐 **compartilhado** entre todas as contas | `foods-comum` no KV do Worker |
+| Alimentos e receitas que você cadastra | 🔒 individual (só ficam comuns se você **marcar** "compartilhar") | seu blob de conta |
+| Diário (refeições, gramas, kcal) | 🔒 individual | seu blob de conta |
+| Peso, % de gordura e massa magra | 🔒 individual | seu blob de conta |
+| Exames laboratoriais e de imagem, lembretes | 🔒 individual | seu blob de conta |
+| Métricas do Apple Watch / app Saúde | 🔒 individual | seu blob de conta |
+| Perfil, metas e a última análise de IA | 🔒 individual | seu blob de conta |
+
+Detalhes que sustentam isso:
+
+- Cada conta tem seu próprio registro (`data:<uid>`), cifrado com uma chave
+  derivada só para ela. Uma sessão nunca alcança o registro de outra: pedir
+  `/account/data` devolve **apenas** os dados de quem está logado.
+- Ao compartilhar um alimento, sobem **somente** nome e valores nutricionais —
+  nunca foto de rótulo, ingredientes de receita ou qualquer dado de saúde. A
+  autoria fica como um hash anônimo de 6 caracteres.
+- O catálogo comum **não** é copiado para dentro do seu blob privado (ele é
+  cache; o servidor o serve em `/foods`), e o **token de sessão nunca sai do
+  aparelho** — não vai para a nuvem nem para o arquivo que você exporta.
+- Sem conta, nada sai do aparelho: o app segue 100% local.
+
+**Quem pode entrar:** criar conta exige o `INVITE_CODE` — passe o código para
+quem você quiser incluir. Para fechar a porta, troque o segredo
+(`npx wrangler secret put INVITE_CODE`); contas já criadas continuam valendo.
+Fora o convite, a pessoa não precisa de mais nada: abre o link, cria a conta
+com o e-mail e a senha dela, e usa.
+
+**E-mail de recuperação para outras pessoas.** No Resend, sem um domínio
+verificado só é possível entregar no endereço do dono da conta do Resend.
+Duas saídas:
+
+- **Verificar um domínio** (recomendado) — em Domains → Add Domain, colar uns
+  registros DNS. Depois ajuste `MAIL_FROM` para esse domínio e cada pessoa
+  passa a receber a própria recuperação. É o jeito certo e a entrega é boa.
+- **`MAIL_TO_OVERRIDE`** (paliativo) — todas as recuperações vão para um
+  endereço só, que repassa o link. O e-mail diz de qual conta é o pedido.
+  ⚠ Quem recebe o link **entra na conta da pessoa** — use só com gente de
+  confiança e desligue (`""`) assim que tiver domínio.
+
+**Cada conta usa a PRÓPRIA chave da Anthropic (BYOK).** Foto, leitura de
+rótulo e análise são pagas por uso, e o custo cai em quem usa — não em quem
+hospeda. A pessoa cadastra a chave dela em **Dados → Sua chave da Anthropic**
+(o app testa na hora se funciona); sem chave, essas funções respondem `402`
+com uma mensagem explicando onde cadastrar. Detalhes:
+
+- A chave fica **cifrada no servidor**, na conta daquela pessoa, e **nunca**
+  volta inteira para o navegador (só os 4 últimos caracteres), nunca é
+  guardada no aparelho e nunca entra no backup nem no arquivo exportado.
+- `PHOTO_DAILY_LIMIT` (padrão 60) e `ANALYSIS_DAILY_LIMIT` (padrão 20)
+  passaram a contar **por conta** — cada um protege o próprio bolso. Vale
+  também definir um limite de gasto no console da Anthropic.
+- O caminho legado (senha do app, sem conta) continua usando a
+  `ANTHROPIC_API_KEY` do servidor, se ela estiver configurada.
+
+**Modelo antigo (ainda suportado):** o segredo `APP_TOKEN` aceita várias
+senhas separadas por vírgula (`senha-daniel,senha-maria`), usadas antes das
+contas. Continua funcionando para abrir backups sigilosos antigos.
 
 ---
 
@@ -318,6 +404,32 @@ novo** — o iOS guarda o antigo em cache.
 > Pages também seguem `diario-alimentar` — renomear o repo mudaria o
 > endereço do site e exigiria reconfigurar `ALLOWED_ORIGINS` no proxy.
 
+## Testes
+
+Nada aqui precisa de conta na Cloudflare, chave de API ou internet.
+
+```
+cd fase2-proxy && npm test      # Worker: contas, login, recuperação de senha,
+                                # dados na nuvem, foto, análise, limites, CORS
+cd fase2-proxy && npm run dev:local   # sobe o Worker REAL em Node (porta 8124)
+node data/devserver.mjs               # serve o app (porta 8123)
+```
+
+Com esses dois no ar, o app roda de verdade contra o Worker de verdade: dá
+para criar conta (convite `convite-local`), sincronizar e testar a
+recuperação de senha — o link do e-mail aparece no terminal do dev-server e
+em `http://localhost:8124/__emails`.
+
+O modelo de dados descrito acima (catálogo comum compartilhado × dados de
+saúde individuais) é coberto por `fase2-proxy/test/isolamento-contas.mjs`:
+ele cria duas contas simultâneas e confere item por item o que atravessa e o
+que não atravessa entre elas. Com os dois servidores acima no ar:
+
+```
+node fase2-proxy/test/conta-e-login.mjs      # login, sync, recuperação, chave
+node fase2-proxy/test/isolamento-contas.mjs  # o que é compartilhado × individual
+```
+
 ## Estrutura dos arquivos
 
 ```
@@ -333,6 +445,7 @@ js/
   storage.js        persistência (localStorage) + export/import
   charts.js         gráficos em SVG puro (sem biblioteca)
   health.js         lê o export do app Saúde (zip/xml) e agrega por dia
+  auth.js           conta/login, PBKDF2 no aparelho e sync com a nuvem
   app.js            interface e orquestração (3 áreas: Diário/Exames/Métricas)
 data/
   source/*.csv      CSVs originais da TACO (raulfdm/taco-api, MIT)
@@ -341,8 +454,9 @@ data/
   mock-proxy.mjs    proxy falso p/ testar 📷 e 🔎 sem gastar API
   recortar-icone.html  recorta uma foto e baixa os PNGs do ícone (offline)
   make-icon.mjs     o mesmo recorte por linha de comando
-fase2-proxy/        Cloudflare Worker da Fase 2 (guarda a chave da API)
-  src/index.js      o proxy em si (CORS, token, validações, chamada de visão)
+fase2-proxy/        Cloudflare Worker (chave da API, contas e backup)
+  src/index.js      o proxy em si (contas, CORS, validações, visão, análise)
+  dev-server.mjs    roda o Worker REAL em Node p/ testar login sem deploy
   test/smoke.mjs    testes locais com API simulada (npm test)
 docs/FASE-2-FOTO.md arquitetura, deploy e custos da Fase 2
 ```

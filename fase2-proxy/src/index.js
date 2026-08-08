@@ -216,11 +216,10 @@ Regras de honestidade (crítico):
 - Métricas de relógio são estimativas de sensor; trate como tendência, não medida exata.
 - Em PARA LEVAR AO MÉDICO, liste perguntas e temas concretos (incluindo exames com lembrete vencido), sem alarmismo.`;
 
-async function handleAnalyze(request, env, json) {
+async function handleAnalyze(request, env, json, uid) {
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-  if (!env.ANTHROPIC_API_KEY) {
-    return json({ error: "server_not_configured", detail: "ANTHROPIC_API_KEY não configurada no Worker." }, 500);
-  }
+  const cred = await resolverChave(env, uid);
+  if (cred.erro) return json(cred.erro, cred.erro.error === "no_api_key" ? 402 : 500);
   const ip = request.headers.get("CF-Connecting-IP") || "?";
   if (rateLimited("analyze:" + ip, 6)) return json({ error: "rate_limited", detail: "Muitas análises em pouco tempo — aguarde um minuto." }, 429);
 
@@ -231,21 +230,22 @@ async function handleAnalyze(request, env, json) {
   const texto = JSON.stringify(dados);
   if (texto.length > 200_000) return json({ error: "data_too_large", detail: "Resumo grande demais (~200 KB máx)." }, 413);
 
-  // limite diário próprio (proteção de custo, separado do de fotos)
+  // limite diário — por CONTA quando há login (cada um protege o próprio
+  // bolso), global no caminho legado da senha do app
   if (env.DIARIO_KV) {
     const tz = env.TIMEZONE || "America/Sao_Paulo";
     const day = new Date().toLocaleDateString("en-CA", { timeZone: tz });
-    const quotaKey = "analises:" + day;
+    const quotaKey = "analises:" + (uid ? uid + ":" : "") + day;
     const used = parseInt((await env.DIARIO_KV.get(quotaKey)) || "0", 10);
     const limit = parseInt(env.ANALYSIS_DAILY_LIMIT || "20", 10);
     if (used >= limit) {
-      return json({ error: "daily_limit", detail: `Limite diário de ${limit} análises do grupo atingido — tente amanhã.` }, 429);
+      return json({ error: "daily_limit", detail: `Limite de ${limit} análises por dia atingido — tente amanhã.` }, 429);
     }
     await env.DIARIO_KV.put(quotaKey, String(used + 1), { expirationTtl: 172800 });
   }
 
   const client = new Anthropic({
-    apiKey: env.ANTHROPIC_API_KEY,
+    apiKey: cred.chave,
     baseURL: env.ANTHROPIC_BASE_URL || undefined,
     fetch: globalThis.fetch.bind(globalThis),
   });
@@ -282,6 +282,411 @@ async function handleAnalyze(request, env, json) {
   return json({ analise, modelo: msg.model });
 }
 
+// ===========================================================================
+// CONTAS (login por e-mail, com recuperação de senha)
+// ===========================================================================
+// Modelo escolhido pelo dono do app: RECUPERÁVEL. Os dados são cifrados em
+// repouso com uma chave DO SERVIDOR (secret DATA_KEY), não com a senha do
+// usuário — é isso que permite "esqueci minha senha" funcionar de verdade.
+// Consequência honesta: quem controla o Worker consegue ler os dados. O
+// caminho antigo (/backup com X-App-Token, cifrado no aparelho) continua
+// intacto e é o único que o servidor NÃO consegue abrir.
+//
+// A senha nunca chega aqui: o navegador faz PBKDF2 (250k, SHA-256, sal
+// derivado do e-mail) e envia só o `authKey`. O servidor guarda
+// HMAC(pepper, authKey) — assim um vazamento do KV não dá login a ninguém,
+// e o custo de CPU por requisição fica perto de zero (importante: o plano
+// grátis do Workers corta em 10 ms de CPU, e PBKDF2 no servidor estouraria).
+const TE = new TextEncoder();
+const SESSION_TTL = 90 * 24 * 3600;   // 90 dias
+const RESET_TTL = 30 * 60;            // 30 minutos
+
+function hex(buf) {
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+async function sha256Hex(s) {
+  return hex(await crypto.subtle.digest("SHA-256", TE.encode(s)));
+}
+async function hmacRaw(secret, msg) {
+  const key = await crypto.subtle.importKey("raw", TE.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return crypto.subtle.sign("HMAC", key, TE.encode(msg));
+}
+async function hmacHex(secret, msg) {
+  return hex(await hmacRaw(secret, msg));
+}
+// comparação de tempo constante (evita vazar a senha por timing)
+function sameSecret(a, b) {
+  if (typeof a !== "string" || typeof b !== "string" || a.length !== b.length) return false;
+  let d = 0;
+  for (let i = 0; i < a.length; i++) d |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return d === 0;
+}
+function randomToken() {
+  return hex(crypto.getRandomValues(new Uint8Array(32)));
+}
+function normEmail(e) {
+  return String(e || "").trim().toLowerCase();
+}
+function emailValido(e) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e) && e.length <= 160;
+}
+// authKey é o resultado do PBKDF2 do navegador: 64 hex (32 bytes)
+function authKeyValido(k) {
+  return typeof k === "string" && /^[0-9a-f]{64}$/.test(k);
+}
+
+// ---- chave de dados por usuário, derivada do secret do servidor ----
+async function userDataKey(env, uid) {
+  const raw = await hmacRaw(env.DATA_KEY, "data-key:" + uid);
+  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+async function encryptText(env, uid, texto) {
+  const key = await userDataKey(env, uid);
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, TE.encode(texto));
+  return { iv: bufToB64(iv), blob: bufToB64(ct) };
+}
+function bufToB64(buf) {
+  const u = new Uint8Array(buf);
+  let s = "";
+  const CH = 0x8000;
+  for (let i = 0; i < u.length; i += CH) s += String.fromCharCode.apply(null, u.subarray(i, i + CH));
+  return btoa(s);
+}
+function b64ToBuf(s) {
+  return Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+}
+async function decryptText(env, uid, rec) {
+  const key = await userDataKey(env, uid);
+  const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64ToBuf(rec.iv) }, key, b64ToBuf(rec.blob));
+  return new TextDecoder().decode(pt);
+}
+
+// ---- chave da API DE CADA PESSOA (BYOK) ----------------------------------
+// Cada conta guarda a própria chave da Anthropic, cifrada com a chave de
+// dados daquele usuário. Assim o custo de foto/análise cai na conta de quem
+// usa, não na de quem hospeda. A chave NUNCA volta para o navegador (só um
+// pedacinho do fim, p/ a pessoa reconhecer qual é) e NUNCA entra no backup.
+async function getUserApiKey(env, uid) {
+  const raw = await env.DIARIO_KV.get("apikey:" + uid);
+  if (!raw) return null;
+  try {
+    const rec = JSON.parse(raw);
+    return { chave: await decryptText(env, uid, rec), hint: rec.hint, updatedAt: rec.updatedAt };
+  } catch { return null; }
+}
+async function setUserApiKey(env, uid, chave) {
+  const cif = await encryptText(env, uid, chave);
+  await env.DIARIO_KV.put("apikey:" + uid, JSON.stringify({
+    ...cif, hint: chave.slice(-4), updatedAt: new Date().toISOString(),
+  }));
+}
+// confere a chave contra a própria API antes de guardar (evita descobrir que
+// está errada só na hora de tirar a foto). GET /v1/models é barato.
+async function validarChaveAnthropic(env, chave) {
+  const base = (env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/+$/, "");
+  let res;
+  try {
+    res = await fetch(base + "/v1/models?limit=1", {
+      headers: { "x-api-key": chave, "anthropic-version": "2023-06-01" },
+    });
+  } catch (e) {
+    return { ok: false, detail: "Não consegui falar com a API da Anthropic agora. Tente de novo." };
+  }
+  if (res.status === 401 || res.status === 403) {
+    return { ok: false, detail: "A Anthropic recusou esta chave. Confira se copiou inteira e se ela não foi revogada." };
+  }
+  if (!res.ok) return { ok: false, detail: "A API respondeu HTTP " + res.status + " ao testar a chave." };
+  return { ok: true };
+}
+
+async function handleApiKey(request, env, json, uid) {
+  if (!env.DIARIO_KV) return json({ error: "server_not_configured", detail: "KV não configurado." }, 500);
+
+  if (request.method === "GET") {
+    const k = await getUserApiKey(env, uid);
+    return json({ configured: !!k, hint: k ? k.hint : null, updatedAt: k ? k.updatedAt : null });
+  }
+
+  if (request.method === "PUT" || request.method === "POST") {
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
+    const chave = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
+    if (!/^sk-ant-[A-Za-z0-9_\-]{20,}$/.test(chave)) {
+      return json({ error: "invalid_key", detail: "Isso não parece uma chave da Anthropic (ela começa com sk-ant-)." }, 400);
+    }
+    const teste = await validarChaveAnthropic(env, chave);
+    if (!teste.ok) return json({ error: "key_rejected", detail: teste.detail }, 400);
+    await setUserApiKey(env, uid, chave);
+    return json({ ok: true, hint: chave.slice(-4) });
+  }
+
+  if (request.method === "DELETE") {
+    await env.DIARIO_KV.delete("apikey:" + uid);
+    return json({ ok: true });
+  }
+
+  return json({ error: "method_not_allowed" }, 405);
+}
+
+// Qual chave usar nesta requisição: a da conta de quem chamou. O caminho
+// legado (senha do app, sem conta) continua usando a chave do servidor.
+async function resolverChave(env, uid) {
+  if (uid) {
+    const k = await getUserApiKey(env, uid);
+    if (k && k.chave) return { chave: k.chave, dona: "conta" };
+    return {
+      erro: {
+        error: "no_api_key",
+        detail: "Sua conta ainda não tem uma chave da API. Vá em Diário → Dados → Sua chave da Anthropic e cadastre a sua — o custo das fotos e análises cai na sua conta, não na de quem hospeda o app.",
+      },
+    };
+  }
+  if (env.ANTHROPIC_API_KEY) return { chave: env.ANTHROPIC_API_KEY, dona: "servidor" };
+  return { erro: { error: "server_not_configured", detail: "Sem chave da API disponível." } };
+}
+
+async function getAccount(env, uid) {
+  const raw = await env.DIARIO_KV.get("acct:" + uid);
+  return raw ? JSON.parse(raw) : null;
+}
+async function authPepper(env) {
+  return hmacHex(env.DATA_KEY, "auth-pepper");
+}
+// sessão -> uid (null se inválida/expirada)
+async function sessionUid(env, token) {
+  if (!token || !env.DIARIO_KV) return null;
+  const raw = await env.DIARIO_KV.get("sess:" + (await sha256Hex(token)));
+  if (!raw) return null;
+  const s = JSON.parse(raw);
+  if (s.exp && Date.now() > s.exp) return null;
+  return s.uid || null;
+}
+async function novaSessao(env, uid) {
+  const token = randomToken();
+  await env.DIARIO_KV.put(
+    "sess:" + (await sha256Hex(token)),
+    JSON.stringify({ uid, exp: Date.now() + SESSION_TTL * 1000 }),
+    { expirationTtl: SESSION_TTL },
+  );
+  return token;
+}
+
+// Para onde o e-mail de recuperação realmente vai.
+// MAIL_TO_OVERRIDE existe por causa de uma limitação de quem envia: sem um
+// domínio verificado, o Resend só entrega no endereço do dono da conta. Com
+// essa variável, TODAS as recuperações caem numa caixa só (a do dono), que
+// repassa o link. Funciona, mas quem recebe consegue entrar na conta alheia
+// — por isso fica desligado por padrão e o texto avisa de quem é o pedido.
+function destinoDoEmail(env, emailDaConta) {
+  const forcado = (env.MAIL_TO_OVERRIDE || "").trim();
+  return forcado || emailDaConta;
+}
+
+async function enviarEmail(env, to, subject, text) {
+  if (!env.RESEND_API_KEY) return { ok: false, detail: "RESEND_API_KEY não configurada no Worker." };
+  // RESEND_API_URL só existe p/ os testes locais apontarem para um mock
+  const res = await fetch(env.RESEND_API_URL || "https://api.resend.com/emails", {
+    method: "POST",
+    headers: { Authorization: "Bearer " + env.RESEND_API_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      from: env.MAIL_FROM || "Highlander <onboarding@resend.dev>",
+      to: [to], subject, text,
+    }),
+  });
+  if (!res.ok) {
+    const detalhe = await res.text().catch(() => "");
+    console.log("ERRO RESEND:", res.status, detalhe.slice(0, 300));
+    return { ok: false, detail: "Falha ao enviar e-mail (HTTP " + res.status + ")." };
+  }
+  return { ok: true };
+}
+
+async function handleAuth(request, env, json, url, ip) {
+  if (!env.DIARIO_KV) return json({ error: "server_not_configured", detail: "KV não configurado." }, 500);
+  if (!env.DATA_KEY) {
+    return json({ error: "server_not_configured", detail: "DATA_KEY não configurada no Worker (npx wrangler secret put DATA_KEY)." }, 500);
+  }
+  const rota = url.pathname.slice("/auth/".length);
+  const sessionToken = request.headers.get("X-Session") || "";
+
+  // ---- GET /auth/me : quem sou eu (valida a sessão guardada no aparelho) ----
+  if (rota === "me") {
+    const uid = await sessionUid(env, sessionToken);
+    if (!uid) return json({ error: "no_session" }, 401);
+    const acct = await getAccount(env, uid);
+    if (!acct) return json({ error: "no_session" }, 401);
+    return json({ email: acct.email, createdAt: acct.createdAt });
+  }
+
+  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
+
+  // ---- POST /auth/logout ----
+  if (rota === "logout") {
+    if (sessionToken) await env.DIARIO_KV.delete("sess:" + (await sha256Hex(sessionToken)));
+    return json({ ok: true });
+  }
+
+  // ---- POST /auth/signup {email, authKey, invite} ----
+  if (rota === "signup") {
+    if (rateLimited("signup:" + ip, 5)) return json({ error: "rate_limited", detail: "Muitas tentativas — aguarde um minuto." }, 429);
+    const email = normEmail(body.email);
+    if (!emailValido(email)) return json({ error: "invalid_email", detail: "E-mail inválido." }, 400);
+    if (!authKeyValido(body.authKey)) return json({ error: "invalid_password", detail: "Senha inválida (o app deve enviar authKey)." }, 400);
+
+    // convite obrigatório: impede estranho criando conta e gastando a API do dono
+    const convites = (env.INVITE_CODE || "").split(",").map((s) => s.trim()).filter(Boolean);
+    if (!convites.length) {
+      return json({ error: "server_not_configured", detail: "INVITE_CODE não configurado no Worker." }, 500);
+    }
+    if (!convites.some((c) => sameSecret(c, String(body.invite || "").trim()))) {
+      return json({ error: "bad_invite", detail: "Código de convite inválido." }, 403);
+    }
+
+    const uid = await sha256Hex(email);
+    if (await getAccount(env, uid)) {
+      return json({ error: "email_taken", detail: "Já existe conta com este e-mail — use Entrar, ou recupere a senha." }, 409);
+    }
+    const acct = {
+      uid, email,
+      authHash: await hmacHex(await authPepper(env), body.authKey),
+      createdAt: new Date().toISOString(),
+    };
+    await env.DIARIO_KV.put("acct:" + uid, JSON.stringify(acct));
+    return json({ session: await novaSessao(env, uid), email });
+  }
+
+  // ---- POST /auth/login {email, authKey} ----
+  if (rota === "login") {
+    const email = normEmail(body.email);
+    if (rateLimited("login:" + ip + ":" + email, 10)) {
+      return json({ error: "rate_limited", detail: "Muitas tentativas — aguarde um minuto." }, 429);
+    }
+    const uid = await sha256Hex(email);
+    const acct = await getAccount(env, uid);
+    const esperado = authKeyValido(body.authKey) ? await hmacHex(await authPepper(env), body.authKey) : "";
+    // mensagem genérica: não revela se o e-mail existe
+    if (!acct || !sameSecret(acct.authHash, esperado)) {
+      return json({ error: "bad_credentials", detail: "E-mail ou senha incorretos." }, 401);
+    }
+    return json({ session: await novaSessao(env, uid), email: acct.email });
+  }
+
+  // ---- POST /auth/forgot {email} -> manda e-mail com link de redefinição ----
+  if (rota === "forgot") {
+    if (rateLimited("forgot:" + ip, 4)) return json({ error: "rate_limited", detail: "Muitas tentativas — aguarde um minuto." }, 429);
+    const email = normEmail(body.email);
+    // resposta SEMPRE igual (existindo conta ou não) p/ não vazar cadastro
+    const resposta = { ok: true, detail: "Se existe conta com este e-mail, enviamos o link de redefinição." };
+    if (!emailValido(email)) return json(resposta);
+    const uid = await sha256Hex(email);
+    const acct = await getAccount(env, uid);
+    if (!acct) return json(resposta);
+
+    const token = randomToken();
+    await env.DIARIO_KV.put(
+      "reset:" + (await sha256Hex(token)),
+      JSON.stringify({ uid, exp: Date.now() + RESET_TTL * 1000 }),
+      { expirationTtl: RESET_TTL },
+    );
+    const base = (env.APP_BASE_URL || "https://azimoov.github.io/diario-alimentar/").replace(/#.*$/, "");
+    const link = base + "#recuperar=" + token;
+    const destino = destinoDoEmail(env, acct.email);
+    const paraTerceiro = destino !== acct.email;
+    const envio = paraTerceiro
+      ? await enviarEmail(env, destino, "Recuperação de senha do Highlander — conta " + acct.email,
+        "Pedido de nova senha da conta " + acct.email + ".\n\n"
+        + "Você está recebendo porque o servidor está configurado para mandar todas as\n"
+        + "recuperações para este endereço. Repasse o link abaixo para a pessoa:\n\n"
+        + link + "\n\n"
+        + "O link vale 30 minutos e funciona UMA vez. Ao abri-lo, quem estiver com ele\n"
+        + "define a senha e entra na conta — então repasse só se o pedido for legítimo.\n")
+      : await enviarEmail(env, destino, "Redefinir sua senha do Highlander",
+        "Você pediu para redefinir a senha do Highlander.\n\n"
+        + "Abra este link no seu aparelho (vale por 30 minutos):\n" + link + "\n\n"
+        + "Se não foi você, ignore este e-mail — nada muda.\n");
+    if (!envio.ok) return json({ error: "mail_failed", detail: envio.detail }, 502);
+    return json(resposta);
+  }
+
+  // ---- POST /auth/reset {token, authKey} ----
+  if (rota === "reset") {
+    if (rateLimited("reset:" + ip, 10)) return json({ error: "rate_limited" }, 429);
+    if (!authKeyValido(body.authKey)) return json({ error: "invalid_password", detail: "Senha inválida." }, 400);
+    const chave = "reset:" + (await sha256Hex(String(body.token || "")));
+    const raw = await env.DIARIO_KV.get(chave);
+    if (!raw) return json({ error: "bad_token", detail: "Link expirado ou já usado — peça outro." }, 400);
+    const rec = JSON.parse(raw);
+    if (rec.exp && Date.now() > rec.exp) {
+      await env.DIARIO_KV.delete(chave);
+      return json({ error: "bad_token", detail: "Link expirado — peça outro." }, 400);
+    }
+    const acct = await getAccount(env, rec.uid);
+    if (!acct) return json({ error: "bad_token", detail: "Conta não encontrada." }, 400);
+    acct.authHash = await hmacHex(await authPepper(env), body.authKey);
+    acct.updatedAt = new Date().toISOString();
+    await env.DIARIO_KV.put("acct:" + acct.uid, JSON.stringify(acct));
+    await env.DIARIO_KV.delete(chave); // link é de uso único
+    // os dados continuam legíveis: eles não dependem da senha (modelo recuperável)
+    return json({ session: await novaSessao(env, acct.uid), email: acct.email });
+  }
+
+  // ---- POST /auth/password {authKeyAtual, authKeyNova} (logado) ----
+  if (rota === "password") {
+    const uid = await sessionUid(env, sessionToken);
+    if (!uid) return json({ error: "no_session" }, 401);
+    const acct = await getAccount(env, uid);
+    if (!acct) return json({ error: "no_session" }, 401);
+    if (!authKeyValido(body.authKeyNova)) return json({ error: "invalid_password", detail: "Senha nova inválida." }, 400);
+    const atual = authKeyValido(body.authKeyAtual) ? await hmacHex(await authPepper(env), body.authKeyAtual) : "";
+    if (!sameSecret(acct.authHash, atual)) return json({ error: "bad_credentials", detail: "Senha atual incorreta." }, 401);
+    acct.authHash = await hmacHex(await authPepper(env), body.authKeyNova);
+    acct.updatedAt = new Date().toISOString();
+    await env.DIARIO_KV.put("acct:" + uid, JSON.stringify(acct));
+    return json({ ok: true });
+  }
+
+  return json({ error: "not_found" }, 404);
+}
+
+// ---- dados da conta na nuvem ---------------------------------------------
+// GET /account/data -> devolve o estado guardado (404 se ainda não há)
+// PUT /account/data {state} -> guarda (cifrado em repouso com DATA_KEY)
+async function handleAccountData(request, env, json, uid) {
+  if (!env.DIARIO_KV) return json({ error: "server_not_configured", detail: "KV não configurado." }, 500);
+  const chave = "data:" + uid;
+
+  if (request.method === "GET") {
+    const raw = await env.DIARIO_KV.get(chave);
+    if (!raw) return json({ error: "no_data", detail: "Esta conta ainda não tem dados na nuvem." }, 404);
+    const rec = JSON.parse(raw);
+    let state;
+    try { state = await decryptText(env, uid, rec); } catch {
+      return json({ error: "decrypt_failed", detail: "Não consegui abrir os dados (DATA_KEY mudou?)." }, 500);
+    }
+    return json({ state, updatedAt: rec.updatedAt, savedAt: rec.savedAt });
+  }
+
+  if (request.method === "PUT" || request.method === "POST") {
+    let body;
+    try { body = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
+    const state = typeof body.state === "string" ? body.state : JSON.stringify(body.state || null);
+    if (!state || state === "null") return json({ error: "missing_state" }, 400);
+    if (state.length > 8_000_000) return json({ error: "state_too_large", detail: "Dados acima de ~8 MB." }, 413);
+    const cif = await encryptText(env, uid, state);
+    await env.DIARIO_KV.put(chave, JSON.stringify({
+      v: 1, iv: cif.iv, blob: cif.blob,
+      updatedAt: typeof body.updatedAt === "string" ? body.updatedAt : new Date().toISOString(),
+      savedAt: new Date().toISOString(),
+    }));
+    return json({ ok: true, bytes: state.length });
+  }
+
+  return json({ error: "method_not_allowed" }, 405);
+}
+
 // rate-limit simples em memória (por isolate — best-effort, não é garantia)
 const hits = new Map();
 function rateLimited(ip, max = 15, windowMs = 60_000) {
@@ -303,8 +708,8 @@ export default {
 
     const cors = {
       "Access-Control-Allow-Origin": allowOrigin || allowed[0] || "*",
-      "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, X-App-Token",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, X-App-Token, X-Session",
       "Access-Control-Max-Age": "86400",
       "Vary": "Origin",
     };
@@ -317,30 +722,58 @@ export default {
     // (Atalhos da Apple, Siri) não mandam Origin: passam — o token é o porteiro.
     if (origin && !allowOrigin) return json({ error: "origin_not_allowed" }, 403);
 
-    // Senhas: APP_TOKEN aceita várias, separadas por vírgula (uma por pessoa).
+    const url = new URL(request.url);
+    const ip = request.headers.get("CF-Connecting-IP") || "?";
+
+    // ---- CONTAS: as rotas /auth/* são as únicas públicas (é aqui que a
+    // pessoa entra); todo o resto exige sessão OU a senha antiga do app ----
+    if (url.pathname.startsWith("/auth/")) return handleAuth(request, env, json, url, ip);
+
+    // Dois porteiros aceitos:
+    //  1. X-Session  -> conta com login (caminho novo, zero configuração)
+    //  2. X-App-Token -> senha compartilhada (caminho legado, segue valendo)
+    const sessionToken = request.headers.get("X-Session") || "";
+    const uid = sessionToken ? await sessionUid(env, sessionToken) : null;
     const validTokens = (env.APP_TOKEN || "").split(",").map((s) => s.trim()).filter(Boolean);
     const givenToken = request.headers.get("X-App-Token") || "";
-    if (!validTokens.length || !validTokens.includes(givenToken)) {
-      return json({ error: "unauthorized", detail: "Senha do app ausente ou incorreta." }, 401);
+    const tokenOk = validTokens.length > 0 && validTokens.includes(givenToken);
+    if (!uid && !tokenOk) {
+      return json({
+        error: "unauthorized",
+        detail: sessionToken ? "Sessão expirada — entre de novo." : "Faça login no app (ou informe a senha do app).",
+      }, 401);
     }
 
-    // ---- backup criptografado do diário (por senha; o servidor só vê o
-    // blob cifrado — a criptografia acontece no aparelho) ----
-    const url = new URL(request.url);
-    if (url.pathname === "/backup") return handleBackup(request, env, json, givenToken);
+    // ---- dados da conta na nuvem (só com login; é o backup novo) ----
+    if (url.pathname === "/account/data") {
+      if (!uid) return json({ error: "no_session", detail: "Esta rota exige login por conta." }, 401);
+      return handleAccountData(request, env, json, uid);
+    }
+
+    // ---- backup criptografado do diário (caminho LEGADO, por senha: o
+    // servidor só vê o blob cifrado — a criptografia acontece no aparelho).
+    // Mantido de propósito: backups antigos continuam restauráveis. ----
+    if (url.pathname === "/backup") {
+      if (!tokenOk) return json({ error: "unauthorized", detail: "O backup antigo exige a senha do app (X-App-Token)." }, 401);
+      return handleBackup(request, env, json, givenToken);
+    }
 
     // ---- base COMUM de alimentos (compartilhada entre todos os usuários) ----
-    if (url.pathname === "/foods") return handleFoods(request, env, json, givenToken, url);
+    if (url.pathname === "/foods") return handleFoods(request, env, json, uid || givenToken, url);
 
     // ---- análise inteligente (exames × dieta × métricas do app) ----
-    if (url.pathname === "/analyze") return handleAnalyze(request, env, json);
+    if (url.pathname === "/analyze") return handleAnalyze(request, env, json, uid);
 
-    if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-    if (!env.ANTHROPIC_API_KEY) {
-      return json({ error: "server_not_configured", detail: "ANTHROPIC_API_KEY não configurada no Worker." }, 500);
+    // ---- chave da API da própria pessoa (BYOK) ----
+    if (url.pathname === "/account/apikey") {
+      if (!uid) return json({ error: "no_session", detail: "Esta rota exige login por conta." }, 401);
+      return handleApiKey(request, env, json, uid);
     }
 
-    const ip = request.headers.get("CF-Connecting-IP") || "?";
+    if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+    const cred = await resolverChave(env, uid);
+    if (cred.erro) return json(cred.erro, cred.erro.error === "no_api_key" ? 402 : 500);
+
     if (rateLimited(ip)) return json({ error: "rate_limited", detail: "Muitas fotos em pouco tempo — aguarde um minuto." }, 429);
 
     let body;
@@ -352,26 +785,27 @@ export default {
     if (image.length > 7_000_000) return json({ error: "image_too_large", detail: "Imagem grande demais (~5 MB máx)." }, 413);
     if (!okTypes.includes(mediaType)) return json({ error: "unsupported_media_type" }, 415);
 
-    // Limite diário de fotos do grupo inteiro (proteção de custo).
+    // Limite diário de fotos — por CONTA quando há login (cada um protege o
+    // próprio bolso), global no caminho legado da senha do app.
     // Best-effort (KV é eventualmente consistente) — a trava definitiva é o
     // limite de gasto no console da Anthropic.
     if (env.DIARIO_KV) {
       const tz = env.TIMEZONE || "America/Sao_Paulo";
       const day = new Date().toLocaleDateString("en-CA", { timeZone: tz });
-      const quotaKey = "fotos:" + day;
+      const quotaKey = "fotos:" + (uid ? uid + ":" : "") + day;
       const used = parseInt((await env.DIARIO_KV.get(quotaKey)) || "0", 10);
       const limit = parseInt(env.PHOTO_DAILY_LIMIT || "60", 10);
       if (used >= limit) {
         return json({
           error: "daily_limit",
-          detail: `Limite diário de ${limit} fotos do grupo atingido — volta amanhã ou registre por texto.`,
+          detail: `Limite de ${limit} fotos por dia atingido — volta amanhã ou registre por texto.`,
         }, 429);
       }
       await env.DIARIO_KV.put(quotaKey, String(used + 1), { expirationTtl: 172800 });
     }
 
     const client = new Anthropic({
-      apiKey: env.ANTHROPIC_API_KEY,
+      apiKey: cred.chave,
       // ANTHROPIC_BASE_URL só é usado nos testes locais (mock); em produção fica indefinida
       baseURL: env.ANTHROPIC_BASE_URL || undefined,
       // Workers + nodejs_compat: sem isto o SDK pode tentar o caminho de rede

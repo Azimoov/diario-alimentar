@@ -5,9 +5,19 @@ import { createServer } from "node:http";
 import worker from "../src/index.js";
 
 const MOCK_PORT = 8125;
+// chaves fictícias: a "boa" é aceita pelo mock de validação, a outra não
+const CHAVE_BOA = "sk-ant-api03-CHAVE-DE-TESTE-VALIDA-0000000000";
+const CHAVE_RUIM = "sk-ant-api03-CHAVE-DE-TESTE-REVOGADA-000000";
 
 // --- mock da API /v1/messages ---------------------------------------------
 const mock = createServer((req, res) => {
+  // validação de chave (GET /v1/models): aceita só a chave "boa" do teste
+  if (req.method === "GET" && req.url.startsWith("/v1/models")) {
+    const k = req.headers["x-api-key"];
+    const ok = k === CHAVE_BOA;
+    res.writeHead(ok ? 200 : 401, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify(ok ? { data: [] } : { error: { message: "invalid x-api-key" } }));
+  }
   let data = "";
   req.on("data", (c) => (data += c));
   req.on("end", () => {
@@ -39,7 +49,20 @@ const mock = createServer((req, res) => {
   });
 });
 
-// KV simulado (contador do limite diário de fotos)
+// --- mock do Resend: guarda os e-mails "enviados" p/ o teste ler o link ----
+const MAIL_PORT = 8126;
+const emailsEnviados = [];
+const mailMock = createServer((req, res) => {
+  let data = "";
+  req.on("data", (c) => (data += c));
+  req.on("end", () => {
+    emailsEnviados.push(JSON.parse(data || "{}"));
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ id: "email_mock" }));
+  });
+});
+
+// KV simulado (contador do limite diário de fotos, contas, sessões, dados)
 const kvStore = new Map();
 const ENV = {
   // multiusuário: várias senhas separadas por vírgula
@@ -50,11 +73,28 @@ const ENV = {
   CLAUDE_MODEL: "claude-opus-4-8",
   TIMEZONE: "America/Sao_Paulo",
   PHOTO_DAILY_LIMIT: "60",
+  // contas
+  DATA_KEY: "chave-de-dados-de-teste-nao-usar-em-producao",
+  INVITE_CODE: "convite-teste, convite-maria",
+  RESEND_API_KEY: "re_teste_falsa",
+  RESEND_API_URL: `http://localhost:${MAIL_PORT}`,
+  MAIL_FROM: "Highlander <teste@example.com>",
+  APP_BASE_URL: "https://azimoov.github.io/diario-alimentar/",
   DIARIO_KV: {
     async get(k) { return kvStore.has(k) ? kvStore.get(k) : null; },
     async put(k, v) { kvStore.set(k, v); },
+    async delete(k) { kvStore.delete(k); },
   },
 };
+
+// mesmo PBKDF2 que o navegador faz (js/auth.js) — a senha nunca vai ao servidor
+async function derivarAuthKey(email, senha) {
+  const te = new TextEncoder();
+  const salt = await crypto.subtle.digest("SHA-256", te.encode("highlander-auth:" + email.trim().toLowerCase()));
+  const base = await crypto.subtle.importKey("raw", te.encode(senha), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt, iterations: 250000, hash: "SHA-256" }, base, 256);
+  return [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 const ORIGIN = "http://localhost:8123";
 const IMG = "aGVsbG8="; // base64 qualquer — o mock não valida a imagem
@@ -82,6 +122,7 @@ async function check(name, resPromise, expectStatus, verify) {
   if (!ok) { failed++; if (body) console.log("      body:", JSON.stringify(body)); }
 }
 
+mailMock.listen(MAIL_PORT);
 mock.listen(MOCK_PORT, async () => {
   try {
     await check("preflight OPTIONS", worker.fetch(req({ method: "OPTIONS", body: null }), ENV), 204,
@@ -190,8 +231,267 @@ mock.listen(MOCK_PORT, async () => {
     kvStore.set("analises:" + hoje, "20");
     await check("análise limite diário", worker.fetch(anReq(), ENV), 429);
     kvStore.delete("analises:" + hoje);
+
+    // =====================================================================
+    // CONTAS: cadastro, login, sessão, dados na nuvem e recuperação
+    // =====================================================================
+    const EMAIL = "daniel@example.com";
+    const SENHA = "senha-boa-do-daniel";
+    const authKey = await derivarAuthKey(EMAIL, SENHA);
+
+    // cada teste manda um IP próprio: o rate-limit é por IP e não deve fazer
+    // um teste derrubar o outro (o limite em si é testado à parte, no fim)
+    let ipSeq = 0;
+    const authReq = (rota, body, opts = {}) => new Request("https://proxy.example/auth/" + rota, {
+      method: opts.method || "POST",
+      headers: {
+        "Content-Type": "application/json", Origin: ORIGIN,
+        "CF-Connecting-IP": opts.ip || "10.0.0." + (++ipSeq),
+        ...(opts.session ? { "X-Session": opts.session } : {}),
+      },
+      body: opts.method === "GET" ? undefined : JSON.stringify(body || {}),
+    });
+
+    // rotas /auth/* são públicas (não exigem senha do app)
+    await check("signup sem convite", worker.fetch(authReq("signup", { email: EMAIL, authKey }), ENV), 403);
+    await check("signup convite errado", worker.fetch(authReq("signup", { email: EMAIL, authKey, invite: "chute" }), ENV), 403);
+    await check("signup e-mail inválido", worker.fetch(authReq("signup", { email: "naoehemail", authKey, invite: "convite-teste" }), ENV), 400);
+    await check("signup sem authKey (senha crua barrada)", worker.fetch(authReq("signup", { email: EMAIL, invite: "convite-teste", password: SENHA }), ENV), 400);
+
+    let sessao = null;
+    {
+      const res = await worker.fetch(authReq("signup", { email: EMAIL, authKey, invite: "convite-teste" }), ENV);
+      const body = await res.json();
+      sessao = body.session;
+      const ok = res.status === 200 && typeof sessao === "string" && sessao.length === 64 && body.email === EMAIL;
+      console.log(`${ok ? "PASS" : "FAIL"}  signup cria conta -> ${res.status}`);
+      if (!ok) { failed++; console.log("      body:", JSON.stringify(body)); }
+    }
+    await check("signup duplicado", worker.fetch(authReq("signup", { email: EMAIL, authKey, invite: "convite-teste" }), ENV), 409);
+    // a senha crua NUNCA chega ao servidor: nada no KV pode conter ela
+    {
+      const dump = [...kvStore.values()].join("|");
+      const ok = !dump.includes(SENHA) && !dump.includes(authKey);
+      console.log(`${ok ? "PASS" : "FAIL"}  KV não guarda senha nem authKey`);
+      if (!ok) failed++;
+    }
+
+    await check("login senha errada", worker.fetch(authReq("login", { email: EMAIL, authKey: await derivarAuthKey(EMAIL, "errada") }), ENV), 401);
+    await check("login e-mail inexistente", worker.fetch(authReq("login", { email: "ninguem@example.com", authKey }), ENV), 401);
+    await check("login correto", worker.fetch(authReq("login", { email: EMAIL, authKey }), ENV), 200,
+      (res, body) => (typeof body.session === "string" && body.email === EMAIL) || "sem sessão");
+    await check("me sem sessão", worker.fetch(authReq("me", null, { method: "GET" }), ENV), 401);
+    await check("me com sessão", worker.fetch(authReq("me", null, { method: "GET", session: sessao }), ENV), 200,
+      (res, body) => body.email === EMAIL || "e-mail diferente");
+    await check("me com sessão inválida", worker.fetch(authReq("me", null, { method: "GET", session: "x".repeat(64) }), ENV), 401);
+
+    // ---- dados da conta: PUT/GET com sessão ----
+    const dataReq = (opts = {}) => new Request("https://proxy.example/account/data", {
+      method: opts.method || "PUT",
+      headers: {
+        "Content-Type": "application/json", Origin: ORIGIN,
+        ...(opts.session !== null ? { "X-Session": opts.session || sessao } : {}),
+        ...(opts.token ? { "X-App-Token": opts.token } : {}),
+      },
+      body: opts.method === "GET" ? undefined : JSON.stringify(opts.body !== undefined ? opts.body : { state: JSON.stringify({ weights: { "2026-08-01": 82.4 }, customFoods: [{ name: "Whey" }] }) }),
+    });
+    await check("dados GET antes de gravar", worker.fetch(dataReq({ method: "GET" }), ENV), 404);
+    await check("dados sem sessão", worker.fetch(dataReq({ session: null }), ENV), 401);
+    await check("dados com senha do app (sem conta) barrado", worker.fetch(dataReq({ session: null, token: "token-teste" }), ENV), 401);
+    await check("dados PUT grava", worker.fetch(dataReq(), ENV), 200);
+    await check("dados GET devolve igual", worker.fetch(dataReq({ method: "GET" }), ENV), 200, (res, body) => {
+      try {
+        const st = JSON.parse(body.state);
+        return (st.weights["2026-08-01"] === 82.4 && st.customFoods[0].name === "Whey") || "estado diferente";
+      } catch { return "state não é JSON"; }
+    });
+    // cifrado em repouso: o KV não pode conter os dados em texto claro
+    {
+      const dump = [...kvStore.values()].join("|");
+      const ok = !dump.includes("82.4") && !dump.includes("Whey\"");
+      console.log(`${ok ? "PASS" : "FAIL"}  dados cifrados em repouso no KV`);
+      if (!ok) failed++;
+    }
+    await check("dados grandes demais", worker.fetch(dataReq({ body: { state: "x".repeat(8_000_001) } }), ENV), 413);
+
+    // ---- a sessão SOZINHA já autentica (sem senha do app). Passar daqui
+    // depende só da chave própria da conta, testada na seção BYOK. ----
+    {
+      const fotoComSessao = new Request("https://proxy.example/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Origin: ORIGIN, "X-Session": sessao },
+        body: JSON.stringify({ image: IMG, mediaType: "image/jpeg" }),
+      });
+      await check("sessão autentica a foto (sem senha do app)", worker.fetch(fotoComSessao, ENV), 402,
+        (res, body) => body.error === "no_api_key" || "deveria passar da autenticação e parar só na chave");
+    }
+
+    // ---- recuperação de senha por e-mail ----
+    emailsEnviados.length = 0;
+    await check("forgot e-mail inexistente responde igual", worker.fetch(authReq("forgot", { email: "ninguem@example.com" }), ENV), 200);
+    {
+      const ok = emailsEnviados.length === 0;
+      console.log(`${ok ? "PASS" : "FAIL"}  forgot não envia e-mail p/ conta inexistente (sem enumeração)`);
+      if (!ok) failed++;
+    }
+    await check("forgot conta real", worker.fetch(authReq("forgot", { email: EMAIL }), ENV), 200);
+    let resetToken = null;
+    {
+      const msg = emailsEnviados[emailsEnviados.length - 1];
+      const m = msg && /#recuperar=([0-9a-f]{64})/.exec(msg.text || "");
+      resetToken = m && m[1];
+      const ok = !!resetToken && msg.to[0] === EMAIL && /Redefinir/.test(msg.subject);
+      console.log(`${ok ? "PASS" : "FAIL"}  e-mail de recuperação com link válido`);
+      if (!ok) { failed++; console.log("      msg:", JSON.stringify(msg)); }
+    }
+    await check("reset token inválido", worker.fetch(authReq("reset", { token: "y".repeat(64), authKey }), ENV), 400);
+    const NOVA = "senha-nova-anotada";
+    const authKeyNova = await derivarAuthKey(EMAIL, NOVA);
+    await check("reset troca a senha", worker.fetch(authReq("reset", { token: resetToken, authKey: authKeyNova }), ENV), 200,
+      (res, body) => (typeof body.session === "string" && body.email === EMAIL) || "sem sessão nova");
+    await check("reset link é de uso único", worker.fetch(authReq("reset", { token: resetToken, authKey: authKeyNova }), ENV), 400);
+    await check("senha antiga não entra mais", worker.fetch(authReq("login", { email: EMAIL, authKey }), ENV), 401);
+    let sessaoNova = null;
+    {
+      const res = await worker.fetch(authReq("login", { email: EMAIL, authKey: authKeyNova }), ENV);
+      const body = await res.json();
+      sessaoNova = body.session;
+      const ok = res.status === 200 && !!sessaoNova;
+      console.log(`${ok ? "PASS" : "FAIL"}  senha nova entra -> ${res.status}`);
+      if (!ok) failed++;
+    }
+    // O PONTO CRÍTICO: depois de redefinir a senha, os dados continuam lá
+    await check("dados sobrevivem à troca de senha", worker.fetch(dataReq({ method: "GET", session: sessaoNova }), ENV), 200, (res, body) => {
+      try { return JSON.parse(body.state).weights["2026-08-01"] === 82.4 || "dados diferentes"; }
+      catch { return "state inválido"; }
+    });
+
+    // ---- trocar senha estando logado ----
+    await check("trocar senha com atual errada", worker.fetch(authReq("password", { authKeyAtual: authKey, authKeyNova: authKey }, { session: sessaoNova }), ENV), 401);
+    await check("trocar senha logado", worker.fetch(authReq("password", { authKeyAtual: authKeyNova, authKeyNova: authKey }, { session: sessaoNova }), ENV), 200);
+    await check("entra com a senha trocada", worker.fetch(authReq("login", { email: EMAIL, authKey }), ENV), 200);
+
+    // ---- logout invalida a sessão ----
+    await check("logout", worker.fetch(authReq("logout", null, { session: sessaoNova }), ENV), 200);
+    await check("sessão morta não abre dados", worker.fetch(dataReq({ method: "GET", session: sessaoNova }), ENV), 401);
+
+    // ---- o backup LEGADO continua funcionando (e exige a senha antiga) ----
+    await check("backup legado segue vivo", worker.fetch(bkReq({ method: "GET" }), ENV), 200,
+      (res, body) => body.blob === "Y2lmcmFkbw==" || "backup antigo mudou");
+    await check("backup legado não aceita só sessão", worker.fetch(new Request("https://proxy.example/backup", {
+      method: "GET", headers: { Origin: ORIGIN, "X-Session": sessao },
+    }), ENV), 401);
+
+    // =====================================================================
+    // BYOK: cada conta usa a PRÓPRIA chave da Anthropic
+    // =====================================================================
+    const keyReq = (opts = {}) => new Request("https://proxy.example/account/apikey", {
+      method: opts.method || "PUT",
+      headers: {
+        "Content-Type": "application/json", Origin: ORIGIN,
+        ...(opts.session !== null ? { "X-Session": opts.session || sessao } : {}),
+      },
+      body: (opts.method === "GET" || opts.method === "DELETE") ? undefined
+        : JSON.stringify(opts.body !== undefined ? opts.body : { apiKey: CHAVE_BOA }),
+    });
+    // sem chave própria, foto e análise param — e dizem o porquê
+    const fotoSessao = () => new Request("https://proxy.example/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: ORIGIN, "X-Session": sessao },
+      body: JSON.stringify({ image: IMG, mediaType: "image/jpeg" }),
+    });
+    await check("foto sem chave da conta -> 402", worker.fetch(fotoSessao(), ENV), 402,
+      (res, body) => (body.error === "no_api_key" && /chave da API/i.test(body.detail)) || "mensagem sem orientação");
+    await check("análise sem chave da conta -> 402", worker.fetch(new Request("https://proxy.example/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: ORIGIN, "X-Session": sessao },
+      body: JSON.stringify({ dados: { perfil: {} } }),
+    }), ENV), 402);
+
+    await check("chave ainda não cadastrada", worker.fetch(keyReq({ method: "GET" }), ENV), 200,
+      (res, body) => body.configured === false || "deveria estar vazia");
+    await check("chave com formato errado", worker.fetch(keyReq({ body: { apiKey: "minha-senha-qualquer" } }), ENV), 400,
+      (res, body) => body.error === "invalid_key" || "erro inesperado");
+    await check("chave recusada pela Anthropic", worker.fetch(keyReq({ body: { apiKey: CHAVE_RUIM } }), ENV), 400,
+      (res, body) => (body.error === "key_rejected" && /recusou/i.test(body.detail)) || "deveria testar antes de salvar");
+    await check("chave sem login", worker.fetch(keyReq({ session: null }), ENV), 401);
+    await check("salva a chave válida", worker.fetch(keyReq(), ENV), 200,
+      (res, body) => body.hint === CHAVE_BOA.slice(-4) || "hint errado");
+    await check("status mostra só o final da chave", worker.fetch(keyReq({ method: "GET" }), ENV), 200,
+      (res, body) => (body.configured === true && body.hint === CHAVE_BOA.slice(-4)
+        && !JSON.stringify(body).includes(CHAVE_BOA)) || "vazou a chave inteira");
+    {
+      const dump = [...kvStore.values()].join("|");
+      const ok = !dump.includes(CHAVE_BOA);
+      console.log(`${ok ? "PASS" : "FAIL"}  chave da API cifrada no KV (não aparece em texto claro)`);
+      if (!ok) failed++;
+    }
+    await check("com a chave, a foto volta a funcionar", worker.fetch(fotoSessao(), ENV), 200,
+      (res, body) => Array.isArray(body.itens) || "payload inesperado");
+    // a chave NÃO entra no backup de dados da conta
+    await check("dados da conta não carregam a chave", worker.fetch(dataReq({ method: "GET" }), ENV), 200,
+      (res, body) => !JSON.stringify(body).includes(CHAVE_BOA) || "a chave vazou no backup");
+    // limite diário passa a ser por conta
+    {
+      const hojeTz = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+      const uidChaves = [...kvStore.keys()].filter(k => k.startsWith("fotos:") && k.includes(":" + hojeTz));
+      const ok = uidChaves.some(k => k !== "fotos:" + hojeTz);
+      console.log(`${ok ? "PASS" : "FAIL"}  limite de fotos contado por conta -> ${JSON.stringify(uidChaves)}`);
+      if (!ok) failed++;
+    }
+    await check("remove a chave", worker.fetch(keyReq({ method: "DELETE" }), ENV), 200);
+    await check("depois de remover, volta a 402", worker.fetch(fotoSessao(), ENV), 402);
+    // caminho legado (senha do app) segue usando a chave do servidor
+    await check("senha do app ainda usa a chave do servidor", worker.fetch(req(), ENV), 200);
+
+    // ---- MAIL_TO_OVERRIDE: recuperação de OUTRA pessoa cai na caixa do dono ----
+    {
+      const EMAIL_OUTRO = "maria@example.com";
+      const akMaria = await derivarAuthKey(EMAIL_OUTRO, "senha-da-maria");
+      await worker.fetch(authReq("signup", { email: EMAIL_OUTRO, authKey: akMaria, invite: "convite-maria" }), ENV);
+      emailsEnviados.length = 0;
+      const ENV_OVERRIDE = { ...ENV, MAIL_TO_OVERRIDE: "dono@example.com" };
+      await check("forgot de outra conta com override", worker.fetch(authReq("forgot", { email: EMAIL_OUTRO }), ENV_OVERRIDE), 200);
+      const msg = emailsEnviados[emailsEnviados.length - 1];
+      const okDestino = msg && msg.to[0] === "dono@example.com";
+      const okIdentifica = msg && msg.subject.includes(EMAIL_OUTRO) && (msg.text || "").includes(EMAIL_OUTRO);
+      const temLink = msg && /#recuperar=([0-9a-f]{64})/.test(msg.text || "");
+      console.log(`${okDestino && okIdentifica && temLink ? "PASS" : "FAIL"}  override manda p/ o dono dizendo de quem é a conta`);
+      if (!(okDestino && okIdentifica && temLink)) { failed++; console.log("      msg:", JSON.stringify(msg)); }
+
+      // o link redirecionado funciona de verdade e é da conta certa
+      const tk = (/#recuperar=([0-9a-f]{64})/.exec(msg.text || "") || [])[1];
+      const akNovaMaria = await derivarAuthKey(EMAIL_OUTRO, "maria-senha-nova");
+      await check("link repassado redefine a senha da pessoa certa",
+        worker.fetch(authReq("reset", { token: tk, authKey: akNovaMaria }), ENV_OVERRIDE), 200,
+        (res, body) => body.email === EMAIL_OUTRO || "conta errada");
+      await check("a pessoa entra com a senha nova",
+        worker.fetch(authReq("login", { email: EMAIL_OUTRO, authKey: akNovaMaria }), ENV), 200);
+
+      // sem override, volta a ir para o e-mail da própria pessoa
+      emailsEnviados.length = 0;
+      await check("sem override vai p/ o e-mail da conta", worker.fetch(authReq("forgot", { email: EMAIL_OUTRO }), ENV), 200);
+      const msg2 = emailsEnviados[emailsEnviados.length - 1];
+      const ok2 = msg2 && msg2.to[0] === EMAIL_OUTRO;
+      console.log(`${ok2 ? "PASS" : "FAIL"}  sem override o destino é a própria pessoa`);
+      if (!ok2) failed++;
+    }
+
+    // ---- rate-limit de cadastro: protege o convite de força bruta ----
+    {
+      const IP_FIXO = "203.0.113.9";
+      let ultimo = 0;
+      for (let i = 0; i < 7; i++) {
+        const res = await worker.fetch(authReq("signup", { email: `x${i}@example.com`, authKey, invite: "chute" }, { ip: IP_FIXO }), ENV);
+        ultimo = res.status;
+      }
+      const ok = ultimo === 429;
+      console.log(`${ok ? "PASS" : "FAIL"}  cadastro em rajada é barrado -> ${ultimo}`);
+      if (!ok) failed++;
+    }
   } finally {
     mock.close();
+    mailMock.close();
     console.log(failed ? `\n${failed} teste(s) FALHARAM` : "\nTodos os testes passaram.");
     process.exit(failed ? 1 : 0);
   }
