@@ -43,6 +43,27 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
+/* ---- Portão: nada do app aparece sem login. Bloqueado por padrão no HTML
+   (classe já vem marcada, antes de qualquer JS rodar) — só some quando o
+   app confirma uma sessão válida. */
+#gate { display: none; }
+body.gate-active .topbar, body.gate-active main, body.gate-active .foot { display: none; }
+body.gate-active #gate {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; min-height: 100dvh; padding: 24px;
+}
+.gate-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: 16px;
+  padding: 22px; width: 100%; max-width: 380px;
+}
+.gate-brand {
+  display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 20px;
+  margin-bottom: 16px; letter-spacing: .2px;
+}
+.gate-brand img { border-radius: 6px; }
+/* atalho de recuperação embaixo do formulário, onde a pessoa procura */
+.gate-esqueci { display: block; margin-top: 10px; padding-left: 0; text-align: left; }
+
 .topbar {
   position: sticky; top: 0; z-index: 10;
   background: var(--card); border-bottom: 1px solid var(--border);

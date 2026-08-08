@@ -11,3 +11,7 @@ node_modules
 # fontes brutas grandes (baixe de novo com as URLs do README)
 data/source-tbca/
 data/source-usda/
+
+# artefatos dos testes de navegador (screenshots gravados no cwd)
+shot-*.png
+previa-*.png
