@@ -31,6 +31,35 @@ createServer((req, res) => {
     const sys = String(body.system || "");
     const isRotulo = sys.includes("tabelas nutricionais");
     const isAnalise = sys.includes("dados de saúde PESSOAIS");
+    const isLab = sys.includes("laudos de exames laboratoriais");
+    const isImg = sys.includes("laudos de exames de imagem");
+    const tipoAnexo = ((((body.messages || [])[0] || {}).content || [])[0] || {}).type || "?";
+    if (isLab || isImg) {
+      const conteudo = isLab
+        ? {
+            data: "2026-07-30",
+            laboratorio: "Laboratório de teste (" + tipoAnexo + ")",
+            analitos: [
+              { nome: "Glicose em jejum", valor: "92", unidade: "mg/dL", refMin: 70, refMax: 99, obs: "jejum de 12h" },
+              { nome: "Colesterol total", valor: "188", unidade: "mg/dL", refMin: null, refMax: 190, obs: null },
+              { nome: "Anti-HIV", valor: "não reagente", unidade: null, refMin: null, refMax: null, obs: null },
+            ],
+            observacao: "",
+          }
+        : {
+            data: "2026-07-15",
+            exame: "Ultrassom de abdome total",
+            local: "Clínica de teste (" + tipoAnexo + ")",
+            conclusao: "Esteatose hepática grau I. Demais órgãos sem alterações.",
+            observacao: "",
+          };
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        id: "msg_dev", type: "message", role: "assistant", model: "dev", stop_reason: "end_turn",
+        content: [{ type: "text", text: JSON.stringify(conteudo) }],
+        usage: { input_tokens: 100, output_tokens: 50 },
+      }));
+    }
     const texto = isAnalise
       ? "VISÃO GERAL\n– Resposta FIXA do servidor de desenvolvimento (sem custo).\n\nEXAMES\n– Nada real analisado aqui.\n\nPARA LEVAR AO MÉDICO\n– Nada: isto é teste local."
       : JSON.stringify(isRotulo

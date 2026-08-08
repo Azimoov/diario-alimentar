@@ -77,6 +77,76 @@ Regras de honestidade (crítico):
 - Se a foto NÃO for uma tabela nutricional legível: base="desconhecida", campos null, explicando em observacao.
 - observacao: avisos curtos ("porção em mL", "fibra ilegível"). String vazia se nada a observar.`;
 
+// ---- modo "exame_lab": transcreve um laudo de laboratório inteiro ----------
+const SCHEMA_EXAME_LAB = {
+  type: "object",
+  properties: {
+    data: { type: ["string", "null"], description: "Data da COLETA no formato AAAA-MM-DD. Se só houver a data de emissão/liberação, use-a. null se ilegível." },
+    laboratorio: { type: ["string", "null"], description: "Nome do laboratório, se visível" },
+    analitos: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          nome: { type: "string", description: "Nome do exame/analito como impresso (ex.: 'Glicose', 'Hemoglobina glicada', 'TSH')" },
+          valor: { type: "string", description: "Resultado EXATAMENTE como impresso, incluindo qualitativos ('não reagente', 'ausente') e sinais ('<0,10')" },
+          unidade: { type: ["string", "null"], description: "Unidade impressa (mg/dL, ng/mL, %...). null se não houver" },
+          refMin: { type: ["number", "null"], description: "Limite INFERIOR da faixa de referência impressa NESTE laudo. null se o laudo não trouxer, ou se a faixa não for numérica" },
+          refMax: { type: ["number", "null"], description: "Limite SUPERIOR da faixa de referência impressa NESTE laudo. null se não houver" },
+          obs: { type: ["string", "null"], description: "Observação curta impressa junto do item (método, 'em jejum'...). null se não houver" },
+        },
+        required: ["nome", "valor", "unidade", "refMin", "refMax", "obs"],
+        additionalProperties: false,
+      },
+    },
+    observacao: { type: "string", description: "Aviso curto se algo ficou ilegível ou duvidoso. String vazia se nada a observar." },
+  },
+  required: ["data", "laboratorio", "analitos", "observacao"],
+  additionalProperties: false,
+};
+
+const SYSTEM_EXAME_LAB = `Você TRANSCREVE laudos de exames laboratoriais (padrão brasileiro) para um app pessoal de saúde. Foto ou PDF.
+
+Sua tarefa é copiar dados, não interpretá-los.
+
+Regras de honestidade (crítico — são dados de saúde):
+- Transcreva SOMENTE o que está legível no documento. NUNCA complete de memória.
+- NUNCA invente faixa de referência. Se o laudo não imprime a faixa daquele item, refMin e refMax são null. Faixas variam por laboratório e método — inventar é perigoso.
+- Copie o resultado como está impresso, inclusive qualitativos ("não reagente", "ausente", "indetectável") e valores com sinal ("<0,10", ">1000"). Use ponto ou vírgula como no laudo; o app normaliza.
+- Se um valor estiver ilegível/cortado, NÃO adivinhe: deixe o item de fora e explique em observacao.
+- NÃO faça diagnóstico, NÃO classifique como "alterado"/"normal", NÃO comente os resultados.
+- NÃO extraia dados pessoais (nome do paciente, CPF, RG, endereço, número da guia, convênio) — o app não precisa e não quer guardá-los.
+- Liste cada analito uma vez. Um hemograma tem vários (hemoglobina, hematócrito, leucócitos, plaquetas...): liste todos os que aparecem, cada um como um item.
+- Documento com várias páginas: percorra todas.
+- Se o documento NÃO for um laudo laboratorial legível: analitos vazio e explique em observacao.`;
+
+// ---- modo "exame_img": laudo de imagem (ultrassom, tomografia, etc.) -------
+const SCHEMA_EXAME_IMG = {
+  type: "object",
+  properties: {
+    data: { type: ["string", "null"], description: "Data do exame em AAAA-MM-DD. null se ilegível." },
+    exame: { type: ["string", "null"], description: "Nome do exame (ex.: 'Ultrassom de abdome total', 'Ressonância de joelho direito')" },
+    local: { type: ["string", "null"], description: "Clínica/hospital onde foi feito, se visível" },
+    conclusao: { type: "string", description: "A CONCLUSÃO/IMPRESSÃO DIAGNÓSTICA do laudo, transcrita. Se não houver seção de conclusão, resuma os achados descritos, sem acrescentar nada." },
+    observacao: { type: "string", description: "Aviso curto se algo ficou ilegível. String vazia se nada a observar." },
+  },
+  required: ["data", "exame", "local", "conclusao", "observacao"],
+  additionalProperties: false,
+};
+
+const SYSTEM_EXAME_IMG = `Você TRANSCREVE laudos de exames de imagem (ultrassom, raio-X, tomografia, ressonância, densitometria, ecocardiograma...) para um app pessoal de saúde. Foto ou PDF.
+
+Sua tarefa é copiar o que o laudo diz, não interpretá-lo.
+
+Regras de honestidade (crítico — são dados de saúde):
+- Transcreva SOMENTE o que está escrito. NUNCA complete de memória nem acrescente achados.
+- Prefira a seção "CONCLUSÃO" ou "IMPRESSÃO DIAGNÓSTICA". Sem ela, resuma os achados descritos, fielmente.
+- Mantenha medidas e lateralidade exatamente como no laudo (ex.: "rim direito 10,2 cm").
+- NÃO faça diagnóstico próprio, NÃO tranquilize e NÃO alarme: só transcreva.
+- NÃO extraia dados pessoais (nome, CPF, convênio, número da guia).
+- Ilegível: diga em observacao em vez de adivinhar.
+- Se o documento NÃO for um laudo de imagem: conclusao vazia e explique em observacao.`;
+
 const SYSTEM = `Você analisa fotos de refeições (comida majoritariamente brasileira) para um diário alimentar pessoal.
 
 Tarefa: identificar cada alimento visível e estimar o peso em gramas da porção.
@@ -781,9 +851,21 @@ export default {
     const image = body && body.image;
     const mediaType = body && body.mediaType;
     const okTypes = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+    // PDF é enviado direto para a API (ela lê documento nativamente) — assim
+    // o app não precisa de biblioteca de PDF no navegador. Laudo costuma ter
+    // várias páginas, então o limite é maior que o de foto.
+    const ehPdf = mediaType === "application/pdf";
     if (typeof image !== "string" || !image.length) return json({ error: "missing_image" }, 400);
-    if (image.length > 7_000_000) return json({ error: "image_too_large", detail: "Imagem grande demais (~5 MB máx)." }, 413);
-    if (!okTypes.includes(mediaType)) return json({ error: "unsupported_media_type" }, 415);
+    if (ehPdf) {
+      if (image.length > 12_000_000) return json({ error: "file_too_large", detail: "PDF grande demais (~9 MB máx)." }, 413);
+    } else {
+      if (image.length > 7_000_000) return json({ error: "image_too_large", detail: "Imagem grande demais (~5 MB máx)." }, 413);
+      if (!okTypes.includes(mediaType)) return json({ error: "unsupported_media_type" }, 415);
+    }
+    // PDF só faz sentido nos modos de laudo (refeição/rótulo são foto)
+    if (ehPdf && !["exame_lab", "exame_img"].includes(body.mode)) {
+      return json({ error: "unsupported_media_type", detail: "PDF só é aceito para laudos de exame." }, 415);
+    }
 
     // Limite diário de fotos — por CONTA quando há login (cada um protege o
     // próprio bolso), global no caminho legado da senha do app.
@@ -813,35 +895,46 @@ export default {
       fetch: globalThis.fetch.bind(globalThis),
     });
 
-    // dois modos de leitura: refeição (padrão) ou tabela nutricional
-    const isRotulo = body.mode === "rotulo";
+    // modos de leitura: refeição (padrão), tabela nutricional, laudo de
+    // laboratório ou laudo de imagem
+    const modo = body.mode || "refeicao";
+    const isRotulo = modo === "rotulo";
+    const isLab = modo === "exame_lab";
+    const isImg = modo === "exame_img";
     // produtos que o usuário cadastrou com foto de rótulo — permitem que a
     // foto da embalagem reaproveite o alimento já cadastrado
     const produtos = Array.isArray(body.produtos)
       ? body.produtos.filter((p) => typeof p === "string" && p.trim()).slice(0, 60).map((p) => p.trim().slice(0, 120))
       : [];
 
+    const esquema = isLab ? SCHEMA_EXAME_LAB : isImg ? SCHEMA_EXAME_IMG : isRotulo ? SCHEMA_ROTULO : SCHEMA;
+    const sistema = isLab ? SYSTEM_EXAME_LAB : isImg ? SYSTEM_EXAME_IMG : isRotulo ? SYSTEM_ROTULO : SYSTEM;
+    const pedido = isLab
+      ? "Transcreva TODOS os analitos deste laudo laboratorial, com valor, unidade e a faixa de referência impressa (quando houver)."
+      : isImg
+        ? "Transcreva a conclusão deste laudo de imagem, com a data, o nome do exame e o local."
+        : isRotulo
+          ? "Extraia os dados da tabela nutricional desta foto."
+          : "Identifique os alimentos desta refeição e estime as gramas de cada um."
+            + (produtos.length ? "\n\nPRODUTOS CADASTRADOS (use no campo \"produto\" se a foto mostrar a embalagem de um deles):\n- " + produtos.join("\n- ") : "");
+    // PDF vai como bloco "document" (a API lê PDF nativamente); foto como "image"
+    const anexo = ehPdf
+      ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: image } }
+      : { type: "image", source: { type: "base64", media_type: mediaType, data: image } };
+
     let msg;
     try {
       msg = await client.messages.create({
         model: env.CLAUDE_MODEL || "claude-opus-4-8",
-        max_tokens: 4096,
+        // laudo de laboratório rende muitos analitos: precisa de mais espaço
+        max_tokens: isLab ? 8192 : 4096,
         thinking: { type: "adaptive" },
         output_config: {
           effort: "medium",
-          format: { type: "json_schema", schema: isRotulo ? SCHEMA_ROTULO : SCHEMA },
+          format: { type: "json_schema", schema: esquema },
         },
-        system: isRotulo ? SYSTEM_ROTULO : SYSTEM,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: image } },
-            { type: "text", text: isRotulo
-              ? "Extraia os dados da tabela nutricional desta foto."
-              : "Identifique os alimentos desta refeição e estime as gramas de cada um."
-                + (produtos.length ? "\n\nPRODUTOS CADASTRADOS (use no campo \"produto\" se a foto mostrar a embalagem de um deles):\n- " + produtos.join("\n- ") : "") },
-          ],
-        }],
+        system: sistema,
+        messages: [{ role: "user", content: [anexo, { type: "text", text: pedido }] }],
       });
     } catch (err) {
       // aparece no `wrangler tail` p/ diagnóstico (sem dados sensíveis)
@@ -872,6 +965,49 @@ export default {
     try { parsed = JSON.parse(textBlock.text); } catch {
       console.log("JSON RUIM: stop_reason=", msg.stop_reason, "inicio=", textBlock.text.slice(0, 200));
       return json({ error: "bad_model_output", detail: "Resposta em formato inesperado." }, 502);
+    }
+
+    // ---- modo laudo laboratorial: valida cada analito ----
+    if (isLab) {
+      const num = (v) => (typeof v === "number" && isFinite(v) ? v : null);
+      const txt = (v, max) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+      const dataOk = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+      const analitos = (Array.isArray(parsed.analitos) ? parsed.analitos : [])
+        .filter((a) => a && txt(a.nome, 120) && txt(a.valor, 80))
+        .slice(0, 120)   // laudo grande (hemograma + bioquímica) cabe folgado
+        .map((a) => ({
+          nome: txt(a.nome, 120),
+          valor: txt(a.valor, 80),
+          unidade: txt(a.unidade, 30),
+          refMin: num(a.refMin),
+          refMax: num(a.refMax),
+          obs: txt(a.obs, 200),
+        }));
+      return json({
+        exameLab: {
+          data: dataOk(parsed.data),
+          laboratorio: txt(parsed.laboratorio, 120),
+          analitos,
+          observacao: typeof parsed.observacao === "string" ? parsed.observacao : "",
+        },
+        modelo: msg.model,
+      });
+    }
+
+    // ---- modo laudo de imagem ----
+    if (isImg) {
+      const txt = (v, max) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);
+      const dataOk = (v) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
+      return json({
+        exameImg: {
+          data: dataOk(parsed.data),
+          exame: txt(parsed.exame, 140),
+          local: txt(parsed.local, 140),
+          conclusao: typeof parsed.conclusao === "string" ? parsed.conclusao.trim().slice(0, 4000) : "",
+          observacao: typeof parsed.observacao === "string" ? parsed.observacao : "",
+        },
+        modelo: msg.model,
+      });
     }
 
     // ---- modo rótulo: valida e devolve os campos da tabela nutricional ----

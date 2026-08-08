@@ -316,6 +316,16 @@ input[type=number] { width: 100%; }
 .exam-group .g-meta { margin-left: auto; color: var(--muted); font-weight: 600; font-size: 12px; }
 .exam-table td:first-child { max-width: 40vw; overflow-wrap: break-word; }
 .exam-report { white-space: pre-wrap; font-size: 14px; margin: 6px 0; }
+
+/* conferência do laudo lido por foto/PDF: cada analito editável antes de entrar */
+.conf-lista { max-height: 52vh; overflow: auto; margin: 12px 0; border: 1px solid var(--border); border-radius: 10px; }
+.conf-linha { display: flex; gap: 10px; padding: 10px; border-bottom: 1px solid var(--border); }
+.conf-linha:last-child { border-bottom: none; }
+.conf-usar { display: flex; flex-direction: column; align-items: center; gap: 3px; flex: 0 0 auto; font-size: 10px; color: var(--muted); font-weight: 600; }
+.conf-usar input { width: auto; }
+.conf-campos { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.conf-tres { display: flex; gap: 6px; }
+.conf-campos input { padding: 7px 8px; font-size: 13px; }
 .badge-ok { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent); }
 .badge-muted { background: color-mix(in srgb, var(--muted) 14%, transparent); color: var(--muted); }
 

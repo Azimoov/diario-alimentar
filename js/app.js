@@ -499,7 +499,7 @@ window.App = (function () {
     });
   }
 
-  async function analyzePhoto(base64, mode) {
+  async function analyzePhoto(base64, mode, mediaType) {
     // manda a lista de produtos com rótulo cadastrado: se a foto for a
     // embalagem de um deles, o modelo devolve o nome e o app reaproveita
     // o alimento já cadastrado (com os valores conferidos por você)
@@ -507,15 +507,82 @@ window.App = (function () {
     const res = await fetch(window.Auth.urlProxy(), {
       method: 'POST',
       headers: window.Auth.cabecalhosProxy({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ image: base64, mediaType: 'image/jpeg', mode: mode || 'refeicao', produtos }),
+      body: JSON.stringify({
+        image: base64, mediaType: mediaType || 'image/jpeg',
+        mode: mode || 'refeicao', produtos,
+      }),
     });
     let data = null;
     try { data = await res.json(); } catch { /* resposta sem corpo */ }
     if (!res.ok) {
-      const detail = (data && (data.detail || data.error)) || ('HTTP ' + res.status);
-      throw new Error(detail);
+      const err = new Error((data && (data.detail || data.error)) || ('HTTP ' + res.status));
+      err.semChave = res.status === 402;
+      throw err;
     }
     return data || { itens: [], observacao: '' };
+  }
+
+  // lê um arquivo (PDF) como base64 puro, sem o prefixo data:
+  function fileToBase64(file) {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => {
+        const s = String(r.result || '');
+        const i = s.indexOf(',');
+        i === -1 ? reject(new Error('Não consegui ler o arquivo.')) : resolve(s.slice(i + 1));
+      };
+      r.onerror = () => reject(new Error('Não consegui ler o arquivo.'));
+      r.readAsDataURL(file);
+    });
+  }
+
+  // ---- ler laudo por foto/PDF (usado nas duas abas de Exames) --------------
+  // Nada é salvo direto: o resultado sempre passa por uma tela de conferência.
+  // Transcrição automática de exame erra, e aqui o custo do erro é alto.
+  async function lerLaudo(file, modo, botao) {
+    const ehPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name || '');
+    const rotuloOriginal = botao ? botao.textContent : '';
+    if (botao) { botao.disabled = true; botao.textContent = ehPdf ? '⏳ lendo o PDF…' : '⏳ lendo o laudo…'; }
+    try {
+      // foto de laudo precisa de resolução (letra miúda e tabelas), como o rótulo
+      const dados = ehPdf
+        ? await analyzePhoto(await fileToBase64(file), modo, 'application/pdf')
+        : await analyzePhoto(await compressPhoto(file, 1800, 0.85), modo, 'image/jpeg');
+      return dados;
+    } finally {
+      if (botao) { botao.disabled = false; botao.textContent = rotuloOriginal; }
+    }
+  }
+
+  // par de botões (câmera + PDF) que alimenta um leitor de laudo
+  function botoesLaudo(modo, aoLer) {
+    const fotoIn = h('input', {
+      type: 'file', accept: 'image/*', capture: 'environment', style: 'display:none',
+      onchange: e => { const f = e.target.files[0]; e.target.value = ''; if (f) rodar(f, fotoBtn); },
+    });
+    const pdfIn = h('input', {
+      type: 'file', accept: 'application/pdf,.pdf', style: 'display:none',
+      onchange: e => { const f = e.target.files[0]; e.target.value = ''; if (f) rodar(f, pdfBtn); },
+    });
+    const guarda = (abrir) => () => {
+      if (!window.Auth.podeUsarProxy()) {
+        toast('Para ler laudo, entre na sua conta e cadastre sua chave em Dados.', 'error');
+        return;
+      }
+      abrir();
+    };
+    const fotoBtn = h('button', { class: 'btn', onclick: guarda(() => fotoIn.click()) }, '📷 Fotografar laudo');
+    const pdfBtn = h('button', { class: 'btn', onclick: guarda(() => pdfIn.click()) }, '📄 Carregar PDF');
+
+    async function rodar(file, botao) {
+      try {
+        aoLer(await lerLaudo(file, modo, botao));
+      } catch (err) {
+        toast('Não consegui ler o laudo: ' + err.message, 'error');
+        if (err.semChave) goTo('diario', 'dados');
+      }
+    }
+    return h('div', { class: 'btn-row' }, [fotoBtn, fotoIn, pdfBtn, pdfIn]);
   }
 
   // ---- foto de TABELA NUTRICIONAL (preenche o cadastro de alimento) ----
@@ -1499,6 +1566,86 @@ window.App = (function () {
     root.appendChild(renderAnalysisCard());
   }
 
+  // ---- conferência do laudo laboratorial lido por foto/PDF ----
+  // Cada analito vem marcado e editável. O usuário aprova o que entra: o app
+  // NÃO salva transcrição de exame às cegas.
+  function abrirConferenciaLab(dados, aoSalvar) {
+    const d = dados || {};
+    const analitos = Array.isArray(d.analitos) ? d.analitos : [];
+    const corpo = h('div', {});
+    const m = modal('Conferir o laudo', corpo);
+
+    if (!analitos.length) {
+      corpo.appendChild(h('p', { class: 'note' }, 'Não consegui extrair nenhum resultado deste arquivo.'
+        + (d.observacao ? ' Observação da leitura: ' + d.observacao : '')));
+      corpo.appendChild(h('p', { class: 'hint' }, 'Tente uma foto mais próxima e com boa luz, o PDF original em vez da foto da tela, ou lance os valores à mão no formulário.'));
+      corpo.appendChild(h('div', { class: 'btn-row' }, [h('button', { class: 'btn', onclick: () => m.close() }, 'Fechar')]));
+      return m;
+    }
+
+    const dataIn = h('input', { class: 'in', type: 'date', value: d.data || labDraftDate || isoLocal(new Date()) });
+    corpo.appendChild(h('p', { class: 'note' }, 'Li ' + analitos.length + ' resultado(s). '
+      + '⚠ Confira antes de salvar — transcrição automática erra, e aqui o erro custa caro. '
+      + 'Desmarque o que não quiser e corrija o que estiver errado.'));
+    if (d.laboratorio) corpo.appendChild(h('p', { class: 'hint' }, 'Laboratório: ' + d.laboratorio));
+    if (d.observacao) corpo.appendChild(h('p', { class: 'hint comp-warn' }, '⚠ ' + d.observacao));
+    corpo.appendChild(h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Data da coleta (vale para todos)'), dataIn]));
+    if (!d.data) corpo.appendChild(h('p', { class: 'hint comp-warn' }, 'Não achei a data no documento — confira acima.'));
+
+    const linhas = analitos.map(a => {
+      const usar = h('input', { type: 'checkbox' });
+      usar.checked = true;
+      const nome = h('input', { class: 'in', type: 'text', value: a.nome || '' });
+      const valor = h('input', { class: 'in', type: 'text', value: a.valor != null ? a.valor : '' });
+      const unidade = h('input', { class: 'in', type: 'text', value: a.unidade || '', placeholder: 'unidade' });
+      const lo = h('input', { class: 'in', type: 'number', step: 'any', value: a.refMin != null ? a.refMin : '', placeholder: 'ref. mín.' });
+      const hi = h('input', { class: 'in', type: 'number', step: 'any', value: a.refMax != null ? a.refMax : '', placeholder: 'ref. máx.' });
+      const linha = h('div', { class: 'conf-linha' }, [
+        h('label', { class: 'conf-usar' }, [usar, h('span', {}, 'incluir')]),
+        h('div', { class: 'conf-campos' }, [
+          nome,
+          h('div', { class: 'conf-tres' }, [valor, unidade]),
+          h('div', { class: 'conf-tres' }, [lo, hi]),
+          a.obs ? h('p', { class: 'hint' }, a.obs) : null,
+        ]),
+      ]);
+      return { linha, usar, nome, valor, unidade, lo, hi, obs: a.obs || '' };
+    });
+    const lista = h('div', { class: 'conf-lista' }, linhas.map(l => l.linha));
+    corpo.appendChild(lista);
+
+    corpo.appendChild(h('div', { class: 'btn-row' }, [
+      h('button', {
+        class: 'btn primary',
+        onclick: () => {
+          const date = dataIn.value || isoLocal(new Date());
+          const escolhidos = linhas.filter(l => l.usar.checked && l.nome.value.trim() && l.valor.value.trim());
+          if (!escolhidos.length) { toast('Marque ao menos um resultado.', 'error'); return; }
+          escolhidos.forEach(l => {
+            const name = l.nome.value.trim();
+            const norm = window.Parser.normalize(name);
+            const raw = l.valor.value.trim();
+            S.labExams.push({
+              id: uid('l'), date, name, norm, value: raw, num: numFromText(raw),
+              unit: l.unidade.value.trim(), refLow: numOrNull(l.lo.value), refHigh: numOrNull(l.hi.value),
+              obs: l.obs,
+            });
+            bumpReminders('lab', norm, date);
+          });
+          labDraftDate = date;
+          saveExams();
+          m.close();
+          toast(escolhidos.length + ' resultado(s) adicionado(s) ✅', 'ok');
+          if (aoSalvar) aoSalvar();
+        },
+      }, 'Adicionar os marcados'),
+      h('button', { class: 'btn', onclick: () => { linhas.forEach(l => { l.usar.checked = false; }); } }, 'Desmarcar todos'),
+      h('button', { class: 'btn', onclick: () => m.close() }, 'Cancelar'),
+    ]));
+    corpo.appendChild(h('p', { class: 'hint' }, 'A faixa de referência só vem preenchida quando está impressa no laudo — o app nunca inventa uma. O arquivo em si não é guardado.'));
+    return m;
+  }
+
   function renderLabForm() {
     const dateIn = h('input', { class: 'in', type: 'date', value: labDraftDate || isoLocal(new Date()), onchange: e => { labDraftDate = e.target.value; } });
     const nameIn = h('input', { class: 'in', type: 'text', list: 'dl-analitos', placeholder: 'ex.: Glicose em jejum' });
@@ -1518,7 +1665,9 @@ window.App = (function () {
     });
     return h('div', { class: 'card' }, [
       h('h3', {}, '➕ Novo resultado'),
-      h('p', { class: 'note' }, 'Um analito por vez — a data fica travada, então dá para lançar o laudo inteiro em sequência. A faixa de referência é a impressa no SEU laudo (varia por laboratório); o app só compara com o que você anotar.'),
+      h('p', { class: 'note' }, 'O jeito rápido: fotografe o laudo ou carregue o PDF que o app transcreve os analitos de uma vez — você confere antes de salvar. Ou lance um por vez no formulário abaixo.'),
+      botoesLaudo('exame_lab', dados => abrirConferenciaLab(dados.exameLab, () => renderExLab())),
+      h('p', { class: 'hint', style: 'margin-bottom:12px' }, 'O laudo inteiro é enviado para a IA com a SUA chave (custa centavos). O arquivo não é guardado; só os valores que você aprovar.'),
       h('div', { class: 'exam-form-grid' }, [
         h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Data da coleta'), dateIn]),
         h('div', { class: 'field' }, [
@@ -1637,9 +1786,33 @@ window.App = (function () {
     const nameIn = h('input', { class: 'in', type: 'text', list: 'dl-imagem', placeholder: 'ex.: Ultrassom de abdome total' });
     const placeIn = h('input', { class: 'in', type: 'text', placeholder: 'opcional' });
     const reportIn = h('textarea', { rows: '4', placeholder: 'conclusão do laudo, achados, medidas…' });
+    // preenche o formulário a partir do laudo lido, sem apagar o que a pessoa
+    // já tinha digitado à mão
+    const preencher = (r) => {
+      if (!r) return;
+      if (r.data) { dateIn.value = r.data; imgDraftDate = r.data; }
+      if (r.exame && !nameIn.value.trim()) nameIn.value = r.exame;
+      if (r.local && !placeIn.value.trim()) placeIn.value = r.local;
+      if (r.conclusao) {
+        reportIn.value = reportIn.value.trim()
+          ? reportIn.value.trim() + '\n\n' + r.conclusao
+          : r.conclusao;
+      }
+      const aviso = [];
+      if (!r.data) aviso.push('não achei a data');
+      if (!r.exame) aviso.push('não achei o nome do exame');
+      if (!r.conclusao) aviso.push('não achei a conclusão');
+      if (r.observacao) aviso.push(r.observacao);
+      toast(aviso.length
+        ? '⚠ Confira o que foi preenchido — ' + aviso.join('; ') + '.'
+        : 'Preenchido do laudo ✅ Confira antes de salvar.', aviso.length ? 'error' : 'ok');
+    };
+
     return h('div', { class: 'card' }, [
       h('h3', {}, '➕ Novo exame de imagem'),
-      h('p', { class: 'note' }, 'Anote a conclusão do laudo com suas palavras (ou copie o trecho que importa). Fica tudo neste aparelho.'),
+      h('p', { class: 'note' }, 'Fotografe o laudo ou carregue o PDF que o app preenche os campos — você confere e corrige antes de salvar. Ou escreva à mão, como preferir.'),
+      botoesLaudo('exame_img', dados => preencher(dados.exameImg)),
+      h('p', { class: 'hint', style: 'margin-bottom:12px' }, 'O laudo é enviado para a IA com a SUA chave (custa centavos). O arquivo não é guardado; só o texto que você salvar.'),
       h('div', { class: 'exam-form-grid' }, [
         h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Data'), dateIn]),
         h('div', { class: 'field' }, [

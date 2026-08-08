@@ -224,6 +224,15 @@ tudo; digitar o nome exato da receita casa direto, sem pedir confirmação.
   qualitativos ("não reagente") são aceitos como texto.
 - **Imagem:** data, tipo (com sugestões), local e um resumo do laudo em
   texto — editável depois.
+- **📷 Foto ou 📄 PDF do laudo** (nas duas abas): o app manda o documento
+  para a IA transcrever e preenche tudo. No laboratorial, os analitos vêm
+  numa **tela de conferência** — cada um marcável e editável — e só entra o
+  que você aprovar; no de imagem, o formulário vem preenchido para você
+  revisar antes de salvar. **Nada é salvo às cegas**: transcrição
+  automática erra e aqui o erro custa caro. A faixa de referência só vem
+  preenchida quando está impressa no laudo. O arquivo em si não é guardado
+  em lugar nenhum, e o prompt manda ignorar dados pessoais (nome, CPF,
+  convênio). Usa a sua chave da Anthropic — alguns centavos por laudo.
 - **Lembretes:** "repetir a cada N meses". Registrar um exame com o mesmo
   nome reinicia a contagem sozinho; ao vencer, aparece aviso na área, um
   banner na aba Hoje e a bolinha no botão Exames. (Aviso é dentro do app —
@@ -428,6 +437,7 @@ que não atravessa entre elas. Com os dois servidores acima no ar:
 ```
 node fase2-proxy/test/conta-e-login.mjs      # login, sync, recuperação, chave
 node fase2-proxy/test/isolamento-contas.mjs  # o que é compartilhado × individual
+node fase2-proxy/test/laudo-foto-pdf.mjs     # laudo por foto e por PDF
 ```
 
 ## Estrutura dos arquivos

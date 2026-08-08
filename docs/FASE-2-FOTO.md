@@ -148,6 +148,28 @@ o link de recuperação aparece no terminal e em `GET /__emails`. No app,
 aponte Dados → servidor para `http://localhost:8124` e use o convite
 `convite-local`.
 
+## Laudos por foto e PDF (`mode: "exame_lab" | "exame_img"`)
+
+Mesma rota da foto (`POST /`), com dois modos novos e aceitando **PDF**:
+
+- `mediaType: "application/pdf"` faz o anexo virar bloco `document` (a API lê
+  PDF nativamente — o app **não** carrega biblioteca de PDF no navegador).
+  Limite ~9 MB; foto continua em ~5 MB. PDF só é aceito nesses dois modos.
+- `exame_lab` devolve `{exameLab: {data, laboratorio, analitos[], observacao}}`,
+  cada analito com `{nome, valor, unidade, refMin, refMax, obs}`. `max_tokens`
+  sobe para 8192 porque um laudo rende dezenas de itens.
+- `exame_img` devolve `{exameImg: {data, exame, local, conclusao, observacao}}`.
+
+Os prompts são de **transcrição, não interpretação**: proíbem inventar faixa
+de referência (se o laudo não imprime, vem `null`), proíbem diagnosticar ou
+classificar como normal/alterado, mandam copiar qualitativos como estão
+("não reagente", "<0,10") e **ignorar dados pessoais** (nome, CPF, convênio).
+Item ilegível fica de fora e é reportado em `observacao`.
+
+No app, nada é salvo direto: o laboratorial abre uma tela de conferência com
+cada analito marcável/editável, e o de imagem preenche o formulário para
+revisão. O arquivo enviado não é guardado.
+
 ## Análise inteligente (`POST /analyze`)
 
 Usada pelo botão **🔎 Analisar meus dados** (áreas Exames e Métricas). O app

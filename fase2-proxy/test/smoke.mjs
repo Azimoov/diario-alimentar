@@ -23,11 +23,38 @@ const mock = createServer((req, res) => {
   req.on("end", () => {
     const body = JSON.parse(data || "{}");
     // detecta o modo pelo system prompt que o worker enviou
-    const isRotulo = String(body.system || "").includes("tabelas nutricionais");
-    const isAnalise = String(body.system || "").includes("dados de saúde PESSOAIS");
+    const sys = String(body.system || "");
+    const isRotulo = sys.includes("tabelas nutricionais");
+    const isAnalise = sys.includes("dados de saúde PESSOAIS");
+    const isLab = sys.includes("laudos de exames laboratoriais");
+    const isImg = sys.includes("laudos de exames de imagem");
+    // o mock devolve o tipo do anexo recebido p/ o teste conferir que PDF
+    // virou bloco "document" e foto virou bloco "image"
+    const anexo = ((body.messages || [])[0] || {}).content || [];
+    const tipoAnexo = (anexo[0] || {}).type || "?";
     const texto = isAnalise
       ? "VISÃO GERAL\n– Teste local do mock.\n\nEXAMES\n– Sem dados suficientes."
-      : JSON.stringify(isRotulo
+      : isLab
+        ? JSON.stringify({
+            data: "2026-07-30",
+            laboratorio: "Lab Teste (" + tipoAnexo + ")",
+            analitos: [
+              { nome: "Glicose", valor: "92", unidade: "mg/dL", refMin: 70, refMax: 99, obs: "jejum de 12h" },
+              { nome: "HDL", valor: "48", unidade: "mg/dL", refMin: 40, refMax: null, obs: null },
+              { nome: "Anti-HIV", valor: "não reagente", unidade: null, refMin: null, refMax: null, obs: null },
+              { nome: "", valor: "lixo", unidade: null, refMin: null, refMax: null, obs: null },
+            ],
+            observacao: "",
+          })
+        : isImg
+          ? JSON.stringify({
+              data: "2026-07-15",
+              exame: "Ultrassom de abdome total",
+              local: "Clínica Teste (" + tipoAnexo + ")",
+              conclusao: "Esteatose hepática grau I. Demais órgãos sem alterações.",
+              observacao: "",
+            })
+          : JSON.stringify(isRotulo
         ? { nome: "Whey Teste", base: "porcao", porcao_g: 30, kcal: 120, prot: 24, carb: 3, fat: 1.5, fiber: 0, observacao: "" }
         : {
             itens: [
@@ -443,6 +470,66 @@ mock.listen(MOCK_PORT, async () => {
     await check("depois de remover, volta a 402", worker.fetch(fotoSessao(), ENV), 402);
     // caminho legado (senha do app) segue usando a chave do servidor
     await check("senha do app ainda usa a chave do servidor", worker.fetch(req(), ENV), 200);
+
+    // =====================================================================
+    // LAUDOS: foto e PDF viram exames preenchidos
+    // =====================================================================
+    {
+      // a conta de teste precisa da própria chave (BYOK) p/ chamar a IA
+      await worker.fetch(keyReq(), ENV);
+      // IP próprio por chamada: o rate-limit de foto é por IP e não deve fazer
+      // um teste derrubar o outro (o limite em si já é coberto à parte)
+      let ipLaudo = 0;
+      const laudoReq = (mode, opts = {}) => new Request("https://proxy.example/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json", Origin: ORIGIN, "X-Session": sessao,
+          "CF-Connecting-IP": "198.51.100." + (++ipLaudo),
+        },
+        body: JSON.stringify({
+          image: opts.image !== undefined ? opts.image : IMG,
+          mediaType: opts.mediaType || "image/jpeg",
+          mode,
+        }),
+      });
+
+      // --- laboratorial por FOTO ---
+      await check("laudo lab por foto", worker.fetch(laudoReq("exame_lab"), ENV), 200, (res, body) => {
+        const e = body.exameLab;
+        if (!e) return "sem exameLab";
+        if (e.data !== "2026-07-30") return "data errada";
+        if (e.analitos.length !== 3) return "deveria descartar o analito sem nome, veio " + e.analitos.length;
+        const g = e.analitos[0];
+        if (g.nome !== "Glicose" || g.valor !== "92" || g.refMin !== 70 || g.refMax !== 99) return "analito errado";
+        if (e.analitos[1].refMax !== null) return "refMax ausente deveria ser null";
+        if (e.analitos[2].valor !== "não reagente") return "qualitativo perdido";
+        return e.laboratorio.includes("image") || "foto deveria virar bloco image";
+      });
+
+      // --- laboratorial por PDF ---
+      const PDF = Buffer.from("%PDF-1.4 fake").toString("base64");
+      await check("laudo lab por PDF", worker.fetch(laudoReq("exame_lab", { image: PDF, mediaType: "application/pdf" }), ENV), 200,
+        (res, body) => (body.exameLab && body.exameLab.laboratorio.includes("document")) || "PDF deveria virar bloco document");
+
+      // --- imagem por PDF ---
+      await check("laudo de imagem por PDF", worker.fetch(laudoReq("exame_img", { image: PDF, mediaType: "application/pdf" }), ENV), 200,
+        (res, body) => {
+          const e = body.exameImg;
+          if (!e) return "sem exameImg";
+          if (e.data !== "2026-07-15") return "data errada";
+          if (!/Esteatose/.test(e.conclusao)) return "conclusão perdida";
+          return e.local.includes("document") || "PDF deveria virar bloco document";
+        });
+
+      // --- limites e tipos ---
+      await check("PDF grande demais", worker.fetch(laudoReq("exame_lab", { image: "x".repeat(12_000_001), mediaType: "application/pdf" }), ENV), 413);
+      await check("PDF não vale p/ refeição", worker.fetch(laudoReq("refeicao", { image: PDF, mediaType: "application/pdf" }), ENV), 415,
+        (res, body) => /laudo/i.test(body.detail || "") || "mensagem pouco clara");
+      await check("foto continua limitada a 5 MB", worker.fetch(laudoReq("exame_lab", { image: "x".repeat(7_000_001) }), ENV), 413);
+      await check("tipo de imagem inválido segue barrado", worker.fetch(laudoReq("exame_lab", { mediaType: "image/tiff" }), ENV), 415);
+      // limpa a chave p/ não interferir nos testes seguintes
+      await worker.fetch(keyReq({ method: "DELETE" }), ENV);
+    }
 
     // ---- MAIL_TO_OVERRIDE: recuperação de OUTRA pessoa cai na caixa do dono ----
     {
