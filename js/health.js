@@ -153,9 +153,18 @@
     return { daily, counts: st.counts, records: st.records, firstDate, lastDate };
   }
 
-  // ---- zip mínimo: acha a entrada export.xml no diretório central ----------
-  async function findExportEntry(file) {
-    const ZIP64 = 0xffffffff;
+  // ---- zip mínimo: acha a entrada do export dentro do .zip -------------------
+  // NÃO depende do NOME do arquivo. Num iPhone em português o export sai como
+  // "exportar.zip" e o XML lá dentro também vem traduzido — exigir literalmente
+  // "export.xml" quebrava a importação para quem não usa o iPhone em inglês.
+  // Em vez disso, listamos as entradas .xml e ESPIAMOS o começo de cada uma
+  // atrás da raiz <HealthData, que a Apple não traduz. De quebra isso descarta
+  // sozinho o export clínico (CDA), cuja raiz é <ClinicalDocument.
+  const ZIP64 = 0xffffffff;
+  const ERRO_ZIP64 = 'Zip grande demais (Zip64) — descompacte e importe o export.xml.';
+  const RAIZ_SAUDE = /<!DOCTYPE\s+HealthData|<HealthData[\s>]/;
+
+  async function lerDiretorioCentral(file) {
     const tailLen = Math.min(file.size, 65580);
     const tail = new Uint8Array(await file.slice(file.size - tailLen).arrayBuffer());
     let e = -1;
@@ -164,33 +173,86 @@
     }
     if (e < 0) throw new Error('Não parece um .zip válido.');
     const dv = new DataView(tail.buffer, tail.byteOffset);
-    const count = dv.getUint16(e + 10, true);
     const cdSize = dv.getUint32(e + 12, true);
     const cdOff = dv.getUint32(e + 16, true);
-    if (cdOff === ZIP64 || cdSize === ZIP64) throw new Error('Zip grande demais (Zip64) — descompacte e importe o export.xml.');
+    if (cdOff === ZIP64 || cdSize === ZIP64) throw new Error(ERRO_ZIP64);
     const cd = new Uint8Array(await file.slice(cdOff, cdOff + cdSize).arrayBuffer());
     const cdv = new DataView(cd.buffer, cd.byteOffset);
     const dec = new TextDecoder();
+    // Percorre por ASSINATURA, sem confiar no contador de 16 bits do EOCD:
+    // export com muitos treinos passa de 65535 entradas (cada rota vira um
+    // arquivo) e aquele contador estoura silenciosamente.
+    const entradas = [];
     let p = 0;
-    for (let i = 0; i < count && p + 46 <= cd.length; i++) {
-      if (cdv.getUint32(p, true) !== 0x02014b50) break;
-      const method = cdv.getUint16(p + 10, true);
-      const compSize = cdv.getUint32(p + 20, true);
+    while (p + 46 <= cd.length && cdv.getUint32(p, true) === 0x02014b50) {
       const nameLen = cdv.getUint16(p + 28, true);
       const extraLen = cdv.getUint16(p + 30, true);
       const cmtLen = cdv.getUint16(p + 32, true);
-      const locOff = cdv.getUint32(p + 42, true);
-      const name = dec.decode(cd.subarray(p + 46, p + 46 + nameLen));
-      if (name === 'export.xml' || name.endsWith('/export.xml')) {
-        if (compSize === ZIP64 || locOff === ZIP64) throw new Error('Zip grande demais (Zip64) — descompacte e importe o export.xml.');
-        const lh = new DataView(await file.slice(locOff, locOff + 30).arrayBuffer());
-        if (lh.getUint32(0, true) !== 0x04034b50) throw new Error('Cabeçalho do zip inválido.');
-        const dataStart = locOff + 30 + lh.getUint16(26, true) + lh.getUint16(28, true);
-        return { start: dataStart, compSize, method };
-      }
+      entradas.push({
+        name: dec.decode(cd.subarray(p + 46, p + 46 + nameLen)),
+        method: cdv.getUint16(p + 10, true),
+        compSize: cdv.getUint32(p + 20, true),
+        rawSize: cdv.getUint32(p + 24, true),
+        locOff: cdv.getUint32(p + 42, true),
+      });
       p += 46 + nameLen + extraLen + cmtLen;
     }
-    throw new Error('export.xml não encontrado no zip — este é mesmo o export do app Saúde?');
+    if (!entradas.length) throw new Error('Não consegui ler o índice do zip.');
+    return entradas;
+  }
+
+  // posição real dos dados (o cabeçalho local tem tamanho variável)
+  async function localizarDados(file, ent) {
+    if (ent.compSize === ZIP64 || ent.locOff === ZIP64) throw new Error(ERRO_ZIP64);
+    const lh = new DataView(await file.slice(ent.locOff, ent.locOff + 30).arrayBuffer());
+    if (lh.getUint32(0, true) !== 0x04034b50) throw new Error('Cabeçalho do zip inválido.');
+    return {
+      name: ent.name,
+      method: ent.method,
+      compSize: ent.compSize,
+      start: ent.locOff + 30 + lh.getUint16(26, true) + lh.getUint16(28, true),
+    };
+  }
+
+  // descomprime só o comecinho da entrada, o bastante para saber que arquivo é
+  async function espiarInicio(file, ent, bytes) {
+    if (ent.method !== 0 && ent.method !== 8) return '';
+    let s = file.slice(ent.start, ent.start + Math.min(ent.compSize, 1000000)).stream();
+    if (ent.method === 8) s = s.pipeThrough(new DecompressionStream('deflate-raw'));
+    const reader = s.getReader();
+    const dec = new TextDecoder();
+    let txt = '';
+    try {
+      while (txt.length < bytes) {
+        const r = await reader.read();
+        if (r.done) break;
+        txt += dec.decode(r.value, { stream: true });
+      }
+    } catch (e) {
+      // fatia truncada no meio do deflate: o que já veio serve para identificar
+    }
+    try { await reader.cancel(); } catch (e) { /* já acabou */ }
+    return txt;
+  }
+
+  async function findExportEntry(file) {
+    const todas = await lerDiretorioCentral(file);
+    const xmls = todas.filter(x => /\.xml$/i.test(x.name));
+    // Ordem só de TENTATIVA (quem decide é o conteúdo): nome clássico primeiro,
+    // depois os que não parecem CDA, depois os maiores.
+    const base = (n) => n.slice(n.lastIndexOf('/') + 1).toLowerCase();
+    const peso = (x) => (base(x.name) === 'export.xml' ? 2 : 0) + (/cda/.test(base(x.name)) ? 0 : 1);
+    xmls.sort((a, b) => peso(b) - peso(a) || b.rawSize - a.rawSize);
+
+    for (const x of xmls) {
+      const ent = await localizarDados(file, x);
+      if (RAIZ_SAUDE.test(await espiarInicio(file, ent, 65536))) return ent;
+    }
+
+    const lista = todas.slice(0, 6).map(x => x.name).join(', ');
+    throw new Error('não achei o XML do app Saúde dentro do zip'
+      + (lista ? ' (encontrei: ' + lista + (todas.length > 6 ? ', …' : '') + ')' : '')
+      + '. Este é mesmo o arquivo de “Exportar Todos os Dados de Saúde”?');
   }
 
   function trackProgress(rs, total, cb) {

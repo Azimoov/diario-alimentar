@@ -241,12 +241,21 @@ tudo; digitar o nome exato da receita casa direto, sem pedir confirmação.
 ## Métricas de saúde — importar do app Saúde (iPhone)
 
 Área **❤️ Métricas**: no iPhone, app Saúde → sua foto de perfil →
-**“Exportar Todos os Dados de Saúde”** → escolha o `export.zip` aqui (ou o
-`export.xml`, se preferir descompactar no app Arquivos). O arquivo é lido em
+**“Exportar Todos os Dados de Saúde”** → escolha o arquivo aqui (ou o XML
+solto, se preferir descompactar no app Arquivos). O arquivo é lido em
 **streaming, neste aparelho** (o zip é aberto com `DecompressionStream`
 nativo — sem biblioteca, sem upload), e vira **métricas diárias compactas**:
 passos, distância, energia ativa/basal, minutos de exercício, sono, FC de
 repouso, variabilidade (HRV) e VO₂máx.
+
+- **Funciona em qualquer idioma do iPhone.** A Apple traduz o nome do arquivo
+  (em português o export sai como `exportar.zip`, com o XML traduzido dentro),
+  então o app **não procura pelo nome**: ele lê o índice do zip e identifica o
+  arquivo certo pelo conteúdo (a raiz `<HealthData`, que não é traduzida).
+  Isso também descarta sozinho o export clínico (CDA), que vem no mesmo zip.
+  Coberto por `fase2-proxy/test/import-saude.mjs` (`npm run test:saude`), que
+  monta exports sintéticos em vários idiomas — roda sem servidor e sem
+  navegador.
 
 - **Sem dupla contagem:** iPhone e Watch registram passos/energia em
   paralelo; em cada dia o app soma por fonte e usa a MAIOR — aproximação

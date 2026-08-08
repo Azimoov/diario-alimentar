@@ -1921,7 +1921,7 @@ window.App = (function () {
       type: 'file', accept: '.zip,.xml,application/zip,text/xml,application/xml', style: 'display:none',
       onchange: e => { const f = e.target.files[0]; e.target.value = ''; if (f) doImport(f); },
     });
-    const pickBtn = h('button', { class: 'btn primary', onclick: () => fileIn.click() }, '📂 Escolher export.zip (ou export.xml)');
+    const pickBtn = h('button', { class: 'btn primary', onclick: () => fileIn.click() }, '📂 Escolher o arquivo do export');
 
     async function doImport(file) {
       if (healthImporting) return;
@@ -1947,7 +1947,7 @@ window.App = (function () {
       } catch (err) {
         healthImporting = false;
         pickBtn.disabled = false;
-        pickBtn.textContent = '📂 Escolher export.zip (ou export.xml)';
+        pickBtn.textContent = '📂 Escolher o arquivo do export';
         track.style.display = 'none';
         toast('Não consegui importar: ' + err.message, 'error');
       }
@@ -1958,7 +1958,7 @@ window.App = (function () {
       h('p', { class: 'note' }, 'Passos, energia, sono, FC de repouso, VO₂máx e mais — do Apple Watch e do iPhone — para cruzar com a dieta e os exames. O arquivo é processado NESTE aparelho; nada sobe para servidor nenhum.'),
       h('ol', { class: 'import-steps' }, [
         h('li', {}, 'No iPhone, abra o app Saúde e toque na sua foto de perfil (canto superior direito).'),
-        h('li', {}, 'Toque em “Exportar Todos os Dados de Saúde” e salve o export.zip (em Arquivos).'),
+        h('li', {}, 'Toque em “Exportar Todos os Dados de Saúde” e salve o arquivo (em Arquivos). Com o iPhone em português ele se chama exportar.zip; em inglês, export.zip — os dois servem.'),
         h('li', {}, 'Volte aqui e escolha o arquivo — exports grandes levam 1–2 minutos.'),
       ]),
       h('div', { class: 'exam-form-grid' }, [
