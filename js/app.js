@@ -125,21 +125,31 @@ window.App = (function () {
   }
 
   async function iniciarConta() {
-    if (tratarLinkDeRecuperacao()) return; // o modal de nova senha libera o app se der certo
-
+    // 1) decide a tela de BASE: o app (com sessão) ou o portão (sem sessão)
+    let sincronizar = false;
     if (window.Auth.logado()) {
       const ok = await window.Auth.validarSessao();
       // erro de REDE não desloga ninguém (ver Auth.validarSessao) — nesse
       // caso `logado()` continua true e deixamos entrar com os dados locais,
       // só avisando. Só bloqueia de novo se a sessão foi mesmo invalidada.
-      if (!ok && !window.Auth.logado()) { mostrarPortao(); return; }
-      liberarApp();
-      if (ok) await sincronizarAoEntrar(null);   // compara datas e decide/pergunta
-      else toast('Sem conexão com o servidor — mostrando os dados salvos neste aparelho.', 'error');
-      return;
+      if (!ok && !window.Auth.logado()) {
+        mostrarPortao();
+      } else {
+        liberarApp();
+        if (ok) sincronizar = true;   // compara datas e decide/pergunta
+        else toast('Sem conexão com o servidor — mostrando os dados salvos neste aparelho.', 'error');
+      }
+    } else {
+      mostrarPortao();
     }
 
-    mostrarPortao();
+    // 2) só então o link do e-mail abre POR CIMA dessa base. Sempre tem que
+    // sobrar uma tela utilizável atrás do modal: se ele for fechado, ou se o
+    // link estiver expirado, a pessoa (que já está trancada fora) precisa
+    // conseguir entrar ou pedir outro link — e não ficar num "Carregando…".
+    tratarLinkDeRecuperacao();
+
+    if (sincronizar) await sincronizarAoEntrar(null);
   }
 
   // ---- portão: nada do app monta enquanto não há sessão válida ----

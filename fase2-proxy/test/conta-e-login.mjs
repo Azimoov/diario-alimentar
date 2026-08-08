@@ -286,6 +286,30 @@ check('com a chave própria, a análise funciona',
   (await a2.page.textContent('.analysis-text')).includes('VISÃO GERAL'));
 await a2.page.locator('.modal .icon-btn').click();
 
+// ---------- link de recuperação que NÃO dá certo não pode trancar a pessoa ----------
+// Quem chega por esse link já está sem acesso. Se ela fechar o modal, ou se o
+// link tiver expirado, precisa sobrar um portão utilizável atrás — do
+// contrário fica presa numa tela morta, sem nem como pedir outro link.
+{
+  const a5 = await novoAparelho('A5');
+  await abrirNaGate(a5.page);
+  await configurarProxy(a5.page);
+  await a5.page.goto(APP + '/#recuperar=' + 'a'.repeat(64));   // token que não existe
+  await a5.page.reload();
+  await a5.page.waitForSelector('.modal-head h3:has-text("nova senha")', { timeout: 20000 });
+  await a5.page.locator('.modal .icon-btn').click();           // desiste e fecha
+  await a5.page.waitForTimeout(500);
+  check('fechar o modal de recuperação deixa o portão utilizável',
+    await a5.page.locator('.gate-card .auth-tabs button').count() === 3,
+    (await a5.page.locator('.gate-card').textContent()).trim().slice(0, 60));
+  // e o portão atrás realmente funciona: dá pra entrar por ele
+  await entrarPelaGate(a5.page, EMAIL, NOVA);
+  await esperaLiberado(a5.page);
+  check('dá para entrar pelo portão depois do link falho',
+    (await a5.page.textContent('#conta-chip')).includes(EMAIL));
+  await a5.ctx.close();
+}
+
 await a1.page.screenshot({ path: 'shot-conta.png', fullPage: false });
 await a1.page.click('.app-btn[data-app="diario"]');
 await a1.page.click('nav.tabs[data-app="diario"] .tab-btn[data-tab="dados"]');
