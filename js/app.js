@@ -224,6 +224,12 @@ window.App = (function () {
           await sincronizarAoEntrar(info);
           if (info.textContent) toast(info.textContent, 'error');
         }));
+        // Atalho explícito: quem esqueceu a senha procura aqui embaixo do
+        // formulário, não numa aba com rótulo curto lá em cima.
+        card.appendChild(h('button', {
+          class: 'link-btn gate-esqueci',
+          onclick: () => { aba = 'esqueci'; render(); },
+        }, 'Esqueci minha senha'));
       } else if (aba === 'criar') {
         const senhaF = campo('Senha (mínimo 8 caracteres)', { type: 'password', autocomplete: 'new-password', placeholder: 'escolha uma senha' });
         const senha2F = campo('Repita a senha', { type: 'password', autocomplete: 'new-password' });
@@ -245,13 +251,17 @@ window.App = (function () {
         }));
         card.appendChild(h('p', { class: 'hint' }, 'Honestidade: neste modelo, quem administra o servidor consegue ler os dados guardados — é o preço de poder recuperar a senha.'));
       } else {
-        card.appendChild(h('p', { class: 'note' }, 'Enviamos um link para o seu e-mail. Ele vale por 30 minutos e abre a tela de nova senha aqui mesmo.'));
+        card.appendChild(h('p', { class: 'note' }, 'Informe o e-mail da sua conta. Enviamos um link que vale 30 minutos e abre a tela de nova senha aqui mesmo — seus dados continuam guardados.'));
         card.appendChild(emailF.wrap);
         card.appendChild(comBotao('Enviar link de recuperação', async () => {
           await window.Auth.esqueciSenha(emailF.inp.value.trim());
           msg.className = 'auth-msg ok';
           msg.textContent = '✅ Se existe conta com esse e-mail, o link já foi enviado. Confira a caixa de entrada (e o spam).';
         }));
+        card.appendChild(h('button', {
+          class: 'link-btn gate-esqueci',
+          onclick: () => { aba = 'entrar'; render(); },
+        }, '← Voltar para entrar'));
       }
     }
     render();

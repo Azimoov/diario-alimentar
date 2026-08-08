@@ -149,7 +149,15 @@ check('sessão NÃO veio no backup (é deste aparelho)', await a2.page.evaluate(
 const a3 = await novoAparelho('A3');
 await abrirNaGate(a3.page);
 await configurarProxy(a3.page);
-await abaGate(a3.page, 'Esqueci');
+// quem esqueceu a senha chega pelo atalho embaixo do formulário de entrar —
+// é ali que a pessoa procura, não numa aba de rótulo curto no topo
+check('atalho "Esqueci minha senha" no formulário de entrar',
+  await a3.page.locator('.gate-card .gate-esqueci', { hasText: 'Esqueci minha senha' }).count() === 1);
+await a3.page.locator('.gate-card .gate-esqueci').click();
+check('atalho abre a tela de recuperação',
+  (await a3.page.locator('.gate-card .btn.primary').textContent()).includes('Enviar link'));
+check('e dá para voltar para entrar',
+  await a3.page.locator('.gate-card .gate-esqueci', { hasText: 'Voltar' }).count() === 1);
 await a3.page.locator('.gate-card input[type=email]').fill(EMAIL);
 await a3.page.locator('.gate-card .btn.primary').click();
 await a3.page.waitForSelector('.gate-card .auth-msg.ok', { timeout: 20000 });

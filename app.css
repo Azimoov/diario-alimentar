@@ -61,6 +61,8 @@ body.gate-active #gate {
   margin-bottom: 16px; letter-spacing: .2px;
 }
 .gate-brand img { border-radius: 6px; }
+/* atalho de recuperação embaixo do formulário, onde a pessoa procura */
+.gate-esqueci { display: block; margin-top: 10px; padding-left: 0; text-align: left; }
 
 .topbar {
   position: sticky; top: 0; z-index: 10;
