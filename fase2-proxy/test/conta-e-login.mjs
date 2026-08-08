@@ -1,6 +1,7 @@
-// conta-e-login.mjs — E2E do login: cria conta, sincroniza, simula troca de
-// aparelho, recupera senha por e-mail (lendo o link do dev-server), cadastra
-// a chave da API da pessoa e confere que nada se perde.
+// conta-e-login.mjs — E2E do login: cria conta pelo portão (nada do app
+// aparece antes de logar), sincroniza, simula troca de aparelho, recupera
+// senha por e-mail (lendo o link do dev-server), cadastra a chave da API da
+// pessoa e confere que nada se perde.
 //
 // Precisa dos dois servidores locais no ar, em outros terminais:
 //   node data/devserver.mjs              (app, porta 8123)
@@ -18,7 +19,10 @@ const check = (n, ok, extra) => {
 
 const EMAIL = 'daniel@example.com';
 const SENHA = 'senha-forte-123';
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+// PW_CHROMIUM_PATH: só necessário em sandboxes com Chromium em local não padrão.
+// Na máquina de quem administra o app, `npx playwright install chromium` basta
+// e o launch() sem essa opção já encontra o navegador sozinho.
+const browser = await chromium.launch(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {});
 
 // contexto = "aparelho". Cada contexto tem localStorage próprio.
 async function novoAparelho(nome) {
@@ -28,6 +32,16 @@ async function novoAparelho(nome) {
   page.on('dialog', d => d.accept());
   return { ctx, page };
 }
+
+// abre o app e confere que o PORTÃO está de pé (ninguém entra sem logar)
+async function abrirNaGate(page) {
+  await page.goto(APP);
+  await page.waitForSelector('.gate-card');
+  await page.waitForFunction(() => document.body.classList.contains('gate-active'));
+}
+
+// configura o proxy local ANTES de logar — ainda sem sessão, então depois
+// do reload o app continua no portão (não tem "app" pra configurar ainda)
 async function configurarProxy(page) {
   await page.evaluate((p) => {
     const s = window.Store.get();
@@ -35,63 +49,72 @@ async function configurarProxy(page) {
     window.Store.save();
   }, PROXY);
   await page.reload();
+  await page.waitForSelector('.gate-card');
+}
+
+async function abaGate(page, nome) {
+  await page.locator('.gate-card .auth-tabs button', { hasText: nome }).click();
+}
+async function criarContaPelaGate(page, mail, senha, convite) {
+  await abaGate(page, 'Criar conta');
+  await page.locator('.gate-card input[type=email]').fill(mail);
+  const senhas = page.locator('.gate-card input[type=password]');
+  await senhas.nth(0).fill(senha);
+  await senhas.nth(1).fill(senha);
+  await page.locator('.gate-card input[type=text]').fill(convite);
+  await page.locator('.gate-card .btn.primary').click();
+}
+async function entrarPelaGate(page, mail, senha) {
+  await abaGate(page, 'Entrar');
+  await page.locator('.gate-card input[type=email]').fill(mail);
+  await page.locator('.gate-card input[type=password]').fill(senha);
+  await page.locator('.gate-card .btn.primary').click();
+}
+// portão sumiu e o app principal já está montado
+async function esperaLiberado(page) {
+  await page.waitForFunction(() => !document.body.classList.contains('gate-active'), { timeout: 25000 });
   await page.waitForSelector('.weight-card');
 }
 
-// ---------- APARELHO 1: dados locais, depois cria conta ----------
+// ---------- APARELHO 1: cria conta pelo portão e só DEPOIS registra dados
+// (o portão não deixa fazer nada localmente antes de logar) ----------
 const a1 = await novoAparelho('A1');
-await a1.page.goto(APP);
-await a1.page.waitForSelector('.weight-card');
+await abrirNaGate(a1.page);
 await configurarProxy(a1.page);
+check('portão abre na aba Entrar por padrão',
+  (await a1.page.locator('.gate-card .auth-tabs button.active').textContent()).includes('Entrar'));
 
-check('chip de conta convida a entrar', (await a1.page.textContent('#conta-chip')).includes('entrar'));
+await criarContaPelaGate(a1.page, EMAIL, SENHA, 'convite-local');
+await esperaLiberado(a1.page);
+check('logado após criar conta', (await a1.page.textContent('#conta-chip')).includes(EMAIL), await a1.page.textContent('#conta-chip'));
 
-// registra dados locais ANTES de ter conta
+// só agora, JÁ LOGADO, registra dados locais
+const syncAntes1 = await a1.page.evaluate(() => (window.Store.get().settings.account || {}).lastSyncAt || null);
 await a1.page.locator('#entry').fill('100 g arroz');
 await a1.page.getByRole('button', { name: '+ Adicionar' }).click();
 const pesoInputs = a1.page.locator('.weight-card .comp-grid input');
 await pesoInputs.nth(0).fill('82.4');
 await pesoInputs.nth(0).blur();
 check('dados locais criados', await a1.page.locator('#tab-hoje .item-name').count() >= 1);
+await a1.page.waitForFunction((antes) => {
+  const c = window.Store.get().settings.account;
+  return c && c.lastSyncAt && c.lastSyncAt !== antes;
+}, syncAntes1, { timeout: 20000 });
+check('dados sincronizam sozinhos após criar conta', true);
 
-// cria conta
-await a1.page.click('#conta-chip');
-await a1.page.locator('.auth-tabs button', { hasText: 'Criar conta' }).click();
-await a1.page.locator('.modal input[type=email]').fill(EMAIL);
-const senhas1 = a1.page.locator('.modal input[type=password]');
-await senhas1.nth(0).fill(SENHA);
-await senhas1.nth(1).fill(SENHA);
-await a1.page.locator('.modal input[type=text]').last().fill('convite-local');
-await a1.page.locator('.modal .btn.primary').click();
-await a1.page.waitForFunction(() => !document.querySelector('.modal-back'), { timeout: 20000 });
-check('logado após criar conta', (await a1.page.textContent('#conta-chip')).includes(EMAIL), await a1.page.textContent('#conta-chip'));
-
-// convite errado é barrado
+// convite errado é barrado (continua no portão)
 {
   const a0 = await novoAparelho('A0');
-  await a0.page.goto(APP);
-  await a0.page.waitForSelector('.weight-card');
+  await abrirNaGate(a0.page);
   await configurarProxy(a0.page);
-  await a0.page.click('#conta-chip');
-  await a0.page.locator('.auth-tabs button', { hasText: 'Criar conta' }).click();
-  await a0.page.locator('.modal input[type=email]').fill('intruso@example.com');
-  const sp = a0.page.locator('.modal input[type=password]');
-  await sp.nth(0).fill('senha-qualquer');
-  await sp.nth(1).fill('senha-qualquer');
-  await a0.page.locator('.modal input[type=text]').last().fill('chute-errado');
-  await a0.page.locator('.modal .btn.primary').click();
-  await a0.page.waitForSelector('.auth-msg.erro', { timeout: 15000 });
-  const msg = await a0.page.textContent('.auth-msg.erro');
+  await criarContaPelaGate(a0.page, 'intruso@example.com', 'senha-qualquer', 'chute-errado');
+  await a0.page.waitForSelector('.gate-card .auth-msg.erro', { timeout: 15000 });
+  const msg = await a0.page.textContent('.gate-card .auth-msg.erro');
   check('convite inválido barrado com mensagem', /convite/i.test(msg), msg);
+  check('convite inválido continua bloqueado no portão',
+    await a0.page.evaluate(() => document.body.classList.contains('gate-active')));
   await a0.ctx.close();
 }
-
-// espera o envio automático (debounce de 3 s) concluir
-await a1.page.waitForFunction(() => {
-  const c = window.Store.get().settings.account;
-  return c && c.lastSyncAt;
-}, { timeout: 20000 });
-check('envio automático marcou lastSyncAt', true);
 
 // mais uma alteração deve subir sozinha
 const syncAntes = await a1.page.evaluate(() => window.Store.get().settings.account.lastSyncAt);
@@ -105,16 +128,12 @@ check('alteração posterior sincroniza sozinha', true);
 
 // ---------- APARELHO 2: só faz login e recebe tudo ----------
 const a2 = await novoAparelho('A2');
-await a2.page.goto(APP);
-await a2.page.waitForSelector('.weight-card');
+await abrirNaGate(a2.page);
 await configurarProxy(a2.page);
 check('aparelho 2 começa vazio', await a2.page.evaluate(() => Object.keys(window.Store.get().weights).length === 0));
 
-await a2.page.click('#conta-chip');
-await a2.page.locator('.modal input[type=email]').fill(EMAIL);
-await a2.page.locator('.modal input[type=password]').fill(SENHA);
-await a2.page.locator('.modal .btn.primary').click();
-await a2.page.waitForFunction(() => !document.querySelector('.modal-back'), { timeout: 25000 });
+await entrarPelaGate(a2.page, EMAIL, SENHA);
+await esperaLiberado(a2.page);
 check('aparelho 2 logado', (await a2.page.textContent('#conta-chip')).includes(EMAIL));
 const peso2 = await a2.page.evaluate(() => window.Store.get().weights);
 check('peso veio da nuvem no aparelho 2', Object.values(peso2)[0] === 82.4, JSON.stringify(peso2));
@@ -128,15 +147,13 @@ check('sessão NÃO veio no backup (é deste aparelho)', await a2.page.evaluate(
 
 // ---------- recuperação de senha por e-mail ----------
 const a3 = await novoAparelho('A3');
-await a3.page.goto(APP);
-await a3.page.waitForSelector('.weight-card');
+await abrirNaGate(a3.page);
 await configurarProxy(a3.page);
-await a3.page.click('#conta-chip');
-await a3.page.locator('.auth-tabs button', { hasText: 'Esqueci' }).click();
-await a3.page.locator('.modal input[type=email]').fill(EMAIL);
-await a3.page.locator('.modal .btn.primary').click();
-await a3.page.waitForSelector('.auth-msg.ok', { timeout: 20000 });
-check('confirmação de envio na tela', /enviado/i.test(await a3.page.textContent('.auth-msg.ok')));
+await abaGate(a3.page, 'Esqueci');
+await a3.page.locator('.gate-card input[type=email]').fill(EMAIL);
+await a3.page.locator('.gate-card .btn.primary').click();
+await a3.page.waitForSelector('.gate-card .auth-msg.ok', { timeout: 20000 });
+check('confirmação de envio na tela', /enviado/i.test(await a3.page.textContent('.gate-card .auth-msg.ok')));
 
 // lê o link do e-mail capturado pelo dev-server
 const emails = await (await fetch(PROXY + '/__emails')).json();
@@ -144,10 +161,9 @@ const ultimo = emails.emails[emails.emails.length - 1];
 const token = (/#recuperar=([0-9a-f]{64})/.exec(ultimo.text || '') || [])[1];
 check('e-mail chegou com link de recuperação', !!token && ultimo.to[0] === EMAIL, ultimo && ultimo.subject);
 
-// abre o app pelo link, como o usuário faria
 const NOVA = 'senha-nova-anotada-9';
-// caso 1: app JÁ ABERTO e o link muda só o #hash (não recarrega a página)
-await a3.page.locator('.modal .icon-btn').click();
+// caso 1: app JÁ ABERTO (no portão, deslogado) e o link muda só o #hash —
+// o modal de nova senha abre POR CIMA do portão
 await a3.page.evaluate((t) => { location.hash = 'recuperar=' + t; }, token);
 await a3.page.waitForSelector('.modal-head h3:has-text("nova senha")', { timeout: 20000 });
 check('link com app aberto (hashchange) abre a tela', true);
@@ -164,32 +180,57 @@ await sp3.nth(1).fill(NOVA);
 await a3.page.locator('.modal .btn.primary').click();
 await a3.page.waitForFunction(() => !document.querySelector('.modal-back'), { timeout: 25000 });
 check('entrou direto após redefinir', (await a3.page.textContent('#conta-chip')).includes(EMAIL));
+check('portão foi liberado depois de redefinir a senha',
+  await a3.page.evaluate(() => !document.body.classList.contains('gate-active')));
 
 // O PONTO QUE MOTIVOU TUDO: os dados voltam depois de esquecer a senha
 const pesoRec = await a3.page.evaluate(() => window.Store.get().weights);
 check('DADOS RECUPERADOS após esquecer a senha', Object.values(pesoRec)[0] === 82.4, JSON.stringify(pesoRec));
 check('hash do link foi limpo da URL', !(await a3.page.evaluate(() => location.hash)));
 
-// senha antiga não entra mais
+// ---------- senha antiga não entra mais ----------
 const a4 = await novoAparelho('A4');
-await a4.page.goto(APP);
-await a4.page.waitForSelector('.weight-card');
+await abrirNaGate(a4.page);
 await configurarProxy(a4.page);
-await a4.page.click('#conta-chip');
-await a4.page.locator('.modal input[type=email]').fill(EMAIL);
-await a4.page.locator('.modal input[type=password]').fill(SENHA);
-await a4.page.locator('.modal .btn.primary').click();
-await a4.page.waitForSelector('.auth-msg.erro', { timeout: 20000 });
-check('senha antiga rejeitada', /incorret/i.test(await a4.page.textContent('.auth-msg.erro')));
+await entrarPelaGate(a4.page, EMAIL, SENHA);
+await a4.page.waitForSelector('.gate-card .auth-msg.erro', { timeout: 20000 });
+check('senha antiga rejeitada', /incorret/i.test(await a4.page.textContent('.gate-card .auth-msg.erro')));
+check('continua bloqueado no portão com senha errada',
+  await a4.page.evaluate(() => document.body.classList.contains('gate-active')));
 
-// ---------- conflito: dois lados com dados -> pergunta ----------
-await a4.page.locator('.modal .icon-btn').click();
-await a4.page.locator('#entry').fill('30 g tapioca');
-await a4.page.getByRole('button', { name: '+ Adicionar' }).click();
-await a4.page.click('#conta-chip');
-await a4.page.locator('.modal input[type=email]').fill(EMAIL);
-await a4.page.locator('.modal input[type=password]').fill(NOVA);
-await a4.page.locator('.modal .btn.primary').click();
+// ---------- sair não apaga os dados locais, e o portão volta a bloquear ----------
+await entrarPelaGate(a4.page, EMAIL, NOVA);
+await esperaLiberado(a4.page);
+check('aparelho 4 logado com a senha nova', (await a4.page.textContent('#conta-chip')).includes(EMAIL));
+await a4.page.click('.app-btn[data-app="diario"]');
+await a4.page.click('nav.tabs[data-app="diario"] .tab-btn[data-tab="dados"]');
+await a4.page.getByRole('button', { name: 'Sair' }).click();
+await a4.page.waitForFunction(() => !window.Store.get().settings.account.session, { timeout: 15000 });
+check('após sair, o portão volta a bloquear tudo',
+  await a4.page.evaluate(() => document.body.classList.contains('gate-active')));
+check('sair NÃO apagou os dados locais', await a4.page.evaluate(
+  () => Object.keys(window.Store.get().weights).length > 0));
+
+// ---------- conflito: aparelho volta com dado local não sincronizado -> pergunta ----------
+// Deslogar limpa lastSyncAt deste aparelho; um dado novo gravado localmente
+// enquanto deslogado (ex.: sobrou de antes de sair) faz o próximo login
+// achar as duas pontas com histórico -> tem que perguntar, nunca decidir
+// sozinho. Grava direto no Store porque o portão bloqueia a UI enquanto
+// deslogado — é exatamente esse bloqueio que este teste teve que passar a
+// contornar por fora, já que antes dava para editar sem conta nenhuma.
+await a4.page.evaluate(() => {
+  const s = window.Store.get();
+  const hoje = new Date().toISOString().slice(0, 10);
+  s.days[hoje] = s.days[hoje] || { items: [] };
+  s.days[hoje].items.unshift({ raw: '30 g tapioca', foodText: 'tapioca', grams: 30, meal: 'lanche' });
+  window.Store.save();
+});
+// e do OUTRO lado (a2, ainda logado), sobe algo diferente pra nuvem
+await a2.page.locator('#entry').fill('20 g castanha');
+await a2.page.getByRole('button', { name: '+ Adicionar' }).click();
+await a2.page.waitForFunction(() => window.Store.get().settings.account.lastSyncAt, { timeout: 20000 });
+
+await entrarPelaGate(a4.page, EMAIL, NOVA);
 await a4.page.waitForSelector('.modal-head h3:has-text("Dados em dois lugares")', { timeout: 25000 });
 check('conflito é perguntado, não decidido sozinho', true);
 await a4.page.getByRole('button', { name: /Juntar os dois/ }).click();
@@ -202,15 +243,6 @@ const dadosJuntos = await a4.page.evaluate(() => {
   };
 });
 check('juntar preserva nuvem E aparelho', dadosJuntos.peso === 82.4 && dadosJuntos.itens >= 3, JSON.stringify(dadosJuntos));
-
-// ---------- sair não apaga os dados locais ----------
-await a4.page.click('.app-btn[data-app="diario"]');
-await a4.page.click('nav.tabs[data-app="diario"] .tab-btn[data-tab="dados"]');
-await a4.page.getByRole('button', { name: 'Sair' }).click();
-await a4.page.waitForFunction(() => !window.Store.get().settings.account.session, { timeout: 15000 });
-check('após sair, chip volta a convidar', (await a4.page.textContent('#conta-chip')).includes('entrar'));
-check('sair NÃO apagou os dados locais', await a4.page.evaluate(
-  () => Object.keys(window.Store.get().weights).length > 0));
 
 // ---------- chave da API por pessoa (BYOK) ----------
 await a2.page.evaluate(() => { const s = window.Store.get(); s.settings.proxyToken = ''; window.Store.save(); });
@@ -238,6 +270,9 @@ await cartaoChave.locator('input[type=password]').fill(CHAVE);
 await cartaoChave.getByRole('button', { name: /Salvar chave/ }).click();
 await cartaoChave.locator('.auth-msg.ok').waitFor({ timeout: 25000 });
 check('chave válida é aceita', /guardada/i.test(await cartaoChave.locator('.auth-msg.ok').textContent()));
+// depois do "guardada", ainda falta um GET /account/apikey assíncrono (pintar())
+// pra trocar o texto do cartão pelo final mascarado — espera isso terminar
+await cartaoChave.locator('.hint', { hasText: 'Chave cadastrada' }).waitFor({ timeout: 15000 });
 check('mostra só o final da chave', (await cartaoChave.textContent()).includes(CHAVE.slice(-4))
   && !(await cartaoChave.textContent()).includes(CHAVE), 'ok');
 check('a chave não fica guardada no aparelho', !(await a2.page.evaluate(() => JSON.stringify(window.Store.get()))).includes(CHAVE));

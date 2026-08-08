@@ -99,20 +99,23 @@ window.App = (function () {
   }
 
   // ---------- init ----------
+  // O <body> já nasce com a classe "gate-active" (marcada direto no HTML,
+  // antes de qualquer JS rodar) — então nada do app aparece até aqui embaixo
+  // confirmar login. Sem conta/sessão válida, a única coisa visível é o
+  // portão de entrar/criar conta.
   function init() {
     S = window.Store.load();
     window.Parser.setFoods(window.Store.combinedFoods());
     currentDate = isoLocal(new Date());
-    bindTabs();
-    renderAll();
-    atualizarStatusConta();
-    syncSharedFoods(); // base comum: atualiza em segundo plano (cache p/ offline)
+    // Se o app JÁ ESTÁ ABERTO e a pessoa toca no link do e-mail, o navegador
+    // só troca o #hash — não recarrega nada. Sem isto, o link "não faz nada".
+    window.addEventListener('hashchange', tratarLinkDeRecuperacao);
     iniciarConta();
   }
 
   // Conta: link de recuperação tem prioridade (a pessoa chegou aqui pelo
   // e-mail justamente porque está trancada fora). Depois valida a sessão
-  // guardada e traz o que houver de novo na nuvem.
+  // guardada; sem sessão válida, mostra o portão em vez do app.
   let modalRecuperacao = null;
   function tratarLinkDeRecuperacao() {
     const token = window.Auth.tokenDeRecuperacao();
@@ -122,19 +125,126 @@ window.App = (function () {
   }
 
   async function iniciarConta() {
-    // Se o app JÁ ESTÁ ABERTO e a pessoa toca no link do e-mail, o navegador
-    // só troca o #hash — não recarrega nada. Sem isto, o link "não faz nada".
-    window.addEventListener('hashchange', tratarLinkDeRecuperacao);
-    if (tratarLinkDeRecuperacao()) return;
-    if (!window.Auth.logado()) return;
-    const ok = await window.Auth.validarSessao();
-    atualizarStatusConta();
-    if (!ok) {
-      renderDados();
-      if (!window.Auth.logado()) toast('Sua sessão expirou — entre de novo para voltar a sincronizar.', 'error');
+    if (tratarLinkDeRecuperacao()) return; // o modal de nova senha libera o app se der certo
+
+    if (window.Auth.logado()) {
+      const ok = await window.Auth.validarSessao();
+      // erro de REDE não desloga ninguém (ver Auth.validarSessao) — nesse
+      // caso `logado()` continua true e deixamos entrar com os dados locais,
+      // só avisando. Só bloqueia de novo se a sessão foi mesmo invalidada.
+      if (!ok && !window.Auth.logado()) { mostrarPortao(); return; }
+      liberarApp();
+      if (ok) await sincronizarAoEntrar(null);   // compara datas e decide/pergunta
+      else toast('Sem conexão com o servidor — mostrando os dados salvos neste aparelho.', 'error');
       return;
     }
-    await sincronizarAoEntrar(null);   // compara datas e decide/pergunta
+
+    mostrarPortao();
+  }
+
+  // ---- portão: nada do app monta enquanto não há sessão válida ----
+  let appMontado = false;
+  function liberarApp() {
+    document.body.classList.remove('gate-active');
+    if (!appMontado) { appMontado = true; bindTabs(); }
+    renderAll();
+    atualizarStatusConta();
+    syncSharedFoods(); // base comum: atualiza em segundo plano (cache p/ offline)
+  }
+
+  function mostrarPortao() {
+    document.body.classList.add('gate-active');
+    renderGate();
+  }
+
+  // Tela de entrar / criar conta / esqueci a senha dentro do portão (não é
+  // modal: não tem "x" nem fecha clicando fora — só sai daqui autenticando).
+  function renderGate() {
+    const gate = $('#gate');
+    clear(gate);
+    let aba = 'entrar';
+    const card = h('div', { class: 'gate-card' });
+    gate.appendChild(card);
+
+    function campo(label, attrs) {
+      const inp = h('input', Object.assign({ class: 'in' }, attrs));
+      return { wrap: h('div', { class: 'field' }, [h('label', { class: 'lbl' }, label), inp]), inp };
+    }
+
+    function render() {
+      clear(card);
+      card.appendChild(h('div', { class: 'gate-brand' }, [
+        h('img', { src: 'icons/icon.svg', alt: '', width: 32, height: 32 }), 'Highlander',
+      ]));
+      const tabs = h('div', { class: 'auth-tabs' }, [
+        h('button', { class: aba === 'entrar' ? 'active' : '', onclick: () => { aba = 'entrar'; render(); } }, 'Entrar'),
+        h('button', { class: aba === 'criar' ? 'active' : '', onclick: () => { aba = 'criar'; render(); } }, 'Criar conta'),
+        h('button', { class: aba === 'esqueci' ? 'active' : '', onclick: () => { aba = 'esqueci'; render(); } }, 'Esqueci'),
+      ]);
+      card.appendChild(tabs);
+      const msg = h('p', { class: 'auth-msg' });
+      const emailF = campo('E-mail', { type: 'email', inputmode: 'email', autocomplete: 'email', placeholder: 'voce@exemplo.com', value: window.Auth.email() || '' });
+
+      function comBotao(texto, acao) {
+        const btn = h('button', { class: 'btn primary' }, texto);
+        btn.addEventListener('click', async () => {
+          msg.className = 'auth-msg';
+          msg.textContent = '⏳ um instante…';
+          card.classList.add('auth-busy');
+          try {
+            await acao();
+          } catch (e) {
+            msg.className = 'auth-msg erro';
+            msg.textContent = '⚠ ' + e.message;
+          }
+          card.classList.remove('auth-busy');
+        });
+        return h('div', {}, [h('div', { class: 'btn-row' }, [btn]), msg]);
+      }
+
+      if (aba === 'entrar') {
+        const senhaF = campo('Senha', { type: 'password', autocomplete: 'current-password', placeholder: 'sua senha' });
+        card.appendChild(h('p', { class: 'note' }, 'Entre para acessar seu diário, exames e métricas.'));
+        card.appendChild(emailF.wrap);
+        card.appendChild(senhaF.wrap);
+        card.appendChild(comBotao('Entrar', async () => {
+          await window.Auth.entrar(emailF.inp.value.trim(), senhaF.inp.value);
+          liberarApp();
+          const info = h('p');
+          await sincronizarAoEntrar(info);
+          if (info.textContent) toast(info.textContent, 'error');
+        }));
+      } else if (aba === 'criar') {
+        const senhaF = campo('Senha (mínimo 8 caracteres)', { type: 'password', autocomplete: 'new-password', placeholder: 'escolha uma senha' });
+        const senha2F = campo('Repita a senha', { type: 'password', autocomplete: 'new-password' });
+        const convF = campo('Código de convite', { type: 'text', placeholder: 'o código que o dono do app te passou' });
+        card.appendChild(h('p', { class: 'note' }, 'A conta guarda seu histórico na nuvem e permite recuperar a senha por e-mail. Use um e-mail que você realmente acessa — é por ele que a recuperação funciona.'));
+        card.appendChild(emailF.wrap);
+        card.appendChild(senhaF.wrap);
+        card.appendChild(senha2F.wrap);
+        card.appendChild(convF.wrap);
+        card.appendChild(comBotao('Criar conta', async () => {
+          const senha = senhaF.inp.value;
+          if (senha.length < 8) throw new Error('A senha precisa ter pelo menos 8 caracteres.');
+          if (senha !== senha2F.inp.value) throw new Error('As duas senhas não são iguais.');
+          await window.Auth.criarConta(emailF.inp.value.trim(), senha, convF.inp.value.trim());
+          liberarApp();
+          const info = h('p');
+          await sincronizarAoEntrar(info);
+          toast('Conta criada ✅ Seus dados agora ficam na nuvem.', 'ok');
+        }));
+        card.appendChild(h('p', { class: 'hint' }, 'Honestidade: neste modelo, quem administra o servidor consegue ler os dados guardados — é o preço de poder recuperar a senha.'));
+      } else {
+        card.appendChild(h('p', { class: 'note' }, 'Enviamos um link para o seu e-mail. Ele vale por 30 minutos e abre a tela de nova senha aqui mesmo.'));
+        card.appendChild(emailF.wrap);
+        card.appendChild(comBotao('Enviar link de recuperação', async () => {
+          await window.Auth.esqueciSenha(emailF.inp.value.trim());
+          msg.className = 'auth-msg ok';
+          msg.textContent = '✅ Se existe conta com esse e-mail, o link já foi enviado. Confira a caixa de entrada (e o spam).';
+        }));
+      }
+    }
+    render();
   }
 
   function refreshFoods() { window.Parser.setFoods(window.Store.combinedFoods()); }
@@ -540,7 +650,7 @@ window.App = (function () {
     if (perfilIncompleto) {
       root.appendChild(h('div', { class: 'card welcome' }, [
         h('h3', {}, '👋 Bem-vindo(a) ao Highlander'),
-        h('p', { class: 'note' }, 'Seus dados ficam só neste aparelho — ninguém mais vê o que você registra. Para começar:'),
+        h('p', { class: 'note' }, 'Seus dados ficam guardados na sua conta — ninguém mais vê o que você registra. Para começar:'),
         h('ol', { class: 'welcome-steps' }, [
           h('li', {}, [h('strong', {}, '1. Preencha seu perfil'), ' (sexo, idade, altura, peso) para calcular sua meta diária de calorias.']),
           h('li', {}, [h('strong', {}, '2. Registre o que comer'), ' escrevendo, ex.: “100 g arroz, 1 ovo”.']),
@@ -2129,7 +2239,7 @@ window.App = (function () {
         if (s1.value !== s2.value) throw new Error('As duas senhas não são iguais.');
         await window.Auth.redefinirSenha(token, emailI.value.trim(), s1.value);
         window.Auth.limparHash();
-        atualizarStatusConta(); renderDados();
+        liberarApp(); // pode ter chegado aqui com o portão travado (link direto, sem sessão)
         await sincronizarAoEntrar(msg);
         toast('Senha trocada e você já está dentro ✅', 'ok');
         if (!msg.textContent) m.close();
@@ -2296,10 +2406,10 @@ window.App = (function () {
         h('button', { class: 'btn', onclick: abrirTrocaDeSenha }, '🔑 Trocar senha'),
         h('button', {
           class: 'btn danger', onclick: async () => {
-            if (!confirm('Sair da conta neste aparelho?\n\nOs dados continuam na nuvem e aqui — você pode entrar de novo quando quiser.')) return;
+            if (!confirm('Sair da conta neste aparelho?\n\nVocê vai precisar entrar de novo para abrir o app. Seus dados continuam salvos na nuvem.')) return;
             await window.Auth.sair();
-            atualizarStatusConta(); renderDados();
             toast('Você saiu da conta.', 'ok');
+            mostrarPortao();
           },
         }, 'Sair'),
       ]),

@@ -12,7 +12,13 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="stylesheet" href="app.css" />
 </head>
-<body>
+<body class="gate-active">
+  <div id="gate" class="gate">
+    <div class="gate-card">
+      <div class="gate-brand"><img src="icons/icon.svg" alt="" width="32" height="32" />Highlander</div>
+      <p class="hint">Carregando…</p>
+    </div>
+  </div>
   <header class="topbar">
     <div class="brand">
       <img class="brand-icon" src="icons/icon.svg" alt="" width="22" height="22" />Highlander
@@ -48,7 +54,7 @@
   </main>
 
   <footer class="foot">
-    Dados só neste aparelho · Base TACO 4ª ed. (NEPA/UNICAMP) · IA opcional via seu proxy
+    Dados privados por conta · Base TACO 4ª ed. (NEPA/UNICAMP) · IA opcional via seu proxy
   </footer>
 
   <!-- ordem importa: base -> medidas -> parser -> cálculo -> storage -> charts -> health -> app -->

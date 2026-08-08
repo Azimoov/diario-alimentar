@@ -16,7 +16,10 @@ const check = (n, ok, extra) => {
   if (!ok) fails++;
 };
 
-const browser = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium' });
+// PW_CHROMIUM_PATH: só necessário em sandboxes com Chromium em local não padrão.
+// Na máquina de quem administra o app, `npx playwright install chromium` basta
+// e o launch() sem essa opção já encontra o navegador sozinho.
+const browser = await chromium.launch(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {});
 
 async function aparelho(nome) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -24,10 +27,10 @@ async function aparelho(nome) {
   page.on('pageerror', e => { console.log('PAGEERROR[' + nome + ']', e.message); fails++; });
   page.on('dialog', d => d.accept());
   await page.goto(APP);
-  await page.waitForSelector('.weight-card');
+  await page.waitForSelector('.gate-card'); // ninguém entra sem logar — ver e2e-conta
   await page.evaluate((p) => { const s = window.Store.get(); s.settings.proxyUrl = p; window.Store.save(); }, PROXY);
   await page.reload();
-  await page.waitForSelector('.weight-card');
+  await page.waitForSelector('.gate-card');
   return { ctx, page };
 }
 // cria conta direto pela API do app (a UI já é coberta pelo e2e-conta)
