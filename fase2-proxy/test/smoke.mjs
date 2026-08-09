@@ -66,7 +66,7 @@ const mock = createServer((req, res) => {
           });
     const payload = {
       id: "msg_mock", type: "message", role: "assistant",
-      model: body.model || "claude-opus-4-8",
+      model: body.model || "claude-opus-5",
       stop_reason: "end_turn",
       content: [{ type: "text", text: texto }],
       usage: { input_tokens: 1500, output_tokens: 120 },
@@ -98,7 +98,7 @@ const ENV = {
   ANTHROPIC_BASE_URL: `http://localhost:${MOCK_PORT}`,
   ALLOWED_ORIGINS: "http://localhost:8123,https://azimoov.github.io",
   // dois modelos de propósito: visão/transcrição num, análise cruzada noutro
-  CLAUDE_MODEL: "claude-opus-4-8",
+  CLAUDE_MODEL: "claude-opus-5",
   CLAUDE_MODEL_ANALISE: "claude-fable-5",
   TIMEZONE: "America/Sao_Paulo",
   PHOTO_DAILY_LIMIT: "60",
@@ -166,7 +166,7 @@ mock.listen(MOCK_PORT, async () => {
     await check("caminho feliz", worker.fetch(req(), ENV), 200, (res, body) =>
       (Array.isArray(body.itens) && body.itens.length === 3
         && body.itens[0].nome === "arroz branco cozido" && body.itens[0].gramas === 150
-        && body.modelo === "claude-opus-4-8") || "payload inesperado");
+        && body.modelo === "claude-opus-5") || "payload inesperado");
     // contrapartida da trava da análise: a visão NÃO pode migrar para o
     // modelo da análise sem que alguém decida isso explicitamente
     await check("foto continua no modelo de visão", worker.fetch(req(), ENV), 200,

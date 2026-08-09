@@ -52,7 +52,7 @@ a mesma senha (APP_TOKEN). Pronto — o botão 📷 passa a funcionar.
   GitHub Pages do app e localhost).
 - **Dois modelos, escolhidos por tarefa** (a separação é proposital):
   - `CLAUDE_MODEL` — visão e transcrição: foto de refeição, rótulo e laudos
-    (padrão `claude-opus-4-8`). É o de maior VOLUME, e onde o erro é mais
+    (padrão `claude-opus-5`). É o de maior VOLUME, e onde o erro é mais
     caro: um analito transcrito errado vira registro permanente, entra no
     gráfico de evolução e depois é lido pela análise. Não é o lugar de
     economizar — se for baratear algo, comece pela foto de refeição, cujo
@@ -69,7 +69,7 @@ a mesma senha (APP_TOKEN). Pronto — o botão 📷 passa a funcionar.
 ## Custo (ordem de grandeza)
 
 Foto de 1024 px ≈ 1.100–1.600 tokens de entrada + prompt + resposta curta.
-Com `claude-opus-4-8` (US$5/M entrada, US$25/M saída): **~US$0,02 por foto**
+Com `claude-opus-5` (US$5/M entrada, US$25/M saída): **~US$0,02 por foto**
 [estimativa; varia com a foto]. Poucas fotos/dia → centavos por mês.
 Defina um limite de gasto no console da Anthropic por segurança.
 

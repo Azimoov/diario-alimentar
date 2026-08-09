@@ -928,7 +928,7 @@ export default {
     let msg;
     try {
       msg = await client.messages.create({
-        model: env.CLAUDE_MODEL || "claude-opus-4-8",
+        model: env.CLAUDE_MODEL || "claude-opus-5",
         // laudo de laboratório rende muitos analitos: precisa de mais espaço
         max_tokens: isLab ? 8192 : 4096,
         thinking: { type: "adaptive" },

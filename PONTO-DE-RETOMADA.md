@@ -71,7 +71,7 @@ sinônimos/escolhas-padrão).
   parcial em `parser.js` — nunca resolve sozinho, sempre `ambiguous`).
 - **Proxy:** Cloudflare Worker em `fase2-proxy/` (SDK oficial
   `@anthropic-ai/sdk`, saída estruturada `output_config.format` com JSON
-  schema, modelo padrão `claude-opus-4-8`, CORS + X-App-Token + rate-limit).
+  schema, modelo padrão `claude-opus-5`, CORS + X-App-Token + rate-limit).
   `npm test` roda 10 testes contra API simulada — todos passando.
 - **Testado ponta a ponta** com mock (`data/mock-proxy.mjs`) no navegador.
 - **FALTA (ações do Daniel):** (1) conta API Anthropic + billing + chave +
