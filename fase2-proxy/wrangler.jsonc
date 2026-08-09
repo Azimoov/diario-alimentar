@@ -24,8 +24,16 @@
   "vars": {
     // origens autorizadas a chamar o proxy (CORS)
     "ALLOWED_ORIGINS": "https://azimoov.github.io,http://localhost:8123",
-    // modelo de visão; troque se quiser (ex.: claude-sonnet-5 é mais barato)
+    // modelo de VISÃO e transcrição: foto de refeição, rótulo e laudos
+    // (laboratorial e de imagem). Aqui o erro é caro e silencioso — um analito
+    // transcrito errado vira registro permanente, entra no gráfico de evolução
+    // e ainda é lido pela análise depois. Não economize neste.
     "CLAUDE_MODEL": "claude-opus-4-8",
+    // modelo da ANÁLISE CRUZADA (/analyze): só texto já resumido, chamada rara
+    // e o trabalho mais pesado de raciocínio do app (cruzar exames, dieta,
+    // peso e métricas). Vale o modelo mais forte: ~US$ 0,19 por análise
+    // contra ~US$ 0,09 no Opus, numa chamada que roda poucas vezes por mês.
+    "CLAUDE_MODEL_ANALISE": "claude-fable-5",
     // fuso p/ contar o dia do limite de fotos
     "TIMEZONE": "America/Sao_Paulo",
     // máx. de fotos analisadas por dia, somando todos os usuários

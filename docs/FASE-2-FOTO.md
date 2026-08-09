@@ -49,8 +49,21 @@ a mesma senha (APP_TOKEN). Pronto — o botão 📷 passa a funcionar.
 ## Configuração do Worker
 
 - `wrangler.jsonc` → `ALLOWED_ORIGINS`: origens autorizadas (já inclui o
-  GitHub Pages do app e localhost). `CLAUDE_MODEL`: modelo de visão
-  (padrão `claude-opus-4-8`; `claude-sonnet-5` é opção mais barata).
+  GitHub Pages do app e localhost).
+- **Dois modelos, escolhidos por tarefa** (a separação é proposital):
+  - `CLAUDE_MODEL` — visão e transcrição: foto de refeição, rótulo e laudos
+    (padrão `claude-opus-4-8`). É o de maior VOLUME, e onde o erro é mais
+    caro: um analito transcrito errado vira registro permanente, entra no
+    gráfico de evolução e depois é lido pela análise. Não é o lugar de
+    economizar — se for baratear algo, comece pela foto de refeição, cujo
+    resultado é uma estimativa que a pessoa revisa na hora.
+  - `CLAUDE_MODEL_ANALISE` — análise cruzada `/analyze` (padrão
+    `claude-fable-5`). Chamada rara, entrada já resumida em números, e o
+    raciocínio mais pesado do app. Custa ~US$ 0,19 por análise contra
+    ~US$ 0,09 no Opus: a diferença não pesa em algo que roda poucas vezes
+    por mês, e é onde um modelo melhor mais rende.
+  - `test/smoke.mjs` trava as duas escolhas: se a análise voltar a cair no
+    modelo de visão (ou vice-versa), três testes falham.
 - Segredos (`wrangler secret put`): `ANTHROPIC_API_KEY` e `APP_TOKEN`.
 
 ## Custo (ordem de grandeza)

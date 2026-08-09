@@ -322,7 +322,10 @@ async function handleAnalyze(request, env, json, uid) {
   let msg;
   try {
     msg = await client.messages.create({
-      model: env.CLAUDE_MODEL || "claude-opus-4-8",
+      // Modelo PRÓPRIO da análise (não cai no CLAUDE_MODEL da visão de
+      // propósito): aqui a entrada já vem resumida em números e o custo por
+      // chamada é baixo, então compensa o modelo mais forte no raciocínio.
+      model: env.CLAUDE_MODEL_ANALISE || "claude-fable-5",
       max_tokens: 3000,
       thinking: { type: "adaptive" },
       system: SYSTEM_ANALISE,

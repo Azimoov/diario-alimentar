@@ -97,7 +97,9 @@ const ENV = {
   ANTHROPIC_API_KEY: "sk-ant-teste-falsa",
   ANTHROPIC_BASE_URL: `http://localhost:${MOCK_PORT}`,
   ALLOWED_ORIGINS: "http://localhost:8123,https://azimoov.github.io",
+  // dois modelos de propósito: visão/transcrição num, análise cruzada noutro
   CLAUDE_MODEL: "claude-opus-4-8",
+  CLAUDE_MODEL_ANALISE: "claude-fable-5",
   TIMEZONE: "America/Sao_Paulo",
   PHOTO_DAILY_LIMIT: "60",
   // contas
@@ -165,6 +167,10 @@ mock.listen(MOCK_PORT, async () => {
       (Array.isArray(body.itens) && body.itens.length === 3
         && body.itens[0].nome === "arroz branco cozido" && body.itens[0].gramas === 150
         && body.modelo === "claude-opus-4-8") || "payload inesperado");
+    // contrapartida da trava da análise: a visão NÃO pode migrar para o
+    // modelo da análise sem que alguém decida isso explicitamente
+    await check("foto continua no modelo de visão", worker.fetch(req(), ENV), 200,
+      (res, body) => body.modelo === ENV.CLAUDE_MODEL || "foto trocou de modelo: " + body.modelo);
     await check("GET bloqueado (foto)", worker.fetch(req({ method: "GET", body: null }), ENV), 405);
 
     // ---- multiusuário ----
@@ -243,7 +249,16 @@ mock.listen(MOCK_PORT, async () => {
     });
     await check("análise caminho feliz", worker.fetch(anReq(), ENV), 200, (res, body) =>
       (typeof body.analise === "string" && body.analise.includes("VISÃO GERAL")
-        && body.modelo === "claude-opus-4-8") || "payload de análise inesperado");
+        && body.modelo === "claude-fable-5") || "payload de análise inesperado");
+    // A análise tem modelo PRÓPRIO: é o raciocínio pesado do app, com entrada
+    // já resumida e chamada rara, então usa o modelo mais forte. A visão fica
+    // no Opus — lá o volume é alto e o erro de transcrição é caro. Sem estas
+    // duas travas, uma refatoração volta a juntar os dois sem ninguém notar.
+    await check("análise NÃO usa o modelo de visão", worker.fetch(anReq(), ENV), 200,
+      (res, body) => body.modelo !== ENV.CLAUDE_MODEL || "análise caiu no modelo de visão");
+    await check("análise cai no padrão quando a variável não existe",
+      worker.fetch(anReq(), { ...ENV, CLAUDE_MODEL_ANALISE: undefined }), 200,
+      (res, body) => body.modelo === "claude-fable-5" || "padrão da análise mudou: " + body.modelo);
     await check("análise sem dados", worker.fetch(anReq({ body: JSON.stringify({}) }), ENV), 400);
     await check("análise GET bloqueado", worker.fetch(anReq({ method: "GET" }), ENV), 405);
     await check("análise resumo grande demais", worker.fetch(anReq({
@@ -251,7 +266,9 @@ mock.listen(MOCK_PORT, async () => {
     }), ENV), 413);
     {
       const usadas = parseInt(kvStore.get("analises:" + hoje) || "0", 10);
-      const ok = usadas === 1; // só o caminho feliz consome cota
+      // 3 análises bem-sucedidas acima (caminho feliz + as duas travas de
+      // modelo); as recusadas por erro não podem consumir cota
+      const ok = usadas === 3;
       console.log(`${ok ? "PASS" : "FAIL"}  contador de análises incrementa -> ${usadas}`);
       if (!ok) failed++;
     }
