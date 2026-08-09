@@ -55,6 +55,23 @@ originais) e os scripts `data/*.mjs` **não são necessários** para o site
 funcionar — servem para reproduzir/atualizar a base. Pode mantê-los no repo
 para transparência ou removê-los do deploy, à sua escolha.
 
+### Versão dos assets — suba o número a cada publicação
+
+No `index.html`, o CSS e os nove scripts locais são carregados com uma marca de
+versão: `href="app.css?v=1"`, `src="js/app.js?v=1"`. **Toda publicação que mexa
+em qualquer arquivo `.js` ou no `app.css` precisa incrementar esse número — o
+mesmo número em todos os dez.**
+
+Sem isso o navegador continua servindo o arquivo antigo do cache, e a correção
+publicada parece uma correção que não funcionou. Já aconteceu duas vezes com o
+iPhone e custou uma rodada inteira de diagnóstico em falso. Um único número
+compartilhado (em vez de um por arquivo) é proposital: assim não existe o estado
+meio-atualizado, em que um script novo conversa com um antigo.
+
+A numeração é manual porque o projeto não tem build — os arquivos são servidos
+direto e o app precisa continuar abrindo por `file://` (a query string não
+atrapalha isso). **Não introduza um bundler só para gerar esse número.**
+
 ---
 
 ## Fontes da base de alimentos (6.273 itens)
