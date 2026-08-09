@@ -31,6 +31,7 @@ createServer((req, res) => {
     const sys = String(body.system || "");
     const isRotulo = sys.includes("tabelas nutricionais");
     const isAnalise = sys.includes("dados de saúde PESSOAIS");
+    const isChat = sys.includes("responde perguntas de UMA pessoa");
     const isLab = sys.includes("laudos de exames laboratoriais");
     const isImg = sys.includes("laudos de exames de imagem");
     const tipoAnexo = ((((body.messages || [])[0] || {}).content || [])[0] || {}).type || "?";
@@ -60,7 +61,12 @@ createServer((req, res) => {
         usage: { input_tokens: 100, output_tokens: 50 },
       }));
     }
-    const texto = isAnalise
+    const texto = isChat
+      // eco da última pergunta: o teste confere que o fio da conversa chegou
+      ? "RESPOSTA LOCAL (sem custo) para: "
+        + String(((body.messages || []).slice(-1)[0] || {}).content || "")
+        + "\nTurnos nesta conversa: " + (body.messages || []).length
+      : isAnalise
       ? "VISÃO GERAL\n– Resposta FIXA do servidor de desenvolvimento (sem custo).\n\nEXAMES\n– Nada real analisado aqui.\n\nPARA LEVAR AO MÉDICO\n– Nada: isto é teste local."
       : JSON.stringify(isRotulo
         ? { nome: "Whey Local", base: "porcao", porcao_g: 30, kcal: 120, prot: 24, carb: 3, fat: 1.5, fiber: 0, observacao: "teste local" }
@@ -105,6 +111,9 @@ const ENV = {
   ANTHROPIC_BASE_URL: `http://localhost:${MOCK_ANTHROPIC}`,
   ALLOWED_ORIGINS: "http://localhost:8123,http://127.0.0.1:8123",
   CLAUDE_MODEL: "dev",
+  CLAUDE_MODEL_ANALISE: "dev-analise",
+  CLAUDE_MODEL_CHAT: "dev-chat",
+  CHAT_DAILY_LIMIT: "999",
   TIMEZONE: "America/Sao_Paulo",
   PHOTO_DAILY_LIMIT: "999",
   ANALYSIS_DAILY_LIMIT: "999",

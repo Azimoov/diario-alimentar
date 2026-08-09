@@ -355,6 +355,116 @@ async function handleAnalyze(request, env, json, uid) {
   return json({ analise, modelo: msg.model });
 }
 
+// ---------------------------------------------------------------------------
+// CONVERSA sobre os próprios dados (/chat)
+// ---------------------------------------------------------------------------
+// Diferente de /analyze: ali é um relatório completo de uma vez; aqui a pessoa
+// pergunta coisas pontuais e emenda em cima da resposta. Por isso o histórico
+// da conversa vai junto a cada pergunta — é o que faz "e sobre o colesterol?"
+// significar alguma coisa.
+//
+// Modelo PRÓPRIO (CLAUDE_MODEL_CHAT): pergunta é muito mais frequente que
+// análise completa, então aqui o volume manda e o Opus sai na metade do preço
+// do Fable por token.
+const SYSTEM_CHAT = `Você responde perguntas de UMA pessoa sobre os PRÓPRIOS dados de saúde e nutrição, que vêm em JSON junto da conversa (dieta registrada, peso e composição corporal, exames laboratoriais e de imagem, métricas do relógio).
+
+Como responder:
+- Direto ao ponto e em português do Brasil. Responda o que foi perguntado, sem despejar um relatório inteiro — para o panorama completo existe a análise.
+- Cite os números da pessoa quando forem relevantes, com a data.
+- Pode fazer contas com os dados recebidos (médias, variações, proporções) e explicar o raciocínio em uma linha.
+
+Regras de honestidade (crítico):
+- Use SOMENTE os dados recebidos. Não invente valores, datas nem "faixas normais": se um exame veio sem faixa de referência anotada, diga isso e não classifique o valor.
+- "Fora da faixa" = comparado apenas com refMin/refMax que a própria pessoa anotou do laudo.
+- Se os dados não respondem a pergunta, diga o que falta registrar em vez de especular. Não preencha lacuna com suposição.
+- Correlação não é causa. Métricas de relógio são estimativas de sensor.
+- Conhecimento geral de nutrição e fisiologia pode ser usado para explicar contexto, mas deixe claro o que é dado DA PESSOA e o que é informação geral.
+- Você NÃO dá diagnóstico, não prescreve tratamento e não manda parar nem começar medicação. Para decisão clínica, oriente a levar ao médico ou nutricionista.
+- Se a pergunta sugerir urgência médica (dor no peito, falta de ar, sinal neurológico súbito), diga para procurar atendimento agora, sem tentar analisar.`;
+
+async function handleChat(request, env, json, uid) {
+  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+  const cred = await resolverChave(env, uid);
+  if (cred.erro) return json(cred.erro, cred.erro.error === "no_api_key" ? 402 : 500);
+  const ip = request.headers.get("CF-Connecting-IP") || "?";
+  if (rateLimited("chat:" + ip, 20)) return json({ error: "rate_limited", detail: "Muitas perguntas em pouco tempo — aguarde um minuto." }, 429);
+
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
+  const dados = body && body.dados;
+  if (!dados || typeof dados !== "object") return json({ error: "missing_data", detail: "Envie {dados: {…}}." }, 400);
+
+  // histórico: [{role:'user'|'assistant', text}] — a última tem que ser do
+  // usuário, senão não há pergunta para responder
+  const brutas = Array.isArray(body.mensagens) ? body.mensagens : [];
+  const mensagens = brutas
+    .filter((m) => m && (m.role === "user" || m.role === "assistant") && typeof m.text === "string" && m.text.trim())
+    .slice(-30)   // conversa longa: só as últimas trocas vão junto
+    .map((m) => ({ role: m.role, content: m.text }));
+  if (!mensagens.length) return json({ error: "missing_question", detail: "Envie ao menos uma mensagem." }, 400);
+  if (mensagens[mensagens.length - 1].role !== "user") {
+    return json({ error: "last_not_user", detail: "A última mensagem precisa ser uma pergunta sua." }, 400);
+  }
+
+  const texto = JSON.stringify(dados);
+  if (texto.length > 200_000) return json({ error: "data_too_large", detail: "Resumo grande demais (~200 KB máx)." }, 413);
+  // Medido no texto ORIGINAL, de propósito: cortar a mensagem para caber
+  // devolveria uma resposta a uma pergunta que a pessoa não fez, sem ela
+  // perceber. Melhor recusar e dizer o motivo.
+  const totalConversa = mensagens.reduce((n, m) => n + m.content.length, 0);
+  if (totalConversa > 200_000) return json({ error: "chat_too_large", detail: "Conversa longa demais — comece uma nova." }, 413);
+
+  // cota diária separada da análise: perguntar é mais frequente que analisar,
+  // e um limite comum faria uma conversa consumir a cota de análise do dia
+  if (env.DIARIO_KV) {
+    const tz = env.TIMEZONE || "America/Sao_Paulo";
+    const day = new Date().toLocaleDateString("en-CA", { timeZone: tz });
+    const quotaKey = "chats:" + (uid ? uid + ":" : "") + day;
+    const used = parseInt((await env.DIARIO_KV.get(quotaKey)) || "0", 10);
+    const limit = parseInt(env.CHAT_DAILY_LIMIT || "100", 10);
+    if (used >= limit) {
+      return json({ error: "daily_limit", detail: `Limite de ${limit} perguntas por dia atingido — tente amanhã.` }, 429);
+    }
+    await env.DIARIO_KV.put(quotaKey, String(used + 1), { expirationTtl: 172800 });
+  }
+
+  const client = new Anthropic({
+    apiKey: cred.chave,
+    baseURL: env.ANTHROPIC_BASE_URL || undefined,
+    fetch: globalThis.fetch.bind(globalThis),
+  });
+  let msg;
+  try {
+    msg = await client.messages.create({
+      model: env.CLAUDE_MODEL_CHAT || "claude-opus-5",
+      max_tokens: 2000,
+      thinking: { type: "adaptive" },
+      // os dados entram no system, não como mensagem: assim o histórico da
+      // conversa fica só com o que a pessoa e a IA disseram
+      system: SYSTEM_CHAT + "\n\nDADOS DA PESSOA (JSON):\n" + texto,
+      messages: mensagens,
+    });
+  } catch (err) {
+    console.log("ERRO API /chat:", err && err.status, String((err && err.message) || err).slice(0, 300));
+    if (err instanceof Anthropic.RateLimitError) {
+      return json({ error: "upstream_rate_limited", detail: "API ocupada — tente de novo em instantes." }, 429);
+    }
+    if (err instanceof Anthropic.AuthenticationError) {
+      return json({ error: "bad_api_key", detail: "Sua chave da Anthropic foi recusada. Cadastre de novo em Dados." }, 502);
+    }
+    return json({ error: "upstream_error", detail: String((err && err.message) || err) }, 502);
+  }
+  if (msg.stop_reason === "refusal") {
+    console.log("RECUSA /chat:", JSON.stringify(msg.stop_details || null));
+    return json({ error: "refused", detail: "O modelo recusou responder isto." }, 502);
+  }
+  const resposta = (msg.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
+  if (!resposta) {
+    return json({ error: "empty_response", detail: "Resposta sem conteúdo (stop: " + msg.stop_reason + ")." }, 502);
+  }
+  return json({ resposta, modelo: msg.model });
+}
+
 // ===========================================================================
 // CONTAS (login por e-mail, com recuperação de senha)
 // ===========================================================================
@@ -836,6 +946,9 @@ export default {
 
     // ---- análise inteligente (exames × dieta × métricas do app) ----
     if (url.pathname === "/analyze") return handleAnalyze(request, env, json, uid);
+
+    // ---- conversa sobre os próprios dados (perguntas pontuais) ----
+    if (url.pathname === "/chat") return handleChat(request, env, json, uid);
 
     // ---- chave da API da própria pessoa (BYOK) ----
     if (url.pathname === "/account/apikey") {

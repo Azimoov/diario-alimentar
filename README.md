@@ -276,6 +276,32 @@ cruzamentos, o que levar ao médico e lacunas. A resposta fica guardada para
 reler offline. **Não é diagnóstico.** Proteções: mesma senha do app,
 rate-limit e limite diário próprio (`ANALYSIS_DAILY_LIMIT`, padrão 20/dia).
 
+## Área 💬 IA — conversa e análises guardadas
+
+Quarta área na barra de cima, com duas abas:
+
+- **Conversa** — caixa de texto para perguntas pontuais sobre os próprios
+  dados (`POST /chat`): *“minha proteína está suficiente?”*, *“o que mudou
+  nos meus exames no último ano?”*. A IA recebe o MESMO resumo numérico da
+  análise e **o fio da conversa** (últimas 30 mensagens), então dá para
+  emendar sem repetir contexto. Modelo próprio (`CLAUDE_MODEL_CHAT`, padrão
+  `claude-opus-5`): perguntar é bem mais frequente que analisar, e aqui o
+  volume é que manda. Cota diária separada (`CHAT_DAILY_LIMIT`, padrão 100)
+  para uma conversa longa não consumir as análises do dia.
+- **Análises** — todas as análises já geradas, da mais recente para a mais
+  antiga, com leitura expansível e opção de apagar uma a uma. Antes o app
+  guardava só a última (campo `analysis`); agora é uma lista (`analyses`) e
+  a migração no `Store.load()` move a análise antiga para o topo dela — quem
+  já usava não perde nada.
+
+Conversa e análises entram no backup da conta e contam como dados locais na
+hora de resolver conflito entre aparelhos: quem só tivesse essas duas coisas
+não corre o risco de a nuvem sobrescrevê-las em silêncio. Ao “juntar os
+dois”, análises são mescladas por id e a conversa mantida é a mais longa —
+intercalar dois fios produziria um diálogo que nunca aconteceu.
+
+Coberto por `fase2-proxy/test/area-ia.mjs` (`npm run test:ia`).
+
 ## Conta e login (recomendado) — nunca mais perder dados
 
 Sem conta, o app é 100% local: rápido e privado, mas os dados existem só
