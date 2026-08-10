@@ -2491,6 +2491,22 @@ window.App = (function () {
       return;
     }
 
+    // A nuvem é mais NOVA — mas é DIFERENTE? Um envio deste próprio aparelho
+    // que chegou ao servidor e cuja resposta não voltou a tempo (a pessoa
+    // fechou o app, o aparelho dormiu, a rede caiu no meio) grava lá uma data
+    // mais nova sem que o `lastSyncAt` daqui tenha sido atualizado. Perguntar
+    // nesse caso é alarme falso — e ensina a pessoa a clicar sem ler no único
+    // modal que ela precisa mesmo ler. Entre dois estados IGUAIS não há o que
+    // decidir: adota-se a data da nuvem e segue. Comparação byte a byte, com
+    // o mesmo serializador dos dois lados; qualquer diferença cai no modal.
+    if (remoto.state === window.Store.exportJSON({ paraNuvem: true })) {
+      c.lastSyncAt = remoto.updatedAt;
+      window.Store.save();
+      window.Auth.liberarEnvio();
+      atualizarStatusConta(); diz('');
+      return;
+    }
+
     // Conflito real: nunca decidir sozinho — é aqui que se perde histórico.
     diz('');
     const quando = remoto.updatedAt ? new Date(remoto.updatedAt).toLocaleString('pt-BR') : '?';

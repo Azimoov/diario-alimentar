@@ -80,6 +80,12 @@ await page.waitForFunction(() => {
 }, { timeout: 25000 });
 await page.reload();
 await page.waitForSelector('.daynav');
+// Este ponto já pegou o modal de conflito abrindo sozinho depois do recarregar
+// (envio no ar quando a página recarregou). Checar aqui torna o sintoma legível:
+// sem isto, o que se vê é só o clique seguinte expirando em 30 s.
+const modalSozinho = await page.locator('.modal-back').count()
+  ? await page.locator('.modal-back').first().innerText() : '';
+check('nada abre modal sozinho ao recarregar', !modalSozinho, modalSozinho);
 await page.click('.app-btn[data-app="ia"]');
 await page.waitForSelector('#tab-conversa.active');
 check('conversa continua depois de recarregar',

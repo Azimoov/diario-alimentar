@@ -346,6 +346,16 @@ tudo**. Com conta, você entra com e-mail e senha e o histórico volta.
 - **Conflito nunca é resolvido no escuro.** Se o aparelho e a nuvem tiverem
   versões diferentes, o app pergunta: juntar (padrão, não descarta nada),
   usar a da nuvem, ou usar a do aparelho.
+- **…mas só pergunta quando há diferença de verdade.** Um envio que chega ao
+  servidor e cuja resposta não volta (app fechado no meio, aparelho dormiu)
+  deixa a nuvem com data mais nova e o aparelho com o `lastSyncAt` velho, sem
+  nenhuma diferença real. Antes de perguntar, o app compara os dois estados
+  byte a byte; se forem iguais, adota a data da nuvem e segue calado. Alarme
+  falso repetido ensina a clicar sem ler justamente no único modal que
+  precisa ser lido.
+- **“Salvo na nuvem” só depois que o servidor confirma.** Enquanto o envio
+  está no ar, o chip do topo continua em `↻` — dizer `☁` antes da resposta é
+  uma mentira que só aparece quando a pessoa fecha o app no meio.
 
 ### O trade-off, dito com clareza
 

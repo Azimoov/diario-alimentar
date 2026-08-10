@@ -141,6 +141,30 @@ await a1.page.waitForFunction((antes) => {
 }, syncAntes, { timeout: 20000 });
 check('alteração posterior sincroniza sozinha', true);
 
+// ---------- nuvem "mais nova" mas IDÊNTICA: não pode perguntar nada ---------
+// Reproduz o envio que CHEGOU ao servidor e cuja resposta não voltou (app
+// fechado no meio, aparelho dormiu, rede caiu): a nuvem fica com data mais
+// nova e este aparelho com o lastSyncAt velho, sem que um byte tenha mudado.
+// Montamos isso enviando de novo e devolvendo o lastSyncAt ao valor que o
+// próprio blob da nuvem carrega — que é o de antes do envio, porque a data
+// nova só é gravada aqui DEPOIS que a resposta volta.
+const syncCongelado = await a1.page.evaluate(async () => {
+  const c = window.Store.get().settings.account;
+  const antes = c.lastSyncAt;
+  await window.Auth.enviarDados();
+  c.lastSyncAt = antes;   // como se a resposta nunca tivesse voltado
+  window.Store.save();
+  return antes;
+});
+await a1.page.reload();
+await a1.page.waitForSelector('.daynav');
+await a1.page.waitForTimeout(2500);
+const modalFalso = await a1.page.locator('.modal-back').count()
+  ? await a1.page.locator('.modal-back').first().innerText() : '';
+check('nuvem mais nova mas idêntica NÃO vira pergunta', !modalFalso, modalFalso);
+check('e a data da nuvem é adotada, para não perguntar de novo',
+  await a1.page.evaluate(() => window.Store.get().settings.account.lastSyncAt) !== syncCongelado);
+
 // ---------- APARELHO 2: só faz login e recebe tudo ----------
 const a2 = await novoAparelho('A2');
 await abrirNaGate(a2.page);
