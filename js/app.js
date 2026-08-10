@@ -4,6 +4,9 @@
 window.App = (function () {
   let S;            // estado (Store)
   let currentDate;  // 'YYYY-MM-DD' visível na aba Hoje
+  // O cartão de peso vive na aba Métricas, que não tem navegação de data — por
+  // isso ele carrega a sua própria, independente do dia aberto no Diário.
+  let pesoDate;     // 'YYYY-MM-DD' do cartão de peso/composição
 
   // ---------- utilidades ----------
   function isoLocal(d) {
@@ -107,6 +110,7 @@ window.App = (function () {
     S = window.Store.load();
     window.Parser.setFoods(window.Store.combinedFoods());
     currentDate = isoLocal(new Date());
+    pesoDate = currentDate;
     // Se o app JÁ ESTÁ ABERTO e a pessoa toca no link do e-mail, o navegador
     // só troca o #hash — não recarrega nada. Sem isto, o link "não faz nada".
     window.addEventListener('hashchange', tratarLinkDeRecuperacao);
@@ -830,9 +834,6 @@ window.App = (function () {
       });
     }
     root.appendChild(list);
-
-    // ----- peso do dia -----
-    root.appendChild(renderWeightInput());
   }
 
   function renderItem(item, idx) {
@@ -986,14 +987,14 @@ window.App = (function () {
   }
 
   function renderWeightInput() {
-    const pct = () => S.bodyComp[currentDate] || {};
+    const pct = () => S.bodyComp[pesoDate] || {};
     const fmt1 = v => String(round(v, 1)).replace('.', ',');
 
     // linha derivada: com o peso do dia + %, mostra o equivalente em kg — só
     // do que foi preenchido (não derivamos massa magra de 100−gordura sozinhos)
     const derived = h('p', { class: 'hint comp-derived' });
     function updateDerived() {
-      const w = S.weights[currentDate], c = pct();
+      const w = S.weights[pesoDate], c = pct();
       const parts = [];
       if (w > 0 && c.fat != null) parts.push('≈ ' + fmt1(w * c.fat / 100) + ' kg de gordura');
       if (w > 0 && c.lean != null) parts.push('≈ ' + fmt1(w * c.lean / 100) + ' kg de massa magra');
@@ -1015,8 +1016,8 @@ window.App = (function () {
       const entry = Object.assign({}, pct());
       if (v == null) delete entry[key];
       else entry[key] = v;
-      if (entry.fat == null && entry.lean == null) delete S.bodyComp[currentDate];
-      else S.bodyComp[currentDate] = entry;
+      if (entry.fat == null && entry.lean == null) delete S.bodyComp[pesoDate];
+      else S.bodyComp[pesoDate] = entry;
       window.Store.save(); updateDerived(); renderHist();
     }
     function numField(label, value, attrs, on) {
@@ -1030,20 +1031,34 @@ window.App = (function () {
       ]);
     }
 
+    // A data é do cartão, não do Diário: quem pesa hoje e só registra amanhã
+    // precisa dizer de que dia é o número, sem sair da aba.
+    const hoje = isoLocal(new Date());
+    const dataRow = h('div', { class: 'peso-data' }, [
+      h('label', { class: 'lbl' }, 'Data da pesagem'),
+      h('input', {
+        type: 'date', value: pesoDate, max: hoje, class: 'date-input',
+        onchange: e => { pesoDate = e.target.value || pesoDate; renderSaude(); },
+      }),
+      pesoDate === hoje ? null
+        : h('button', { class: 'link-btn', onclick: () => { pesoDate = hoje; renderSaude(); } }, 'hoje'),
+    ]);
+
     const card = h('div', { class: 'card weight-card' }, [
       h('h3', {}, 'Peso e composição corporal'),
+      dataRow,
       h('div', { class: 'comp-grid' }, [
-        numField('Peso (kg)', S.weights[currentDate], { placeholder: 'ex.: 82.4' }, raw => {
+        numField('Peso (kg)', S.weights[pesoDate], { placeholder: 'ex.: 82.4' }, raw => {
           const v = parseNum(raw);
-          if (v == null) delete S.weights[currentDate];
-          else S.weights[currentDate] = v;
+          if (v == null) delete S.weights[pesoDate];
+          else S.weights[pesoDate] = v;
           window.Store.save(); updateDerived(); renderHist();
         }),
         numField('Gordura (%)', pct().fat, { max: '100', placeholder: 'ex.: 24.5' }, raw => setPct('fat', raw)),
         numField('Massa magra (%)', pct().lean, { max: '100', placeholder: 'ex.: 72' }, raw => setPct('lean', raw)),
       ]),
       derived,
-      h('p', { class: 'hint' }, 'Valores de ' + fmtBR(currentDate) + ' — opcionais, registre quando medir. Gordura e massa magra: da balança de bioimpedância ou avaliação física.'),
+      h('p', { class: 'hint' }, 'Valores de ' + fmtBR(pesoDate) + ' — opcionais, registre quando medir. Gordura e massa magra: da balança de bioimpedância ou avaliação física.'),
     ]);
     updateDerived();
     return card;
@@ -1087,7 +1102,7 @@ window.App = (function () {
     root.appendChild(h('div', { class: 'card' }, [
       h('h3', {}, 'Peso corporal'),
       window.Charts.lineChart(weightSeries, {
-        color: 'var(--g)', unit: ' kg', decimals: 1, empty: 'Registre seu peso na aba Hoje',
+        color: 'var(--g)', unit: ' kg', decimals: 1, empty: 'Registre seu peso na aba Métricas',
         width: 1.5, lineOpacity: 0.4, pointR: 3,
         extra: weightSeries.length >= 3 ? [{ series: weightMA, color: 'var(--accent)', width: 2.5 }] : [],
       }),
@@ -1433,6 +1448,7 @@ window.App = (function () {
     S = window.Store.reset();
     refreshFoods();
     currentDate = isoLocal(new Date());
+    pesoDate = currentDate;
     renderAll();
   }
 
@@ -1901,6 +1917,10 @@ window.App = (function () {
     const root = $('#tab-saude');
     if (!root) return;
     clear(root);
+    // peso e composição primeiro: é o que se digita toda semana, enquanto o
+    // import do app Saúde é raro — quem entra aqui todo dia não deve rolar
+    // um cartão de instruções para chegar ao campo
+    root.appendChild(renderWeightInput());
     root.appendChild(renderHealthImport());
     const dates = Object.keys(S.health.daily || {}).sort();
     if (dates.length) {

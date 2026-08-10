@@ -131,12 +131,15 @@ em `data/source*` e rode `node data/build-db.mjs`. Não edite `js/db.js` à mão
   receita (pesados crus, correto) também não.
 - **Média móvel de 7 dias** no gráfico de peso: o peso diário oscila ±1 kg por
   água/glicogênio; a linha de tendência é o sinal que importa.
-- **Composição corporal (opcional)** — junto do peso, na aba Hoje, dá para
-  registrar **% de gordura** e **% de massa magra** (da balança de
-  bioimpedância ou avaliação física). Com o peso do dia preenchido o app
-  mostra o equivalente em kg, e cada série vira um gráfico próprio no
+- **Composição corporal (opcional)** — junto do peso, no topo da aba
+  **❤️ Métricas**, dá para registrar **% de gordura** e **% de massa magra** (da
+  balança de bioimpedância ou avaliação física). Com o peso do dia preenchido o
+  app mostra o equivalente em kg, e cada série vira um gráfico próprio no
   Histórico. Nada é derivado sozinho: só entra o que você medir, e se
   gordura + massa magra somarem mais de 100% o app avisa.
+- **O cartão de peso tem data própria** (padrão: hoje), independente do dia
+  aberto no Diário — a aba Métricas não tem navegação de data, e sem isso
+  registrar a pesagem de ontem exigiria voltar ao Diário para mudar o dia.
 
 ## Como o app calcula a meta
 
@@ -257,7 +260,9 @@ tudo; digitar o nome exato da receita casa direto, sem pedir confirmação.
 
 ## Métricas de saúde — importar do app Saúde (iPhone)
 
-Área **❤️ Métricas**: no iPhone, app Saúde → sua foto de perfil →
+Área **❤️ Métricas**: o primeiro cartão é **peso e composição corporal** (o
+que se digita toda semana, na mão); o resto da aba vem do iPhone. Para importar:
+no iPhone, app Saúde → sua foto de perfil →
 **“Exportar Todos os Dados de Saúde”** → escolha o arquivo aqui (ou o XML
 solto, se preferir descompactar no app Arquivos). O arquivo é lido em
 **streaming, neste aparelho** (o zip é aberto com `DecompressionStream`

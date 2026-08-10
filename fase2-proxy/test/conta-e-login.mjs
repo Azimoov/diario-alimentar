@@ -73,7 +73,17 @@ async function entrarPelaGate(page, mail, senha) {
 // portão sumiu e o app principal já está montado
 async function esperaLiberado(page) {
   await page.waitForFunction(() => !document.body.classList.contains('gate-active'), { timeout: 25000 });
+  await page.waitForSelector('.daynav');   // app montado, na aba Diário → Hoje
+}
+// o cartão de peso mora no topo da área Métricas (não mais no Diário)
+async function preencherPeso(page, kg) {
+  await page.click('.app-btn[data-app="saude"]');
   await page.waitForSelector('.weight-card');
+  const campo = page.locator('.weight-card .comp-grid input').nth(0);
+  await campo.fill(String(kg));
+  await campo.blur();
+  await page.click('.app-btn[data-app="diario"]');
+  await page.waitForSelector('.daynav');
 }
 
 // ---------- APARELHO 1: cria conta pelo portão e só DEPOIS registra dados
@@ -92,10 +102,15 @@ check('logado após criar conta', (await a1.page.textContent('#conta-chip')).inc
 const syncAntes1 = await a1.page.evaluate(() => (window.Store.get().settings.account || {}).lastSyncAt || null);
 await a1.page.locator('#entry').fill('100 g arroz');
 await a1.page.getByRole('button', { name: '+ Adicionar' }).click();
-const pesoInputs = a1.page.locator('.weight-card .comp-grid input');
-await pesoInputs.nth(0).fill('82.4');
-await pesoInputs.nth(0).blur();
+await preencherPeso(a1.page, '82.4');
 check('dados locais criados', await a1.page.locator('#tab-hoje .item-name').count() >= 1);
+
+// o cartão de peso saiu do Diário e é o PRIMEIRO cartão da aba Métricas
+check('peso não está mais na aba Hoje', await a1.page.locator('#tab-hoje .weight-card').count() === 0);
+check('peso é o primeiro cartão de Métricas',
+  await a1.page.locator('#tab-saude > .card').first().evaluate(el => el.classList.contains('weight-card')));
+check('peso digitado em Métricas foi guardado',
+  await a1.page.evaluate(() => Object.values(window.Store.get().weights)).then(v => v.includes(82.4)));
 await a1.page.waitForFunction((antes) => {
   const c = window.Store.get().settings.account;
   return c && c.lastSyncAt && c.lastSyncAt !== antes;

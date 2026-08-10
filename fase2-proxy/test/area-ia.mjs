@@ -40,7 +40,7 @@ await page.evaluate(async ({ email, senha }) => {
   await window.Auth.criarConta(email, senha, 'convite-local');
 }, { email: EMAIL, senha: SENHA });
 await page.reload();
-await page.waitForSelector('.weight-card');
+await page.waitForSelector('.daynav');
 await page.evaluate(async (k) => { await window.Auth.salvarChave(k); }, CHAVE);
 
 // ---------- a área existe e abre na Conversa --------------------------------
@@ -79,7 +79,7 @@ await page.waitForFunction(() => {
   return s.settings.account.lastSyncAt && !window.Auth.temPendencia();
 }, { timeout: 25000 });
 await page.reload();
-await page.waitForSelector('.weight-card');
+await page.waitForSelector('.daynav');
 await page.click('.app-btn[data-app="ia"]');
 await page.waitForSelector('#tab-conversa.active');
 check('conversa continua depois de recarregar',

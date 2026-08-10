@@ -234,7 +234,10 @@ input[type=number] { width: 100%; }
 .mb-label { font-size: 12px; fill: var(--muted); }
 .mb-val { font-size: 12px; fill: var(--fg); font-variant-numeric: tabular-nums; }
 
-/* peso + composição corporal (aba Hoje) */
+/* peso + composição corporal (topo da aba Métricas) */
+.peso-data { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.peso-data .lbl { margin-bottom: 0; white-space: nowrap; }
+.peso-data .link-btn { flex: none; }
 .comp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
 .comp-grid .field { justify-content: flex-end; } /* alinha inputs quando um rótulo quebra linha */
 .comp-derived { margin: 8px 0 4px; }
