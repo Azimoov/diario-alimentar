@@ -1492,6 +1492,25 @@ window.App = (function () {
     window.Store.save();
     scheduleBackup();
     renderExLab(); renderExImg(); updateNavBadges(); renderHoje();
+    sincronizarOpenBrain();  // exame novo vai para o Open Brain na hora
+  }
+
+  // Dispara o envio ao Open Brain sem travar a interface: o servidor decide o
+  // que ainda falta mandar (tem o próprio livro-caixa), então chamar demais é
+  // inofensivo — e o silêncio no erro é proposital, isto é acessório e não
+  // pode atrapalhar quem só quis registrar um exame.
+  let obEnviando = false;
+  function sincronizarOpenBrain() {
+    if (obEnviando || !window.Auth.logado() || !S.settings.openBrain) return;
+    obEnviando = true;
+    // espera o backup subir: o servidor lê os dados da NUVEM, não do aparelho
+    setTimeout(() => {
+      fetch(window.Auth.urlProxy('/openbrain/sync'), {
+        method: 'POST',
+        headers: window.Auth.cabecalhosProxy({ 'Content-Type': 'application/json' }),
+        body: '{}',
+      }).catch(() => {}).finally(() => { obEnviando = false; });
+    }, 5000);
   }
   // exame novo do mesmo nome empurra o lembrete p/ frente (a contagem recomeça)
   function bumpReminders(kind, norm, date) {
@@ -2255,6 +2274,8 @@ window.App = (function () {
       ]),
     ]));
 
+    el.appendChild(renderOpenBrainCard());
+
     if (!S.analyses.length) {
       el.appendChild(h('p', { class: 'hint' }, 'Nenhuma análise ainda. A primeira leva cerca de um minuto.'));
       return;
@@ -2289,6 +2310,89 @@ window.App = (function () {
         corpo,
       ]));
     });
+  }
+
+  // ---- envio de contexto para o Open Brain (opcional, por conta) ----
+  // Fica DESLIGADO por padrão: manda dados de saúde para fora do Highlander,
+  // de forma permanente (o Open Brain não tem apagar). Ligar é decisão
+  // consciente, não padrão herdado.
+  function renderOpenBrainCard() {
+    const card = h('div', { class: 'card' }, [h('h3', {}, '🧠 Enviar contexto para o Open Brain')]);
+    if (!window.Auth.logado()) {
+      card.appendChild(h('p', { class: 'note' }, 'Entre na sua conta para configurar o envio.'));
+      return card;
+    }
+    card.appendChild(h('p', { class: 'note' }, 'Manda para o seu Open Brain um retrato semanal (médias de dieta, peso, composição corporal e métricas) e cada resultado de exame laboratorial novo, com a faixa de referência do seu laudo. Assim outras IAs suas encontram esse contexto depois.'));
+    card.appendChild(h('p', { class: 'hint' }, 'NÃO sobe: foto, laudo em texto livre, exame de imagem, o texto das análises, a conversa desta área, nem o diário item a item — só números agregados e resultados de exame.'));
+
+    const estado = h('p', { class: 'hint' }, 'Verificando…');
+    const acoes = h('div', { class: 'btn-row' });
+    card.appendChild(estado);
+    card.appendChild(acoes);
+    const msg = h('p', { class: 'auth-msg' });
+    card.appendChild(msg);
+
+    const pintar = (st) => {
+      // espelho local só para saber se vale disparar o envio ao registrar um
+      // exame; quem manda de verdade é o servidor (é ele que tem o livro-caixa)
+      if (S.settings.openBrain !== !!st.ativo) { S.settings.openBrain = !!st.ativo; window.Store.save(); }
+      clear(acoes);
+      if (!st.configurado) {
+        estado.className = 'hint comp-warn';
+        estado.textContent = '⚠ Quem administra o app ainda não cadastrou a chave do Open Brain no servidor.';
+        return;
+      }
+      estado.className = 'hint';
+      estado.textContent = st.ativo
+        ? '✅ Ligado · ' + st.examesEnviados + ' exame(s) já enviados'
+          + (st.ultimoRetratoEm ? ' · último retrato em ' + fmtBR(st.ultimoRetratoEm) : ' · retrato ainda não enviado')
+        : 'Desligado — nada é enviado.';
+      const acao = async (corpo, texto) => {
+        msg.className = 'auth-msg'; msg.textContent = '⏳ ' + texto;
+        try {
+          const r = await fetch(window.Auth.urlProxy('/openbrain/sync'), {
+            method: 'POST',
+            headers: window.Auth.cabecalhosProxy({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(corpo),
+          });
+          const d = await r.json().catch(() => null);
+          if (!r.ok) throw new Error((d && (d.detail || d.error)) || 'HTTP ' + r.status);
+          msg.className = 'auth-msg ok';
+          msg.textContent = d && d.enviados
+            ? (d.enviados.length ? '✅ Enviado: ' + d.enviados.length + ' item(ns).' : '✅ Nada novo para enviar.')
+            : '✅ Pronto.';
+          if (d && d.falhas && d.falhas.length) {
+            msg.className = 'auth-msg erro';
+            msg.textContent = '⚠ ' + d.falhas[0];
+          }
+          pintar(await (await fetch(window.Auth.urlProxy('/openbrain/sync'), {
+            method: 'GET', headers: window.Auth.cabecalhosProxy(),
+          })).json());
+        } catch (e) {
+          msg.className = 'auth-msg erro'; msg.textContent = '⚠ ' + e.message;
+        }
+      };
+      if (st.ativo) {
+        acoes.appendChild(h('button', { class: 'btn', onclick: () => acao({ forcarRetrato: true }, 'enviando…') }, 'Enviar agora'));
+        acoes.appendChild(h('button', {
+          class: 'btn danger',
+          onclick: () => { if (confirm('Parar de enviar para o Open Brain?\n\nO que já foi enviado continua lá — o Open Brain não tem como apagar.')) acao({ desativar: true }, 'desligando…'); },
+        }, 'Desligar'));
+      } else {
+        acoes.appendChild(h('button', {
+          class: 'btn primary',
+          onclick: () => {
+            if (!confirm('Ligar o envio para o Open Brain?\n\nSeus números de saúde e resultados de exame passam a ser copiados para lá. Isso é PERMANENTE: o Open Brain não permite apagar depois.')) return;
+            acao({ ativar: true }, 'ligando e enviando o que já existe…');
+          },
+        }, 'Ligar envio'));
+      }
+    };
+
+    fetch(window.Auth.urlProxy('/openbrain/sync'), { method: 'GET', headers: window.Auth.cabecalhosProxy() })
+      .then(r => r.json()).then(pintar)
+      .catch(() => { estado.className = 'hint comp-warn'; estado.textContent = '⚠ Não consegui falar com o servidor agora.'; });
+    return card;
   }
 
   // ---- aba Conversa: perguntas pontuais, com o fio da conversa preservado ----

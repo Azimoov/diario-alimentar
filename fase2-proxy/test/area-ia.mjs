@@ -121,7 +121,9 @@ check('primeira análise guardada', await page.evaluate(() => window.Store.get()
 await gerarAnalise();
 const n = await page.evaluate(() => window.Store.get().analyses.length);
 check('segunda análise NÃO sobrescreve a primeira', n === 2, n);
-check('as duas aparecem na lista', await page.locator('#tab-analises .card').count() === 3); // 1 cartão de topo + 2
+// conta pelo botão "apagar", que só existe em cartão de análise — contar
+// .card quebra sempre que um cartão fixo novo entra na aba
+check('as duas aparecem na lista', await page.locator('#tab-analises .link-btn.danger').count() === 2);
 
 // mais recente primeiro
 const ordem = await page.evaluate(() => window.Store.get().analyses.map(a => a.at));

@@ -21,6 +21,9 @@
   // NUNCA apagar variáveis/segredos criados pelo painel da Cloudflare ao
   // fazer deploy pela linha de comando (foi assim que a chave sumiu uma vez)
   "keep_vars": true,
+  // retrato semanal para o Open Brain: segunda-feira, 09:00 UTC (06:00 em
+  // São Paulo). Só percorre contas que ativaram o envio.
+  "triggers": { "crons": ["0 9 * * 1"] },
   "vars": {
     // origens autorizadas a chamar o proxy (CORS)
     "ALLOWED_ORIGINS": "https://azimoov.github.io,http://localhost:8123",
@@ -47,6 +50,14 @@
     // máx. de perguntas na conversa por dia (cota separada da análise: uma
     // conversa longa não pode consumir as análises do dia)
     "CHAT_DAILY_LIMIT": "100",
+    // ---- Open Brain (envio de contexto de saúde) ----
+    // A CHAVE é segredo: npx wrangler secret put OPENBRAIN_KEY
+    // Sem ela o recurso fica desligado e a interface diz isso.
+    // Autenticação é o cabeçalho x-brain-key — Authorization é IGNORADO pela
+    // função, e a resposta vem em text/plain (não JSON).
+    "OPENBRAIN_URL": "https://speueyaplfprjpgnakxm.supabase.co/functions/v1/open-brain-capture",
+    // intervalo mínimo entre retratos, em dias (o cron roda semanal)
+    "OPENBRAIN_DIAS_RETRATO": "7",
     // remetente dos e-mails de recuperação. Precisa ser um domínio verificado
     // no Resend; "onboarding@resend.dev" só envia para o seu próprio e-mail.
     "MAIL_FROM": "Highlander <onboarding@resend.dev>",

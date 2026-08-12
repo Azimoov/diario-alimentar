@@ -327,6 +327,44 @@ intercalar dois fios produziria um diálogo que nunca aconteceu.
 
 Coberto por `fase2-proxy/test/area-ia.mjs` (`npm run test:ia`).
 
+## Envio de contexto para o Open Brain (opcional, desligado por padrão)
+
+Na aba **Análises** há um cartão para ligar o envio do seu contexto de saúde
+para o [Open Brain](https://speueyaplfprjpgnakxm.supabase.co/functions/v1/open-brain-capture),
+de modo que outras IAs suas encontrem esse histórico depois.
+
+- **O que sobe:** um **retrato semanal** (médias de dieta dos últimos 30 dias,
+  peso e variação, composição corporal, médias do relógio) e **um pensamento
+  por exame laboratorial novo**, com valor, unidade, data e a faixa de
+  referência que VOCÊ anotou do laudo (marcando quando está fora dela).
+- **O que nunca sobe:** foto, laudo em texto livre, exame de imagem, o texto
+  das análises, a conversa da área IA e o diário item a item.
+- **Por que síntese e não registro cru:** o Open Brain é memória semântica e
+  **não tem apagar nem atualizar**. Um envio diário viraria centenas de
+  entradas quase idênticas competindo com as notas reais da pessoa na busca —
+  e sem volta.
+- **Livro-caixa obrigatório:** `openbrain:<uid>` no KV guarda o último retrato
+  e os ids de exame já enviados. Sem ele, cada execução reenviaria tudo e
+  duplicaria de forma irreversível. A existência dessa chave É o opt-in; o
+  cron só percorre quem ligou.
+- **Quando roda:** cron semanal do Worker (`triggers.crons`, segunda 09:00 UTC)
+  e também na hora em que você registra um exame (o app chama
+  `POST /openbrain/sync`; o servidor decide o que ainda falta).
+- **Configuração:** `OPENBRAIN_URL` no `wrangler.jsonc` e o segredo
+  `OPENBRAIN_KEY` (`npx wrangler secret put OPENBRAIN_KEY`). Sem a chave, o
+  recurso fica desligado e a interface diz isso.
+
+Duas armadilhas da API real que o código trata e que não são óbvias: a
+autenticação é o cabeçalho `x-brain-key` (**`Authorization` é ignorado**) e a
+resposta é `text/plain`, com erro em `⚠️ Não guardei: …`. Além disso, a API
+cria um LEMBRETE quando o texto contém “me lembre de” — como o app fala de
+exames a repetir, o texto é higienizado antes de sair.
+
+Coberto por `fase2-proxy/test/openbrain.mjs` (`npm run test:openbrain`), que
+sobe uma cópia fiel do endpoint em localhost e prova, entre outras coisas, que
+rodar duas vezes não duplica e que falha do destino não marca nada como
+enviado.
+
 ## Conta e login (recomendado) — nunca mais perder dados
 
 Sem conta, o app é 100% local: rápido e privado, mas os dados existem só

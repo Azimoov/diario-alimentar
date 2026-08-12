@@ -466,6 +466,228 @@ async function handleChat(request, env, json, uid) {
 }
 
 // ===========================================================================
+// OPEN BRAIN — envio periódico de contexto de saúde
+// ===========================================================================
+// Manda SÍNTESE, não registro cru. O Open Brain é memória semântica: cada
+// captura vira um "pensamento" com embedding, e NÃO existe apagar nem
+// atualizar. Um envio diário de "12/08: 2150 kcal" viraria centenas de
+// entradas quase idênticas competindo com as notas reais da pessoa na busca —
+// e sem volta. Por isso: um retrato por semana + um pensamento por exame novo.
+//
+// O que SOBE: números agregados e resultados de exame com a faixa de
+// referência anotada pela pessoa.
+// O que NUNCA sobe: foto, laudo em texto livre, resumo de exame de imagem,
+// e o diário item a item.
+
+const OPENBRAIN_URL_PADRAO = "https://speueyaplfprjpgnakxm.supabase.co/functions/v1/open-brain-capture";
+
+// A API dispara um LEMBRETE com data quando o texto contém "me lembre de" e
+// variantes. Nossa síntese fala de exames a repetir, então precisa evitar
+// essas construções — senão o app cria lembretes fantasma no Open Brain.
+function semGatilhoDeLembrete(texto) {
+  return String(texto).replace(/\bme\s+lembr\w*\s+(de|da|do|dos|das|que|pra|para)\b/gi, "anotar");
+}
+
+// Adaptador do endpoint. Detalhes que NÃO são padrão e já custaram engano:
+// autenticação é o cabeçalho x-brain-key (Authorization é ignorado), e a
+// resposta vem em text/plain — erro chega como "⚠️ Não guardei: ...".
+async function enviarAoOpenBrain(env, texto) {
+  const url = env.OPENBRAIN_URL || OPENBRAIN_URL_PADRAO;
+  const chave = env.OPENBRAIN_KEY;
+  if (!chave) throw new Error("OPENBRAIN_KEY não configurada no Worker.");
+  const limpo = semGatilhoDeLembrete(String(texto || "").trim());
+  if (!limpo) throw new Error("texto vazio");
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "x-brain-key": chave, "Content-Type": "application/json" },
+    body: JSON.stringify({ text: limpo }),
+  });
+  const corpo = (await res.text()).trim();
+  if (!res.ok || corpo.startsWith("⚠️")) {
+    throw new Error("Open Brain recusou (HTTP " + res.status + "): " + corpo.slice(0, 200));
+  }
+  return corpo;
+}
+
+const nz = (v) => (v == null || Number.isNaN(v) ? null : v);
+function media(lista) {
+  const v = lista.filter((x) => typeof x === "number" && !Number.isNaN(x));
+  return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+}
+const dataBR = (iso) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso || "?");
+};
+
+// ---- retrato semanal ------------------------------------------------------
+// Texto corrido de propósito: é assim que a busca semântica do Open Brain
+// funciona bem. Só entra o que existe — nada de "sem dados" enchendo linguiça.
+function montarRetrato(state, hojeISO) {
+  const partes = [];
+  const dias = state.days || {};
+  const corte = new Date(Date.parse(hojeISO) - 30 * 86400000).toISOString().slice(0, 10);
+
+  const kcalPorDia = [];
+  const protPorDia = [];
+  Object.keys(dias).filter((d) => d >= corte).forEach((d) => {
+    const it = (dias[d] || {}).items || [];
+    if (!it.length) return;
+    const k = it.reduce((n, x) => n + (Number(x.kcal) || 0), 0);
+    const p = it.reduce((n, x) => n + (Number(x.prot) || 0), 0);
+    if (k > 0) { kcalPorDia.push(k); protPorDia.push(p); }
+  });
+  if (kcalPorDia.length) {
+    partes.push(`Nos últimos 30 dias registrou ${kcalPorDia.length} dia(s) de diário alimentar, `
+      + `com média de ${Math.round(media(kcalPorDia))} kcal/dia`
+      + (media(protPorDia) ? ` e ${Math.round(media(protPorDia))} g de proteína/dia` : "") + ".");
+  }
+
+  const pesos = Object.keys(state.weights || {}).sort();
+  if (pesos.length) {
+    const ini = pesos[0], fim = pesos[pesos.length - 1];
+    const kgIni = state.weights[ini], kgFim = state.weights[fim];
+    partes.push(`Peso mais recente: ${kgFim} kg em ${dataBR(fim)}`
+      + (pesos.length > 1 && ini !== fim
+        ? ` (era ${kgIni} kg em ${dataBR(ini)}, variação de ${(kgFim - kgIni).toFixed(1)} kg).`
+        : "."));
+  }
+
+  const bc = Object.keys(state.bodyComp || {}).sort();
+  if (bc.length) {
+    const u = state.bodyComp[bc[bc.length - 1]] || {};
+    const campos = [];
+    if (nz(u.fat) != null) campos.push(`${u.fat}% de gordura`);
+    if (nz(u.lean) != null) campos.push(`${u.lean}% de massa magra`);
+    if (campos.length) partes.push(`Composição corporal em ${dataBR(bc[bc.length - 1])}: ${campos.join(" e ")}.`);
+  }
+
+  const diasSaude = Object.keys((state.health || {}).daily || {}).sort().slice(-30);
+  if (diasSaude.length) {
+    const val = (k) => media(diasSaude.map((d) => state.health.daily[d][k]));
+    const m = [];
+    if (val("steps")) m.push(`${Math.round(val("steps"))} passos/dia`);
+    if (val("sleepMin")) m.push(`${(val("sleepMin") / 60).toFixed(1)} h de sono/noite`);
+    if (val("hrRest")) m.push(`frequência cardíaca de repouso ${Math.round(val("hrRest"))} bpm`);
+    if (val("vo2max")) m.push(`VO2máx ${val("vo2max").toFixed(1)}`);
+    if (m.length) partes.push(`Métricas do relógio (média dos últimos ${diasSaude.length} dias): ${m.join(", ")}.`);
+  }
+
+  if (!partes.length) return null;   // conta sem dado nenhum: não polui o brain
+  return `Retrato de saúde de ${dataBR(hojeISO)} (registrado no app Highlander). ` + partes.join(" ");
+}
+
+// ---- um exame laboratorial = um pensamento --------------------------------
+function montarExame(ex) {
+  const valor = [ex.value, ex.unit].filter(Boolean).join(" ");
+  const faixa = (nz(ex.refLow) != null || nz(ex.refHigh) != null)
+    ? ` Faixa de referência do laudo: ${nz(ex.refLow) != null ? ex.refLow : "?"} a ${nz(ex.refHigh) != null ? ex.refHigh : "?"}${ex.unit ? " " + ex.unit : ""}.`
+    : " O laudo não trazia faixa de referência anotada.";
+  const fora = (typeof ex.num === "number" && (
+    (nz(ex.refLow) != null && ex.num < ex.refLow) || (nz(ex.refHigh) != null && ex.num > ex.refHigh)))
+    ? " Está FORA da faixa anotada." : "";
+  return `Exame laboratorial de ${dataBR(ex.date)}: ${ex.name} = ${valor}.${faixa}${fora}`
+    + (ex.obs ? ` Observação: ${ex.obs}` : "");
+}
+
+// ---- reconciliação: manda o que ainda não foi mandado ----------------------
+// O LEDGER é obrigatório, não otimização: sem apagar nem atualizar no destino,
+// reenviar duplicaria de forma irreversível. Existir ledger = conta ativou.
+async function sincronizarOpenBrain(env, uid, opts) {
+  opts = opts || {};
+  const chaveLedger = "openbrain:" + uid;
+  const bruto = await env.DIARIO_KV.get(chaveLedger);
+  if (!bruto && !opts.ativar) return { pulou: "conta não ativou o envio" };
+  const ledger = bruto ? JSON.parse(bruto) : { ativo: true, ultimoRetratoEm: null, examesEnviados: [] };
+  if (!ledger.ativo && !opts.ativar) return { pulou: "envio desativado nesta conta" };
+  if (opts.ativar) ledger.ativo = true;
+
+  const rec = await env.DIARIO_KV.get("data:" + uid);
+  if (!rec) return { pulou: "conta sem dados na nuvem" };
+  let state;
+  try { state = JSON.parse(await decryptText(env, uid, JSON.parse(rec))); } catch {
+    return { erro: "não consegui abrir os dados desta conta" };
+  }
+
+  const agora = opts.agora || new Date().toISOString();
+  const hoje = agora.slice(0, 10);
+  const enviados = [];
+  const falhas = [];
+
+  // 1) exames laboratoriais novos (o que a pessoa digitou; nunca o laudo)
+  const jaFoi = new Set(ledger.examesEnviados || []);
+  const novos = (state.labExams || []).filter((e) => e && e.id && !jaFoi.has(e.id));
+  for (const ex of novos.slice(0, 40)) {   // teto por execução: 1–3 s cada
+    try {
+      await enviarAoOpenBrain(env, montarExame(ex));
+      ledger.examesEnviados.push(ex.id);
+      enviados.push("exame:" + ex.id);
+    } catch (e) {
+      falhas.push("exame " + ex.id + ": " + e.message);
+      break;   // API fora do ar: para e tenta na próxima, sem furar o ledger
+    }
+  }
+
+  // 2) retrato periódico (padrão: no máximo 1 a cada 7 dias)
+  const minDias = parseInt(env.OPENBRAIN_DIAS_RETRATO || "7", 10);
+  const passou = !ledger.ultimoRetratoEm
+    || (Date.parse(hoje) - Date.parse(ledger.ultimoRetratoEm)) >= minDias * 86400000;
+  if (passou || opts.forcarRetrato) {
+    const texto = montarRetrato(state, hoje);
+    if (texto) {
+      try {
+        await enviarAoOpenBrain(env, texto);
+        ledger.ultimoRetratoEm = hoje;
+        enviados.push("retrato");
+      } catch (e) {
+        falhas.push("retrato: " + e.message);
+      }
+    }
+  }
+
+  await env.DIARIO_KV.put(chaveLedger, JSON.stringify(ledger));
+  return { enviados, falhas, ativo: ledger.ativo };
+}
+
+// POST /openbrain/sync   — o app chama depois de registrar exame
+// POST /openbrain/sync {ativar:true} / {desativar:true} — liga/desliga
+// GET  /openbrain/sync   — estado atual (para a interface)
+async function handleOpenBrain(request, env, json, uid) {
+  if (!uid) return json({ error: "login_required", detail: "Entre na sua conta." }, 401);
+  if (!env.DIARIO_KV) return json({ error: "server_not_configured" }, 500);
+  const chaveLedger = "openbrain:" + uid;
+
+  if (request.method === "GET") {
+    const bruto = await env.DIARIO_KV.get(chaveLedger);
+    const l = bruto ? JSON.parse(bruto) : null;
+    return json({
+      ativo: !!(l && l.ativo),
+      configurado: !!env.OPENBRAIN_KEY,
+      ultimoRetratoEm: l ? l.ultimoRetratoEm : null,
+      examesEnviados: l ? (l.examesEnviados || []).length : 0,
+    });
+  }
+  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+
+  let body = {};
+  try { body = await request.json(); } catch { /* corpo vazio é válido aqui */ }
+
+  if (body.desativar) {
+    const bruto = await env.DIARIO_KV.get(chaveLedger);
+    // preserva o histórico do que já foi enviado: religar não pode reenviar tudo
+    const l = bruto ? JSON.parse(bruto) : { ultimoRetratoEm: null, examesEnviados: [] };
+    l.ativo = false;
+    await env.DIARIO_KV.put(chaveLedger, JSON.stringify(l));
+    return json({ ok: true, ativo: false });
+  }
+  if (!env.OPENBRAIN_KEY) {
+    return json({ error: "openbrain_off", detail: "Quem administra o app ainda não cadastrou a chave do Open Brain." }, 501);
+  }
+  const r = await sincronizarOpenBrain(env, uid, { ativar: !!body.ativar, forcarRetrato: !!body.forcarRetrato });
+  return json(r);
+}
+
+// ===========================================================================
 // CONTAS (login por e-mail, com recuperação de senha)
 // ===========================================================================
 // Modelo escolhido pelo dono do app: RECUPERÁVEL. Os dados são cifrados em
@@ -959,6 +1181,9 @@ export default {
     // ---- conversa sobre os próprios dados (perguntas pontuais) ----
     if (url.pathname === "/chat") return handleChat(request, env, json, uid);
 
+    // ---- envio de contexto de saúde para o Open Brain ----
+    if (url.pathname === "/openbrain/sync") return handleOpenBrain(request, env, json, uid);
+
     // ---- chave da API da própria pessoa (BYOK) ----
     if (url.pathname === "/account/apikey") {
       if (!uid) return json({ error: "no_session", detail: "Esta rota exige login por conta." }, 401);
@@ -1172,5 +1397,26 @@ export default {
       observacao: typeof parsed.observacao === "string" ? parsed.observacao : "",
       modelo: msg.model,
     });
+  },
+
+  // ---- cron (wrangler.jsonc -> triggers.crons): retrato periódico ----------
+  // Percorre só quem ATIVOU (a existência da chave openbrain:<uid> é o opt-in),
+  // então o custo é proporcional a quem quis, não ao total de contas.
+  async scheduled(event, env, ctx) {
+    if (!env.OPENBRAIN_KEY || !env.DIARIO_KV) return;
+    let cursor;
+    do {
+      const pag = await env.DIARIO_KV.list({ prefix: "openbrain:", cursor });
+      for (const k of pag.keys) {
+        const uid = k.name.slice("openbrain:".length);
+        try {
+          const r = await sincronizarOpenBrain(env, uid);
+          if (r && r.falhas && r.falhas.length) console.log("OPENBRAIN falhas", uid, r.falhas.join(" | "));
+        } catch (e) {
+          console.log("OPENBRAIN erro", uid, String((e && e.message) || e).slice(0, 200));
+        }
+      }
+      cursor = pag.list_complete ? null : pag.cursor;
+    } while (cursor);
   },
 };

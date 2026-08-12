@@ -44,6 +44,8 @@ window.Store = (function () {
       // em lugar nenhum — só o token de sessão devolvido pelo servidor.
       settings: {
         proxyUrl: '', proxyToken: '', autoBackup: false, lastBackupAt: null, mealsFechados: [],
+        // espelho do envio ao Open Brain (a verdade fica no servidor)
+        openBrain: false,
         account: { email: null, session: null, lastSyncAt: null },
       },
       createdAt: new Date().toISOString(),
