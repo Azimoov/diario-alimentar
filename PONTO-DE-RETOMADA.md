@@ -15,12 +15,17 @@ GitHub Pages e usável como app no iPhone. **Quatro áreas** na barra de cima:
 | ❤️ Métricas | peso e composição corporal; import do export do app Saúde do iPhone (passos, energia, sono, FC, VO₂máx) e saldo energético |
 | 💬 IA | conversa com memória sobre os próprios dados + histórico de análises |
 
+A conversa e a análise consultam uma **base de referência de longevidade**
+(Medicina 3.0 / Attia) em `fase2-proxy/src/conhecimento.js`, com etiqueta de
+evidência item a item e procedência em `docs/REFERENCIAS.md`. Há ainda um
+envio opcional de contexto para o **Open Brain**, desligado por padrão.
+
 ## Estado atual (16/08/2026)
 
 - **Tudo o que foi pedido está implementado e no `main`.** Última rodada:
   mesclagem de duas frentes de trabalho que corriam em paralelo + toda a suíte
   de testes de volta ao verde.
-- **Suíte: 11 conjuntos, todos passando**, e rodando duas vezes seguidas sem
+- **Suíte: 12 conjuntos, todos passando**, e rodando duas vezes seguidas sem
   sujar estado. Um comando: `node test/todos.mjs` (ele mesmo sobe e derruba os
   dois servidores locais).
 - **Site:** <https://azimoov.github.io/diario-alimentar/> — republica sozinho
@@ -41,6 +46,10 @@ npx wrangler secret put INVITE_CODE     # código de convite (quem cria conta us
 npx wrangler secret put RESEND_API_KEY  # chave do Resend (recuperação de senha)
 npx wrangler deploy
 ```
+
+Opcional, só se for usar o envio para o Open Brain:
+`npx wrangler secret put OPENBRAIN_KEY` (o cron semanal já vai no
+`wrangler.jsonc`; sem a chave o envio simplesmente não acontece).
 
 - **`DATA_KEY` é insubstituível**: é ela que cifra os dados das contas em
   repouso. Perdida ou trocada, as contas continuam existindo e os dados
@@ -107,7 +116,13 @@ node test/todos.mjs
    `claude-opus-5` (volume alto e erro caro), análise cruzada no
    `claude-fable-5` (rara, raciocínio pesado). `test/smoke.mjs` trava a
    escolha — se trocarem, três testes falham.
-8. **Merge de dias por assinatura, não por `Object.assign`.** Juntar nuvem e
+8. **A base de referência é preferencial, não dogma.** Cada item carrega
+   `[FORTE]`/`[ESCOLA]`/`[SECUNDÁRIO]`, a disputa proteína×jejum é declarada em
+   vez de resolvida, e a IA é instruída a discordar da base quando os números
+   da pessoa apontarem outra direção. Ela entra no prompt de TODAS as contas:
+   **nada de dado clínico individual ali** — o `smoke.mjs` falha se algo
+   individual reaparecer, ou se a base perder um domínio.
+9. **Merge de dias por assinatura, não por `Object.assign`.** Juntar nuvem e
    aparelho comparando `foodId|gramas|refeição|texto` foi o que impediu perder
    itens quando o mesmo dia foi editado em dois lugares.
 
@@ -124,6 +139,8 @@ data/                         geração da base, servidor local, recorte do íco
 test/todos.mjs                roda TUDO com um comando
 test/_comum.mjs               entrar pelo portão, conta descartável
 fase2-proxy/src/index.js      o Worker (contas, dados, visão, laudos, análise)
+fase2-proxy/src/conhecimento.js  base de referência consultada pela IA
+docs/REFERENCIAS.md           de onde vem cada afirmação da base
 fase2-proxy/dev-server.mjs    o Worker REAL em Node, com Anthropic simulada
 docs/FASE-2-FOTO.md           arquitetura, rotas, custos e deploy
 ```
@@ -151,6 +168,16 @@ docs/FASE-2-FOTO.md           arquitetura, rotas, custos e deploy
 ---
 
 # Histórico (mais recente primeiro)
+
+## 2026-08-16 — Base de referência de longevidade e envio ao Open Brain
+- Chegaram por patch (commits 4 e 5 de uma frente paralela) e foram ampliados
+  aqui a partir dos documentos originais: faltava neurodegeneração inteira
+  (APOE4, "diabetes tipo 3"), índice de vulnerabilidade metabólica, testes de
+  função e autonomia, e vários itens de hormônio e suplementação.
+- O documento hormonal de origem é clínico e INDIVIDUAL; só a parte técnica
+  generalizável entrou. Teste no smoke falha se dado individual reaparecer.
+- Open Brain: retrato semanal + um pensamento por exame novo, desligado por
+  padrão, com livro-caixa no KV para nunca duplicar (a API não tem apagar).
 
 ## 2026-08-16 — Duas frentes mescladas e suíte de volta ao verde
 - Duas conversas mexeram no app ao mesmo tempo. A mesclagem não deu conflito,
