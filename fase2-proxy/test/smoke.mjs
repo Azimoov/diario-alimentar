@@ -10,6 +10,7 @@ const CHAVE_BOA = "sk-ant-api03-CHAVE-DE-TESTE-VALIDA-0000000000";
 const CHAVE_RUIM = "sk-ant-api03-CHAVE-DE-TESTE-REVOGADA-000000";
 
 // --- mock da API /v1/messages ---------------------------------------------
+let ultimoSystem = "";   // guarda o system prompt recebido, p/ inspeção nos testes
 const mock = createServer((req, res) => {
   // validação de chave (GET /v1/models): aceita só a chave "boa" do teste
   if (req.method === "GET" && req.url.startsWith("/v1/models")) {
@@ -24,6 +25,7 @@ const mock = createServer((req, res) => {
     const body = JSON.parse(data || "{}");
     // detecta o modo pelo system prompt que o worker enviou
     const sys = String(body.system || "");
+    ultimoSystem = sys;
     const isRotulo = sys.includes("tabelas nutricionais");
     const isAnalise = sys.includes("dados de saúde PESSOAIS");
     const isChat = sys.includes("responde perguntas de UMA pessoa");
@@ -335,6 +337,33 @@ mock.listen(MOCK_PORT, async () => {
       body: JSON.stringify({ dados: DADOS_CHAT, mensagens: [{ role: "user", text: "x".repeat(200_001) }] }),
     }), ENV), 413);
     await check("conversa GET bloqueado", worker.fetch(chatReq({ method: "GET" }), ENV), 405);
+    // ---- base de conhecimento (referências de longevidade) ----
+    // O mock devolve temDados=true só quando o system traz os dados da pessoa;
+    // aqui conferimos que a BASE também viaja, e com as travas de uso.
+    {
+      const ok = (nome, cond, extra) => {
+        console.log(`${cond ? "PASS" : "FAIL"}  ${nome}${!cond && extra ? " (" + extra + ")" : ""}`);
+        if (!cond) failed++;
+      };
+      await worker.fetch(chatReq(), ENV);
+      const sysChat = ultimoSystem;
+      await worker.fetch(anReq(), ENV);
+      const sysAnalise = ultimoSystem;
+
+      ok("base de referência chega na conversa", /BASE DE REFERÊNCIA/.test(sysChat));
+      ok("base chega também na análise", /BASE DE REFERÊNCIA/.test(sysAnalise));
+      ok("manda respeitar o peso de evidência", /\[ESCOLA\]/.test(sysChat) && /peso de evid|etiquetas de evid/i.test(sysChat));
+      ok("manda discordar quando for o caso (não ser eco)", /Não seja eco/.test(sysChat) && /Discorde dela/.test(sysChat));
+      ok("registra a disputa proteína/jejum em vez de fingir consenso", /DISCORDAM frontalmente/.test(sysChat));
+      ok("proíbe inventar acesso à internet e links", /NÃO tem acesso à internet/.test(sysChat));
+      ok("separa alvo de otimização de faixa de laboratório", /não é faixa de referência de laborat/i.test(sysChat));
+      ok("mantém os dados da pessoa junto da base", /DADOS DA PESSOA/.test(sysChat));
+      // PRIVACIDADE: a base entra no prompt de TODAS as contas. O documento de
+      // origem sobre TRT era personalizado; nada clínico individual pode ter
+      // sobrado nele, senão vaza de um usuário para os outros.
+      ok("base NÃO carrega dado clínico individual",
+        !/AndroGel|falência testicular|41 anos|Você não tem PSA|seu caso/i.test(sysChat));
+    }
     {
       // cota do chat é SEPARADA da análise: uma conversa longa não pode
       // consumir as análises do dia

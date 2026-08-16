@@ -13,6 +13,7 @@
 // chamadas de navegador; limite de tamanho/tipo de imagem; rate-limit por IP.
 
 import Anthropic from "@anthropic-ai/sdk";
+import { CONHECIMENTO, INSTRUCAO_CONHECIMENTO } from "./conhecimento.js";
 
 // Saída estruturada: o modelo é OBRIGADO a devolver JSON neste formato.
 const SCHEMA = {
@@ -328,7 +329,7 @@ async function handleAnalyze(request, env, json, uid) {
       model: env.CLAUDE_MODEL_ANALISE || "claude-fable-5",
       max_tokens: 3000,
       thinking: { type: "adaptive" },
-      system: SYSTEM_ANALISE,
+      system: SYSTEM_ANALISE + INSTRUCAO_CONHECIMENTO + "\n\n" + CONHECIMENTO,
       messages: [{ role: "user", content: "DADOS (JSON):\n" + texto }],
     });
   } catch (err) {
@@ -441,7 +442,9 @@ async function handleChat(request, env, json, uid) {
       thinking: { type: "adaptive" },
       // os dados entram no system, não como mensagem: assim o histórico da
       // conversa fica só com o que a pessoa e a IA disseram
-      system: SYSTEM_CHAT + "\n\nDADOS DA PESSOA (JSON):\n" + texto,
+      system: SYSTEM_CHAT + INSTRUCAO_CONHECIMENTO
+        + "\n\n" + CONHECIMENTO
+        + "\n\nDADOS DA PESSOA (JSON):\n" + texto,
       messages: mensagens,
     });
   } catch (err) {
