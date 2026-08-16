@@ -195,6 +195,7 @@ window.Auth = (function () {
   // a checagem inicial do app, que compara as datas e, na dúvida, pergunta.
   let timer = null;
   let pendente = false;
+  let enviando = false;
   let liberado = false;
   function agendarEnvio() {
     if (!logado()) return;
@@ -203,7 +204,9 @@ window.Auth = (function () {
     clearTimeout(timer);
     timer = setTimeout(async () => {
       pendente = false;
+      enviando = true;
       try { await enviarDados(); } catch (e) { pendente = true; /* tenta na próxima edição */ }
+      enviando = false;
       if (window.App && window.App.atualizarStatusConta) window.App.atualizarStatusConta();
     }, 3000);
   }
@@ -212,7 +215,10 @@ window.Auth = (function () {
     if (pendente) agendarEnvio();
   }
   function travarEnvio() { liberado = false; clearTimeout(timer); }
-  function temPendencia() { return pendente; }
+  // Enquanto o PUT está no ar ainda NÃO está sincronizado: dizer "☁ salvo" aí
+  // é mentira que só aparece quando a pessoa fecha o app no meio e perde o
+  // envio. Por isso `enviando` conta como pendência.
+  function temPendencia() { return pendente || enviando; }
 
   // token de recuperação vindo do link do e-mail (#recuperar=...)
   function tokenDeRecuperacao() {

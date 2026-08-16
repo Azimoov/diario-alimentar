@@ -26,7 +26,14 @@ window.Store = (function () {
       examReminders: [],    // [{id, name, norm, kind:'lab'|'img', months, baseDate}] — "repetir a cada N meses"
       // ---- área Métricas de saúde (Apple Health) ----
       health: { daily: {}, lastImportAt: null }, // daily: 'YYYY-MM-DD' -> {steps, distKm, kcalOut, kcalBasal, exMin, hrRest, hrv, vo2max, sleepMin}
-      analysis: null,       // {at, text, modelo} — última análise IA (guardada p/ reler offline)
+      // ---- área IA ----
+      // Histórico COMPLETO das análises (a mais recente primeiro). Antes só a
+      // última era guardada, num campo `analysis`; a migração no load() move
+      // aquela análise para cá, então quem já usava não perde a que tinha.
+      analyses: [],         // [{id, at, text, modelo}]
+      // Conversa com a IA sobre os próprios dados. Uma conversa corrente por
+      // aparelho; "nova conversa" arquiva a atual limpando esta lista.
+      chat: { mensagens: [] }, // [{role:'user'|'assistant', text, at}]
       customFoods: [],      // {id:'c1', name, kcal, prot, carb, fat, fiber}
       sharedFoods: [],      // cache da base COMUM (compartilhada via proxy)
       // Fase 2 (foto): endereço do SEU proxy + senha do app. A chave da API
@@ -67,6 +74,16 @@ window.Store = (function () {
     state.health.daily = state.health.daily || {};
     state.customFoods = state.customFoods || [];
     state.sharedFoods = state.sharedFoods || [];
+    // análises: campo único antigo (`analysis`) vira o primeiro item da lista.
+    // Roda uma vez só: depois de migrar, o campo antigo é apagado.
+    state.analyses = state.analyses || [];
+    if (state.analysis && state.analysis.text) {
+      const jaTem = state.analyses.some(a => a.at === state.analysis.at);
+      if (!jaTem) state.analyses.unshift(Object.assign({ id: 'a' + Date.parse(state.analysis.at || '') }, state.analysis));
+    }
+    delete state.analysis;
+    state.chat = Object.assign({ mensagens: [] }, state.chat || {});
+    state.chat.mensagens = state.chat.mensagens || [];
     state.settings = Object.assign({}, d.settings, state.settings || {});
     state.settings.account = Object.assign({}, d.settings.account, state.settings.account || {});
     return state;
@@ -202,6 +219,18 @@ window.Store = (function () {
       mergeById(state.labExams, incoming.labExams);
       mergeById(state.imgExams, incoming.imgExams);
       mergeById(state.examReminders, incoming.examReminders);
+      // análises: juntam-se por id e voltam à ordem "mais recente primeiro".
+      // Sem isto, "Juntar os dois" descartaria em silêncio as análises feitas
+      // no outro aparelho.
+      state.analyses = state.analyses || [];
+      mergeById(state.analyses, incoming.analyses);
+      state.analyses.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+      // Conversa é um FIO: intercalar duas conversas diferentes produziria um
+      // diálogo que nunca aconteceu. Ficamos com a mais longa — a mais
+      // completa — em vez de misturar as duas.
+      const msgsVindas = ((incoming.chat || {}).mensagens) || [];
+      state.chat = state.chat || { mensagens: [] };
+      if (msgsVindas.length > (state.chat.mensagens || []).length) state.chat = { mensagens: msgsVindas };
       if (incoming.health && incoming.health.daily) {
         state.health.daily = Object.assign({}, state.health.daily, incoming.health.daily);
         if (incoming.health.lastImportAt) state.health.lastImportAt = incoming.health.lastImportAt;

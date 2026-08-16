@@ -7,7 +7,9 @@
     "dev": "wrangler dev",
     "dev:local": "node dev-server.mjs",
     "deploy": "wrangler deploy",
-    "test": "node test/smoke.mjs"
+    "test": "node test/smoke.mjs && node test/import-saude.mjs",
+    "test:saude": "node test/import-saude.mjs",
+    "test:ia": "node test/area-ia.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0"

@@ -26,13 +26,20 @@ const mock = createServer((req, res) => {
     const sys = String(body.system || "");
     const isRotulo = sys.includes("tabelas nutricionais");
     const isAnalise = sys.includes("dados de saúde PESSOAIS");
+    const isChat = sys.includes("responde perguntas de UMA pessoa");
     const isLab = sys.includes("laudos de exames laboratoriais");
     const isImg = sys.includes("laudos de exames de imagem");
     // o mock devolve o tipo do anexo recebido p/ o teste conferir que PDF
     // virou bloco "document" e foto virou bloco "image"
     const anexo = ((body.messages || [])[0] || {}).content || [];
     const tipoAnexo = (anexo[0] || {}).type || "?";
-    const texto = isAnalise
+    const texto = isChat
+      // devolve o que recebeu, p/ o teste conferir que o histórico da conversa
+      // chegou inteiro e na ordem certa
+      ? "RESPOSTA DO MOCK · turnos=" + (body.messages || []).length
+        + " · ultima=" + JSON.stringify(((body.messages || []).slice(-1)[0] || {}).content || "")
+        + " · temDados=" + String(sys.includes("DADOS DA PESSOA"))
+      : isAnalise
       ? "VISÃO GERAL\n– Teste local do mock.\n\nEXAMES\n– Sem dados suficientes."
       : isLab
         ? JSON.stringify({
@@ -66,7 +73,7 @@ const mock = createServer((req, res) => {
           });
     const payload = {
       id: "msg_mock", type: "message", role: "assistant",
-      model: body.model || "claude-opus-4-8",
+      model: body.model || "claude-opus-5",
       stop_reason: "end_turn",
       content: [{ type: "text", text: texto }],
       usage: { input_tokens: 1500, output_tokens: 120 },
@@ -97,7 +104,10 @@ const ENV = {
   ANTHROPIC_API_KEY: "sk-ant-teste-falsa",
   ANTHROPIC_BASE_URL: `http://localhost:${MOCK_PORT}`,
   ALLOWED_ORIGINS: "http://localhost:8123,https://azimoov.github.io",
-  CLAUDE_MODEL: "claude-opus-4-8",
+  // dois modelos de propósito: visão/transcrição num, análise cruzada noutro
+  CLAUDE_MODEL: "claude-opus-5",
+  CLAUDE_MODEL_ANALISE: "claude-fable-5",
+  CLAUDE_MODEL_CHAT: "claude-opus-5",
   TIMEZONE: "America/Sao_Paulo",
   PHOTO_DAILY_LIMIT: "60",
   // contas
@@ -164,7 +174,11 @@ mock.listen(MOCK_PORT, async () => {
     await check("caminho feliz", worker.fetch(req(), ENV), 200, (res, body) =>
       (Array.isArray(body.itens) && body.itens.length === 3
         && body.itens[0].nome === "arroz branco cozido" && body.itens[0].gramas === 150
-        && body.modelo === "claude-opus-4-8") || "payload inesperado");
+        && body.modelo === "claude-opus-5") || "payload inesperado");
+    // contrapartida da trava da análise: a visão NÃO pode migrar para o
+    // modelo da análise sem que alguém decida isso explicitamente
+    await check("foto continua no modelo de visão", worker.fetch(req(), ENV), 200,
+      (res, body) => body.modelo === ENV.CLAUDE_MODEL || "foto trocou de modelo: " + body.modelo);
     await check("GET bloqueado (foto)", worker.fetch(req({ method: "GET", body: null }), ENV), 405);
 
     // ---- multiusuário ----
@@ -243,7 +257,16 @@ mock.listen(MOCK_PORT, async () => {
     });
     await check("análise caminho feliz", worker.fetch(anReq(), ENV), 200, (res, body) =>
       (typeof body.analise === "string" && body.analise.includes("VISÃO GERAL")
-        && body.modelo === "claude-opus-4-8") || "payload de análise inesperado");
+        && body.modelo === "claude-fable-5") || "payload de análise inesperado");
+    // A análise tem modelo PRÓPRIO: é o raciocínio pesado do app, com entrada
+    // já resumida e chamada rara, então usa o modelo mais forte. A visão fica
+    // no Opus — lá o volume é alto e o erro de transcrição é caro. Sem estas
+    // duas travas, uma refatoração volta a juntar os dois sem ninguém notar.
+    await check("análise NÃO usa o modelo de visão", worker.fetch(anReq(), ENV), 200,
+      (res, body) => body.modelo !== ENV.CLAUDE_MODEL || "análise caiu no modelo de visão");
+    await check("análise cai no padrão quando a variável não existe",
+      worker.fetch(anReq(), { ...ENV, CLAUDE_MODEL_ANALISE: undefined }), 200,
+      (res, body) => body.modelo === "claude-fable-5" || "padrão da análise mudou: " + body.modelo);
     await check("análise sem dados", worker.fetch(anReq({ body: JSON.stringify({}) }), ENV), 400);
     await check("análise GET bloqueado", worker.fetch(anReq({ method: "GET" }), ENV), 405);
     await check("análise resumo grande demais", worker.fetch(anReq({
@@ -251,13 +274,78 @@ mock.listen(MOCK_PORT, async () => {
     }), ENV), 413);
     {
       const usadas = parseInt(kvStore.get("analises:" + hoje) || "0", 10);
-      const ok = usadas === 1; // só o caminho feliz consome cota
+      // 3 análises bem-sucedidas acima (caminho feliz + as duas travas de
+      // modelo); as recusadas por erro não podem consumir cota
+      const ok = usadas === 3;
       console.log(`${ok ? "PASS" : "FAIL"}  contador de análises incrementa -> ${usadas}`);
       if (!ok) failed++;
     }
     kvStore.set("analises:" + hoje, "20");
     await check("análise limite diário", worker.fetch(anReq(), ENV), 429);
     kvStore.delete("analises:" + hoje);
+
+    // ---- conversa sobre os próprios dados (/chat) ----
+    const DADOS_CHAT = { perfil: { idade: 40 }, examesLaboratoriais: [] };
+    const chatReq = (opts = {}) => new Request("https://proxy.example/chat", {
+      method: opts.method || "POST",
+      headers: { "Content-Type": "application/json", Origin: ORIGIN, "X-App-Token": opts.token || "token-teste" },
+      body: opts.method === "GET" ? undefined : (opts.body !== undefined ? opts.body : JSON.stringify({
+        dados: DADOS_CHAT,
+        mensagens: [{ role: "user", text: "minha proteína está suficiente?" }],
+      })),
+    });
+    await check("conversa caminho feliz", worker.fetch(chatReq(), ENV), 200, (res, body) =>
+      (typeof body.resposta === "string" && body.resposta.includes("RESPOSTA DO MOCK"))
+      || "payload de conversa inesperado");
+    // o chat tem modelo PRÓPRIO: perguntar é frequente, então não usa o
+    // modelo caro da análise nem se confunde com o da visão
+    await check("conversa usa o modelo do chat", worker.fetch(chatReq(), ENV), 200,
+      (res, body) => body.modelo === "claude-opus-5" || "modelo errado no chat: " + body.modelo);
+    await check("conversa NÃO usa o modelo da análise", worker.fetch(chatReq(), ENV), 200,
+      (res, body) => body.modelo !== ENV.CLAUDE_MODEL_ANALISE || "chat caiu no modelo da análise");
+    await check("conversa cai no padrão sem a variável",
+      worker.fetch(chatReq(), { ...ENV, CLAUDE_MODEL_CHAT: undefined }), 200,
+      (res, body) => body.modelo === "claude-opus-5" || "padrão do chat mudou: " + body.modelo);
+    // o que faz a conversa ser conversa: o histórico inteiro vai junto, na
+    // ordem, e os dados de saúde viajam no system (não como mensagem)
+    await check("histórico da conversa chega inteiro e na ordem", worker.fetch(chatReq({
+      body: JSON.stringify({
+        dados: DADOS_CHAT,
+        mensagens: [
+          { role: "user", text: "e o colesterol?" },
+          { role: "assistant", text: "resposta anterior" },
+          { role: "user", text: "e agora?" },
+        ],
+      }),
+    }), ENV), 200, (res, body) =>
+      (body.resposta.includes("turnos=3") && body.resposta.includes('ultima="e agora?"')
+        && body.resposta.includes("temDados=true")) || "histórico não chegou certo: " + body.resposta);
+    await check("conversa sem dados -> 400", worker.fetch(chatReq({
+      body: JSON.stringify({ mensagens: [{ role: "user", text: "oi" }] }),
+    }), ENV), 400);
+    await check("conversa sem pergunta -> 400", worker.fetch(chatReq({
+      body: JSON.stringify({ dados: DADOS_CHAT, mensagens: [] }),
+    }), ENV), 400);
+    // se a última mensagem é da IA, não há o que responder — sinal de bug no
+    // app (mandou a conversa sem a pergunta nova)
+    await check("última mensagem tem que ser sua -> 400", worker.fetch(chatReq({
+      body: JSON.stringify({ dados: DADOS_CHAT, mensagens: [{ role: "assistant", text: "oi" }] }),
+    }), ENV), 400);
+    await check("conversa longa demais -> 413", worker.fetch(chatReq({
+      body: JSON.stringify({ dados: DADOS_CHAT, mensagens: [{ role: "user", text: "x".repeat(200_001) }] }),
+    }), ENV), 413);
+    await check("conversa GET bloqueado", worker.fetch(chatReq({ method: "GET" }), ENV), 405);
+    {
+      // cota do chat é SEPARADA da análise: uma conversa longa não pode
+      // consumir as análises do dia
+      const analisesAntes = parseInt(kvStore.get("analises:" + hoje) || "0", 10);
+      kvStore.set("chats:" + hoje, "100");
+      await check("conversa limite diário", worker.fetch(chatReq(), ENV), 429);
+      kvStore.delete("chats:" + hoje);
+      const ok = parseInt(kvStore.get("analises:" + hoje) || "0", 10) === analisesAntes;
+      console.log(`${ok ? "PASS" : "FAIL"}  conversa não consome a cota de análises`);
+      if (!ok) failed++;
+    }
 
     // =====================================================================
     // CONTAS: cadastro, login, sessão, dados na nuvem e recuperação

@@ -55,6 +55,23 @@ originais) e os scripts `data/*.mjs` **não são necessários** para o site
 funcionar — servem para reproduzir/atualizar a base. Pode mantê-los no repo
 para transparência ou removê-los do deploy, à sua escolha.
 
+### Versão dos assets — suba o número a cada publicação
+
+No `index.html`, o CSS e os nove scripts locais são carregados com uma marca de
+versão: `href="app.css?v=1"`, `src="js/app.js?v=1"`. **Toda publicação que mexa
+em qualquer arquivo `.js` ou no `app.css` precisa incrementar esse número — o
+mesmo número em todos os dez.**
+
+Sem isso o navegador continua servindo o arquivo antigo do cache, e a correção
+publicada parece uma correção que não funcionou. Já aconteceu duas vezes com o
+iPhone e custou uma rodada inteira de diagnóstico em falso. Um único número
+compartilhado (em vez de um por arquivo) é proposital: assim não existe o estado
+meio-atualizado, em que um script novo conversa com um antigo.
+
+A numeração é manual porque o projeto não tem build — os arquivos são servidos
+direto e o app precisa continuar abrindo por `file://` (a query string não
+atrapalha isso). **Não introduza um bundler só para gerar esse número.**
+
 ---
 
 ## Fontes da base de alimentos (6.273 itens)
@@ -114,12 +131,15 @@ em `data/source*` e rode `node data/build-db.mjs`. Não edite `js/db.js` à mão
   receita (pesados crus, correto) também não.
 - **Média móvel de 7 dias** no gráfico de peso: o peso diário oscila ±1 kg por
   água/glicogênio; a linha de tendência é o sinal que importa.
-- **Composição corporal (opcional)** — junto do peso, na aba Hoje, dá para
-  registrar **% de gordura** e **% de massa magra** (da balança de
-  bioimpedância ou avaliação física). Com o peso do dia preenchido o app
-  mostra o equivalente em kg, e cada série vira um gráfico próprio no
+- **Composição corporal (opcional)** — junto do peso, no topo da aba
+  **❤️ Métricas**, dá para registrar **% de gordura** e **% de massa magra** (da
+  balança de bioimpedância ou avaliação física). Com o peso do dia preenchido o
+  app mostra o equivalente em kg, e cada série vira um gráfico próprio no
   Histórico. Nada é derivado sozinho: só entra o que você medir, e se
   gordura + massa magra somarem mais de 100% o app avisa.
+- **O cartão de peso tem data própria** (padrão: hoje), independente do dia
+  aberto no Diário — a aba Métricas não tem navegação de data, e sem isso
+  registrar a pesagem de ontem exigiria voltar ao Diário para mudar o dia.
 
 ## Como o app calcula a meta
 
@@ -240,13 +260,24 @@ tudo; digitar o nome exato da receita casa direto, sem pedir confirmação.
 
 ## Métricas de saúde — importar do app Saúde (iPhone)
 
-Área **❤️ Métricas**: no iPhone, app Saúde → sua foto de perfil →
-**“Exportar Todos os Dados de Saúde”** → escolha o `export.zip` aqui (ou o
-`export.xml`, se preferir descompactar no app Arquivos). O arquivo é lido em
+Área **❤️ Métricas**: o primeiro cartão é **peso e composição corporal** (o
+que se digita toda semana, na mão); o resto da aba vem do iPhone. Para importar:
+no iPhone, app Saúde → sua foto de perfil →
+**“Exportar Todos os Dados de Saúde”** → escolha o arquivo aqui (ou o XML
+solto, se preferir descompactar no app Arquivos). O arquivo é lido em
 **streaming, neste aparelho** (o zip é aberto com `DecompressionStream`
 nativo — sem biblioteca, sem upload), e vira **métricas diárias compactas**:
 passos, distância, energia ativa/basal, minutos de exercício, sono, FC de
 repouso, variabilidade (HRV) e VO₂máx.
+
+- **Funciona em qualquer idioma do iPhone.** A Apple traduz o nome do arquivo
+  (em português o export sai como `exportar.zip`, com o XML traduzido dentro),
+  então o app **não procura pelo nome**: ele lê o índice do zip e identifica o
+  arquivo certo pelo conteúdo (a raiz `<HealthData`, que não é traduzida).
+  Isso também descarta sozinho o export clínico (CDA), que vem no mesmo zip.
+  Coberto por `fase2-proxy/test/import-saude.mjs` (`npm run test:saude`), que
+  monta exports sintéticos em vários idiomas — roda sem servidor e sem
+  navegador.
 
 - **Sem dupla contagem:** iPhone e Watch registram passos/energia em
   paralelo; em cada dia o app soma por fonte e usa a MAIOR — aproximação
@@ -266,6 +297,32 @@ IA e devolve uma leitura em texto puro: visão geral, evolução de exames,
 cruzamentos, o que levar ao médico e lacunas. A resposta fica guardada para
 reler offline. **Não é diagnóstico.** Proteções: mesma senha do app,
 rate-limit e limite diário próprio (`ANALYSIS_DAILY_LIMIT`, padrão 20/dia).
+
+## Área 💬 IA — conversa e análises guardadas
+
+Quarta área na barra de cima, com duas abas:
+
+- **Conversa** — caixa de texto para perguntas pontuais sobre os próprios
+  dados (`POST /chat`): *“minha proteína está suficiente?”*, *“o que mudou
+  nos meus exames no último ano?”*. A IA recebe o MESMO resumo numérico da
+  análise e **o fio da conversa** (últimas 30 mensagens), então dá para
+  emendar sem repetir contexto. Modelo próprio (`CLAUDE_MODEL_CHAT`, padrão
+  `claude-opus-5`): perguntar é bem mais frequente que analisar, e aqui o
+  volume é que manda. Cota diária separada (`CHAT_DAILY_LIMIT`, padrão 100)
+  para uma conversa longa não consumir as análises do dia.
+- **Análises** — todas as análises já geradas, da mais recente para a mais
+  antiga, com leitura expansível e opção de apagar uma a uma. Antes o app
+  guardava só a última (campo `analysis`); agora é uma lista (`analyses`) e
+  a migração no `Store.load()` move a análise antiga para o topo dela — quem
+  já usava não perde nada.
+
+Conversa e análises entram no backup da conta e contam como dados locais na
+hora de resolver conflito entre aparelhos: quem só tivesse essas duas coisas
+não corre o risco de a nuvem sobrescrevê-las em silêncio. Ao “juntar os
+dois”, análises são mescladas por id e a conversa mantida é a mais longa —
+intercalar dois fios produziria um diálogo que nunca aconteceu.
+
+Coberto por `fase2-proxy/test/area-ia.mjs` (`npm run test:ia`).
 
 ## Conta e login (recomendado) — nunca mais perder dados
 
@@ -289,6 +346,16 @@ tudo**. Com conta, você entra com e-mail e senha e o histórico volta.
 - **Conflito nunca é resolvido no escuro.** Se o aparelho e a nuvem tiverem
   versões diferentes, o app pergunta: juntar (padrão, não descarta nada),
   usar a da nuvem, ou usar a do aparelho.
+- **…mas só pergunta quando há diferença de verdade.** Um envio que chega ao
+  servidor e cuja resposta não volta (app fechado no meio, aparelho dormiu)
+  deixa a nuvem com data mais nova e o aparelho com o `lastSyncAt` velho, sem
+  nenhuma diferença real. Antes de perguntar, o app compara os dois estados
+  byte a byte; se forem iguais, adota a data da nuvem e segue calado. Alarme
+  falso repetido ensina a clicar sem ler justamente no único modal que
+  precisa ser lido.
+- **“Salvo na nuvem” só depois que o servidor confirma.** Enquanto o envio
+  está no ar, o chip do topo continua em `↻` — dizer `☁` antes da resposta é
+  uma mentira que só aparece quando a pessoa fecha o app no meio.
 
 ### O trade-off, dito com clareza
 

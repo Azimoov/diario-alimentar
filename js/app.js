@@ -4,6 +4,9 @@
 window.App = (function () {
   let S;            // estado (Store)
   let currentDate;  // 'YYYY-MM-DD' visível na aba Hoje
+  // O cartão de peso vive na aba Métricas, que não tem navegação de data — por
+  // isso ele carrega a sua própria, independente do dia aberto no Diário.
+  let pesoDate;     // 'YYYY-MM-DD' do cartão de peso/composição
 
   // ---------- utilidades ----------
   function isoLocal(d) {
@@ -107,6 +110,7 @@ window.App = (function () {
     S = window.Store.load();
     window.Parser.setFoods(window.Store.combinedFoods());
     currentDate = isoLocal(new Date());
+    pesoDate = currentDate;
     // Se o app JÁ ESTÁ ABERTO e a pessoa toca no link do e-mail, o navegador
     // só troca o #hash — não recarrega nada. Sem isto, o link "não faz nada".
     window.addEventListener('hashchange', tratarLinkDeRecuperacao);
@@ -278,12 +282,14 @@ window.App = (function () {
     renderExLab();
     renderExImg();
     renderSaude();
+    renderConversa();
+    renderAnalises();
     updateNavBadges();
   }
 
-  // ---- navegação em dois níveis: área (Diário · Exames · Métricas) + abas ----
+  // ---- navegação em dois níveis: área (Diário · Exames · Métricas · IA) + abas ----
   let currentApp = 'diario';
-  const APP_TAB = { diario: 'hoje', exames: 'exlab', saude: 'saude' }; // aba lembrada por área
+  const APP_TAB = { diario: 'hoje', exames: 'exlab', saude: 'saude', ia: 'conversa' }; // aba lembrada por área
   function bindTabs() {
     document.querySelectorAll('.app-btn').forEach(btn => {
       btn.addEventListener('click', () => { currentApp = btn.dataset.app; applyNav(); });
@@ -828,9 +834,6 @@ window.App = (function () {
       });
     }
     root.appendChild(list);
-
-    // ----- peso do dia -----
-    root.appendChild(renderWeightInput());
   }
 
   function renderItem(item, idx) {
@@ -984,14 +987,14 @@ window.App = (function () {
   }
 
   function renderWeightInput() {
-    const pct = () => S.bodyComp[currentDate] || {};
+    const pct = () => S.bodyComp[pesoDate] || {};
     const fmt1 = v => String(round(v, 1)).replace('.', ',');
 
     // linha derivada: com o peso do dia + %, mostra o equivalente em kg — só
     // do que foi preenchido (não derivamos massa magra de 100−gordura sozinhos)
     const derived = h('p', { class: 'hint comp-derived' });
     function updateDerived() {
-      const w = S.weights[currentDate], c = pct();
+      const w = S.weights[pesoDate], c = pct();
       const parts = [];
       if (w > 0 && c.fat != null) parts.push('≈ ' + fmt1(w * c.fat / 100) + ' kg de gordura');
       if (w > 0 && c.lean != null) parts.push('≈ ' + fmt1(w * c.lean / 100) + ' kg de massa magra');
@@ -1013,8 +1016,8 @@ window.App = (function () {
       const entry = Object.assign({}, pct());
       if (v == null) delete entry[key];
       else entry[key] = v;
-      if (entry.fat == null && entry.lean == null) delete S.bodyComp[currentDate];
-      else S.bodyComp[currentDate] = entry;
+      if (entry.fat == null && entry.lean == null) delete S.bodyComp[pesoDate];
+      else S.bodyComp[pesoDate] = entry;
       window.Store.save(); updateDerived(); renderHist();
     }
     function numField(label, value, attrs, on) {
@@ -1028,20 +1031,34 @@ window.App = (function () {
       ]);
     }
 
+    // A data é do cartão, não do Diário: quem pesa hoje e só registra amanhã
+    // precisa dizer de que dia é o número, sem sair da aba.
+    const hoje = isoLocal(new Date());
+    const dataRow = h('div', { class: 'peso-data' }, [
+      h('label', { class: 'lbl' }, 'Data da pesagem'),
+      h('input', {
+        type: 'date', value: pesoDate, max: hoje, class: 'date-input',
+        onchange: e => { pesoDate = e.target.value || pesoDate; renderSaude(); },
+      }),
+      pesoDate === hoje ? null
+        : h('button', { class: 'link-btn', onclick: () => { pesoDate = hoje; renderSaude(); } }, 'hoje'),
+    ]);
+
     const card = h('div', { class: 'card weight-card' }, [
       h('h3', {}, 'Peso e composição corporal'),
+      dataRow,
       h('div', { class: 'comp-grid' }, [
-        numField('Peso (kg)', S.weights[currentDate], { placeholder: 'ex.: 82.4' }, raw => {
+        numField('Peso (kg)', S.weights[pesoDate], { placeholder: 'ex.: 82.4' }, raw => {
           const v = parseNum(raw);
-          if (v == null) delete S.weights[currentDate];
-          else S.weights[currentDate] = v;
+          if (v == null) delete S.weights[pesoDate];
+          else S.weights[pesoDate] = v;
           window.Store.save(); updateDerived(); renderHist();
         }),
         numField('Gordura (%)', pct().fat, { max: '100', placeholder: 'ex.: 24.5' }, raw => setPct('fat', raw)),
         numField('Massa magra (%)', pct().lean, { max: '100', placeholder: 'ex.: 72' }, raw => setPct('lean', raw)),
       ]),
       derived,
-      h('p', { class: 'hint' }, 'Valores de ' + fmtBR(currentDate) + ' — opcionais, registre quando medir. Gordura e massa magra: da balança de bioimpedância ou avaliação física.'),
+      h('p', { class: 'hint' }, 'Valores de ' + fmtBR(pesoDate) + ' — opcionais, registre quando medir. Gordura e massa magra: da balança de bioimpedância ou avaliação física.'),
     ]);
     updateDerived();
     return card;
@@ -1085,7 +1102,7 @@ window.App = (function () {
     root.appendChild(h('div', { class: 'card' }, [
       h('h3', {}, 'Peso corporal'),
       window.Charts.lineChart(weightSeries, {
-        color: 'var(--g)', unit: ' kg', decimals: 1, empty: 'Registre seu peso na aba Hoje',
+        color: 'var(--g)', unit: ' kg', decimals: 1, empty: 'Registre seu peso na aba Métricas',
         width: 1.5, lineOpacity: 0.4, pointR: 3,
         extra: weightSeries.length >= 3 ? [{ series: weightMA, color: 'var(--accent)', width: 2.5 }] : [],
       }),
@@ -1431,6 +1448,7 @@ window.App = (function () {
     S = window.Store.reset();
     refreshFoods();
     currentDate = isoLocal(new Date());
+    pesoDate = currentDate;
     renderAll();
   }
 
@@ -1899,6 +1917,10 @@ window.App = (function () {
     const root = $('#tab-saude');
     if (!root) return;
     clear(root);
+    // peso e composição primeiro: é o que se digita toda semana, enquanto o
+    // import do app Saúde é raro — quem entra aqui todo dia não deve rolar
+    // um cartão de instruções para chegar ao campo
+    root.appendChild(renderWeightInput());
     root.appendChild(renderHealthImport());
     const dates = Object.keys(S.health.daily || {}).sort();
     if (dates.length) {
@@ -1921,7 +1943,7 @@ window.App = (function () {
       type: 'file', accept: '.zip,.xml,application/zip,text/xml,application/xml', style: 'display:none',
       onchange: e => { const f = e.target.files[0]; e.target.value = ''; if (f) doImport(f); },
     });
-    const pickBtn = h('button', { class: 'btn primary', onclick: () => fileIn.click() }, '📂 Escolher export.zip (ou export.xml)');
+    const pickBtn = h('button', { class: 'btn primary', onclick: () => fileIn.click() }, '📂 Escolher o arquivo do export');
 
     async function doImport(file) {
       if (healthImporting) return;
@@ -1947,7 +1969,7 @@ window.App = (function () {
       } catch (err) {
         healthImporting = false;
         pickBtn.disabled = false;
-        pickBtn.textContent = '📂 Escolher export.zip (ou export.xml)';
+        pickBtn.textContent = '📂 Escolher o arquivo do export';
         track.style.display = 'none';
         toast('Não consegui importar: ' + err.message, 'error');
       }
@@ -1958,7 +1980,7 @@ window.App = (function () {
       h('p', { class: 'note' }, 'Passos, energia, sono, FC de repouso, VO₂máx e mais — do Apple Watch e do iPhone — para cruzar com a dieta e os exames. O arquivo é processado NESTE aparelho; nada sobe para servidor nenhum.'),
       h('ol', { class: 'import-steps' }, [
         h('li', {}, 'No iPhone, abra o app Saúde e toque na sua foto de perfil (canto superior direito).'),
-        h('li', {}, 'Toque em “Exportar Todos os Dados de Saúde” e salve o export.zip (em Arquivos).'),
+        h('li', {}, 'Toque em “Exportar Todos os Dados de Saúde” e salve o arquivo (em Arquivos). Com o iPhone em português ele se chama exportar.zip; em inglês, export.zip — os dois servem.'),
         h('li', {}, 'Volte aqui e escolha o arquivo — exports grandes levam 1–2 minutos.'),
       ]),
       h('div', { class: 'exam-form-grid' }, [
@@ -2172,11 +2194,17 @@ window.App = (function () {
           e.semChave = res.status === 402;
           throw e;
         }
-        S.analysis = { at: new Date().toISOString(), text: data.analise || '', modelo: data.modelo || '' };
+        const nova = {
+          id: 'a' + Date.now().toString(36),
+          at: new Date().toISOString(),
+          text: data.analise || '',
+          modelo: data.modelo || '',
+        };
+        S.analyses.unshift(nova);   // mais recente primeiro; nada é sobrescrito
         window.Store.save();
         scheduleBackup();   // a análise também vai p/ a nuvem
-        renderAnalysisInto(out, S.analysis);
-        renderExLab(); renderExImg(); renderSaude(); // atualiza o "ver última" dos cards
+        renderAnalysisInto(out, nova);
+        renderExLab(); renderExImg(); renderSaude(); renderAnalises();
       } catch (err) {
         out.appendChild(h('p', { class: 'note', style: 'color:var(--danger)' }, 'Não consegui analisar: ' + err.message));
         if (err.semChave) {
@@ -2200,12 +2228,172 @@ window.App = (function () {
       h('p', { class: 'note' }, 'Um botão: a IA cruza exames, dieta registrada, peso/composição e métricas do relógio, e devolve pontos de atenção para levar ao médico. Usa o seu proxy (Diário → Dados) — a chave da API nunca fica no app.'),
       h('div', { class: 'btn-row' }, [
         h('button', { class: 'btn primary', onclick: openAnalysisModal }, '🔎 Analisar meus dados'),
-        S.analysis ? h('button', {
+        S.analyses.length ? h('button', {
           class: 'btn',
-          onclick: () => { const box = h('div'); renderAnalysisInto(box, S.analysis); modal('Última análise', box); },
-        }, '📄 Ver última (' + fmtBR(S.analysis.at.slice(0, 10)) + ')') : null,
+          onclick: () => goTo('ia', 'analises'),
+        }, '📄 Ver análises (' + S.analyses.length + ')') : null,
       ]),
     ]);
+  }
+
+  // ================= ÁREA IA (conversa + análises guardadas) =================
+  // A análise responde "como estou no geral?" de uma vez só. A conversa
+  // responde "e sobre o colesterol?" — pontual, e emendando na resposta
+  // anterior. Por isso são duas abas e duas rotas diferentes no proxy.
+
+  // ---- aba Análises: tudo que já foi gerado, do mais novo p/ o mais velho ----
+  function renderAnalises() {
+    const el = $('#tab-analises');
+    if (!el) return;
+    clear(el);
+
+    el.appendChild(h('div', { class: 'card' }, [
+      h('h3', {}, '📄 Análises guardadas'),
+      h('p', { class: 'note' }, 'Cada análise cruza exames, dieta, peso e métricas no momento em que foi gerada — por isso vale guardar: dá para comparar o que mudou entre uma e outra.'),
+      h('div', { class: 'btn-row' }, [
+        h('button', { class: 'btn primary', onclick: openAnalysisModal }, '🔎 Nova análise'),
+      ]),
+    ]));
+
+    if (!S.analyses.length) {
+      el.appendChild(h('p', { class: 'hint' }, 'Nenhuma análise ainda. A primeira leva cerca de um minuto.'));
+      return;
+    }
+
+    S.analyses.forEach((a) => {
+      const corpo = h('div', { hidden: true });
+      let aberto = false;
+      const verBtn = h('button', { class: 'btn' }, 'Ler');
+      verBtn.addEventListener('click', () => {
+        aberto = !aberto;
+        corpo.hidden = !aberto;
+        verBtn.textContent = aberto ? 'Recolher' : 'Ler';
+        if (aberto && !corpo.firstChild) renderAnalysisInto(corpo, a);
+      });
+      el.appendChild(h('div', { class: 'card' }, [
+        h('h3', {}, new Date(a.at).toLocaleString('pt-BR')),
+        h('p', { class: 'hint' }, (a.modelo ? 'modelo ' + a.modelo + ' · ' : '')
+          + Math.max(1, Math.round(a.text.length / 900)) + ' min de leitura'),
+        h('div', { class: 'btn-row' }, [
+          verBtn,
+          h('button', {
+            class: 'link-btn danger',
+            onclick: () => {
+              if (!confirm('Apagar esta análise de ' + new Date(a.at).toLocaleDateString('pt-BR') + '?')) return;
+              S.analyses = S.analyses.filter(x => x !== a);
+              window.Store.save(); scheduleBackup();
+              renderAnalises(); renderExLab(); renderExImg(); renderSaude();
+            },
+          }, 'apagar'),
+        ]),
+        corpo,
+      ]));
+    });
+  }
+
+  // ---- aba Conversa: perguntas pontuais, com o fio da conversa preservado ----
+  let chatEnviando = false;
+  function renderConversa() {
+    const el = $('#tab-conversa');
+    if (!el) return;
+    clear(el);
+
+    const msgs = S.chat.mensagens;
+    const card = h('div', { class: 'card' }, [
+      h('h3', {}, '💬 Perguntar sobre meus dados'),
+      h('p', { class: 'note' }, 'Pergunte o que quiser sobre a sua saúde e nutrição. A IA recebe o mesmo resumo em números da análise — dieta, peso, exames e métricas — e lembra do que já foi dito nesta conversa.'),
+    ]);
+    el.appendChild(card);
+
+    const fio = h('div', { class: 'chat-fio' });
+    if (!msgs.length) {
+      fio.appendChild(h('p', { class: 'hint' }, 'Nenhuma pergunta ainda. Alguns exemplos: “minha proteína está suficiente para o meu peso?”, “o que mudou nos meus exames no último ano?”, “meu sono está atrapalhando o gasto calórico?”'));
+    }
+    msgs.forEach((m) => {
+      fio.appendChild(h('div', { class: 'chat-msg ' + (m.role === 'user' ? 'eu' : 'ia') }, [
+        h('div', { class: 'chat-bolha' }, m.text),
+      ]));
+    });
+    card.appendChild(fio);
+
+    const campo = h('textarea', {
+      class: 'in chat-campo', rows: 3,
+      placeholder: 'Escreva sua pergunta…',
+      disabled: chatEnviando ? 'disabled' : null,
+    });
+    const enviar = h('button', { class: 'btn primary', disabled: chatEnviando ? 'disabled' : null },
+      chatEnviando ? '⏳ pensando…' : 'Perguntar');
+    const aviso = h('p', { class: 'auth-msg' });
+
+    async function perguntar() {
+      const texto = campo.value.trim();
+      if (!texto || chatEnviando) return;
+      if (!window.Auth.podeUsarProxy()) {
+        toast('Para conversar, entre na sua conta (toque em “entrar”, no topo).', 'error');
+        return;
+      }
+      // grava a pergunta ANTES de enviar: se a resposta falhar, o que você
+      // escreveu não se perde junto
+      S.chat.mensagens.push({ role: 'user', text: texto, at: new Date().toISOString() });
+      window.Store.save();
+      chatEnviando = true;
+      renderConversa();
+      try {
+        const res = await fetch(window.Auth.urlProxy('/chat'), {
+          method: 'POST',
+          headers: window.Auth.cabecalhosProxy({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify({
+            dados: buildAnalysisPayload(),
+            mensagens: S.chat.mensagens.map(m => ({ role: m.role, text: m.text })),
+          }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          const e = new Error((data && (data.detail || data.error)) || 'HTTP ' + res.status);
+          e.semChave = res.status === 402;
+          throw e;
+        }
+        S.chat.mensagens.push({
+          role: 'assistant', text: data.resposta || '', at: new Date().toISOString(), modelo: data.modelo || '',
+        });
+        window.Store.save();
+        scheduleBackup();
+        chatEnviando = false;
+        renderConversa();
+      } catch (err) {
+        chatEnviando = false;
+        renderConversa();
+        const box = $('#tab-conversa .auth-msg');
+        if (box) {
+          box.className = 'auth-msg erro';
+          box.textContent = '⚠ ' + err.message
+            + (err.semChave ? ' Cadastre sua chave em Diário → Dados.' : '');
+        }
+      }
+    }
+    enviar.addEventListener('click', perguntar);
+    // Enter envia, Shift+Enter quebra linha (no celular o teclado dá a quebra)
+    campo.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); perguntar(); }
+    });
+
+    card.appendChild(campo);
+    card.appendChild(h('div', { class: 'btn-row' }, [
+      enviar,
+      msgs.length ? h('button', {
+        class: 'btn',
+        onclick: () => {
+          if (!confirm('Começar uma conversa nova? As perguntas e respostas atuais serão apagadas.')) return;
+          S.chat.mensagens = [];
+          window.Store.save(); scheduleBackup();
+          renderConversa();
+        },
+      }, 'Nova conversa') : null,
+    ]));
+    card.appendChild(aviso);
+    card.appendChild(h('p', { class: 'hint' }, 'Não é diagnóstico. A IA responde com base no que VOCÊ registrou — se faltar dado, ela diz o que falta em vez de chutar. Cada pergunta custa centavos na sua conta da Anthropic.'));
+
+    if (chatEnviando) setTimeout(() => { const f = $('#tab-conversa .chat-fio'); if (f) f.scrollTop = f.scrollHeight; }, 0);
   }
 
   // ================= CONTA (login por e-mail) =================
@@ -2236,12 +2424,19 @@ window.App = (function () {
   }
 
   // ---- decide o que fazer quando a nuvem e o aparelho têm dados ----
+  // Serve para decidir se a nuvem pode SOBRESCREVER este aparelho sem
+  // perguntar. Tudo que a pessoa produziu e não quer perder precisa contar
+  // aqui — análises e conversa inclusive: quem só tivesse essas duas coisas
+  // (nenhum dia de diário, nenhum exame) veria a nuvem apagá-las caladamente
+  // ao entrar em outro aparelho.
   function temDadosLocais() {
     return Object.keys(S.days || {}).some(d => (S.days[d].items || []).length)
       || Object.keys(S.weights || {}).length > 0
       || (S.customFoods || []).length > 0
       || (S.labExams || []).length > 0
-      || (S.imgExams || []).length > 0;
+      || (S.imgExams || []).length > 0
+      || (S.analyses || []).length > 0
+      || ((S.chat || {}).mensagens || []).length > 0;
   }
 
   // Resolve o encontro entre o que está aqui e o que está na nuvem.
@@ -2291,6 +2486,22 @@ window.App = (function () {
     const nuvemNova = !c.lastSyncAt || !remoto.updatedAt
       || new Date(remoto.updatedAt) > new Date(c.lastSyncAt);
     if (!nuvemNova) {
+      window.Auth.liberarEnvio();
+      atualizarStatusConta(); diz('');
+      return;
+    }
+
+    // A nuvem é mais NOVA — mas é DIFERENTE? Um envio deste próprio aparelho
+    // que chegou ao servidor e cuja resposta não voltou a tempo (a pessoa
+    // fechou o app, o aparelho dormiu, a rede caiu no meio) grava lá uma data
+    // mais nova sem que o `lastSyncAt` daqui tenha sido atualizado. Perguntar
+    // nesse caso é alarme falso — e ensina a pessoa a clicar sem ler no único
+    // modal que ela precisa mesmo ler. Entre dois estados IGUAIS não há o que
+    // decidir: adota-se a data da nuvem e segue. Comparação byte a byte, com
+    // o mesmo serializador dos dois lados; qualquer diferença cai no modal.
+    if (remoto.state === window.Store.exportJSON({ paraNuvem: true })) {
+      c.lastSyncAt = remoto.updatedAt;
+      window.Store.save();
       window.Auth.liberarEnvio();
       atualizarStatusConta(); diz('');
       return;

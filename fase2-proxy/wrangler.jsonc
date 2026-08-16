@@ -24,14 +24,29 @@
   "vars": {
     // origens autorizadas a chamar o proxy (CORS)
     "ALLOWED_ORIGINS": "https://azimoov.github.io,http://localhost:8123",
-    // modelo de visão; troque se quiser (ex.: claude-sonnet-5 é mais barato)
-    "CLAUDE_MODEL": "claude-opus-4-8",
+    // modelo de VISÃO e transcrição: foto de refeição, rótulo e laudos
+    // (laboratorial e de imagem). Aqui o erro é caro e silencioso — um analito
+    // transcrito errado vira registro permanente, entra no gráfico de evolução
+    // e ainda é lido pela análise depois. Não economize neste.
+    "CLAUDE_MODEL": "claude-opus-5",
+    // modelo da ANÁLISE CRUZADA (/analyze): só texto já resumido, chamada rara
+    // e o trabalho mais pesado de raciocínio do app (cruzar exames, dieta,
+    // peso e métricas). Vale o modelo mais forte: ~US$ 0,19 por análise
+    // contra ~US$ 0,09 no Opus, numa chamada que roda poucas vezes por mês.
+    "CLAUDE_MODEL_ANALISE": "claude-fable-5",
+    // modelo da CONVERSA (/chat): perguntas pontuais sobre os próprios dados.
+    // Muito mais frequente que a análise completa — aqui o volume é que manda,
+    // e o Opus custa metade do Fable por token.
+    "CLAUDE_MODEL_CHAT": "claude-opus-5",
     // fuso p/ contar o dia do limite de fotos
     "TIMEZONE": "America/Sao_Paulo",
     // máx. de fotos analisadas por dia, somando todos os usuários
     "PHOTO_DAILY_LIMIT": "60",
     // máx. de análises inteligentes (/analyze) por dia, somando todos
     "ANALYSIS_DAILY_LIMIT": "20",
+    // máx. de perguntas na conversa por dia (cota separada da análise: uma
+    // conversa longa não pode consumir as análises do dia)
+    "CHAT_DAILY_LIMIT": "100",
     // remetente dos e-mails de recuperação. Precisa ser um domínio verificado
     // no Resend; "onboarding@resend.dev" só envia para o seu próprio e-mail.
     "MAIL_FROM": "Highlander <onboarding@resend.dev>",

@@ -44,7 +44,17 @@ async function criarConta(page, email, senha) {
     await window.Auth.criarConta(email, senha, 'convite-local');
   }, { email, senha });
   await page.reload();
+  await page.waitForSelector('.daynav');
+}
+// o cartão de peso mora no topo da área Métricas (não mais no Diário)
+async function preencherPeso(page, kg, gorduraPct) {
+  await page.click('.app-btn[data-app="saude"]');
   await page.waitForSelector('.weight-card');
+  const campos = page.locator('.weight-card .comp-grid input');
+  if (kg != null) { await campos.nth(0).fill(String(kg)); await campos.nth(0).blur(); }
+  if (gorduraPct != null) { await campos.nth(1).fill(String(gorduraPct)); await campos.nth(1).blur(); }
+  await page.click('.app-btn[data-app="diario"]');
+  await page.waitForSelector('.daynav');
 }
 async function esperarSync(page) {
   await page.waitForFunction(() => {
@@ -60,9 +70,7 @@ await criarConta(A.page, EMAIL_A, 'senha-da-ana-1');
 // dado de saúde e de alimentação, privados
 await A.page.locator('#entry').fill('100 g arroz');
 await A.page.getByRole('button', { name: '+ Adicionar' }).click();
-const pesoA = A.page.locator('.weight-card .comp-grid input');
-await pesoA.nth(0).fill('61.5'); await pesoA.nth(0).blur();
-await pesoA.nth(1).fill('27.3'); await pesoA.nth(1).blur();
+await preencherPeso(A.page, '61.5', '27.3');
 
 // exame laboratorial (privado)
 await A.page.click('.app-btn[data-app="exames"]');
@@ -156,13 +164,12 @@ check('parser de B não conhece o alimento privado de A', !achouPrivado);
 // ---- B cria dados próprios; A não pode vê-los ----
 await B.page.locator('#entry').fill('200 g feijao');
 await B.page.getByRole('button', { name: '+ Adicionar' }).click();
-const pesoB = B.page.locator('.weight-card .comp-grid input');
-await pesoB.nth(0).fill('88.8'); await pesoB.nth(0).blur();
+await preencherPeso(B.page, '88.8');
 await esperarSync(B.page);
 
 // A recarrega e puxa da nuvem: deve continuar só com o que é dela
 await A.page.reload();
-await A.page.waitForSelector('.weight-card');
+await A.page.waitForSelector('.daynav');
 await A.page.waitForTimeout(1500);
 const estadoA = await A.page.evaluate(() => {
   const s = window.Store.get();

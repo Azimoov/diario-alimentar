@@ -73,7 +73,17 @@ async function entrarPelaGate(page, mail, senha) {
 // portão sumiu e o app principal já está montado
 async function esperaLiberado(page) {
   await page.waitForFunction(() => !document.body.classList.contains('gate-active'), { timeout: 25000 });
+  await page.waitForSelector('.daynav');   // app montado, na aba Diário → Hoje
+}
+// o cartão de peso mora no topo da área Métricas (não mais no Diário)
+async function preencherPeso(page, kg) {
+  await page.click('.app-btn[data-app="saude"]');
   await page.waitForSelector('.weight-card');
+  const campo = page.locator('.weight-card .comp-grid input').nth(0);
+  await campo.fill(String(kg));
+  await campo.blur();
+  await page.click('.app-btn[data-app="diario"]');
+  await page.waitForSelector('.daynav');
 }
 
 // ---------- APARELHO 1: cria conta pelo portão e só DEPOIS registra dados
@@ -92,10 +102,15 @@ check('logado após criar conta', (await a1.page.textContent('#conta-chip')).inc
 const syncAntes1 = await a1.page.evaluate(() => (window.Store.get().settings.account || {}).lastSyncAt || null);
 await a1.page.locator('#entry').fill('100 g arroz');
 await a1.page.getByRole('button', { name: '+ Adicionar' }).click();
-const pesoInputs = a1.page.locator('.weight-card .comp-grid input');
-await pesoInputs.nth(0).fill('82.4');
-await pesoInputs.nth(0).blur();
+await preencherPeso(a1.page, '82.4');
 check('dados locais criados', await a1.page.locator('#tab-hoje .item-name').count() >= 1);
+
+// o cartão de peso saiu do Diário e é o PRIMEIRO cartão da aba Métricas
+check('peso não está mais na aba Hoje', await a1.page.locator('#tab-hoje .weight-card').count() === 0);
+check('peso é o primeiro cartão de Métricas',
+  await a1.page.locator('#tab-saude > .card').first().evaluate(el => el.classList.contains('weight-card')));
+check('peso digitado em Métricas foi guardado',
+  await a1.page.evaluate(() => Object.values(window.Store.get().weights)).then(v => v.includes(82.4)));
 await a1.page.waitForFunction((antes) => {
   const c = window.Store.get().settings.account;
   return c && c.lastSyncAt && c.lastSyncAt !== antes;
@@ -125,6 +140,30 @@ await a1.page.waitForFunction((antes) => {
   return c.lastSyncAt && c.lastSyncAt !== antes;
 }, syncAntes, { timeout: 20000 });
 check('alteração posterior sincroniza sozinha', true);
+
+// ---------- nuvem "mais nova" mas IDÊNTICA: não pode perguntar nada ---------
+// Reproduz o envio que CHEGOU ao servidor e cuja resposta não voltou (app
+// fechado no meio, aparelho dormiu, rede caiu): a nuvem fica com data mais
+// nova e este aparelho com o lastSyncAt velho, sem que um byte tenha mudado.
+// Montamos isso enviando de novo e devolvendo o lastSyncAt ao valor que o
+// próprio blob da nuvem carrega — que é o de antes do envio, porque a data
+// nova só é gravada aqui DEPOIS que a resposta volta.
+const syncCongelado = await a1.page.evaluate(async () => {
+  const c = window.Store.get().settings.account;
+  const antes = c.lastSyncAt;
+  await window.Auth.enviarDados();
+  c.lastSyncAt = antes;   // como se a resposta nunca tivesse voltado
+  window.Store.save();
+  return antes;
+});
+await a1.page.reload();
+await a1.page.waitForSelector('.daynav');
+await a1.page.waitForTimeout(2500);
+const modalFalso = await a1.page.locator('.modal-back').count()
+  ? await a1.page.locator('.modal-back').first().innerText() : '';
+check('nuvem mais nova mas idêntica NÃO vira pergunta', !modalFalso, modalFalso);
+check('e a data da nuvem é adotada, para não perguntar de novo',
+  await a1.page.evaluate(() => window.Store.get().settings.account.lastSyncAt) !== syncCongelado);
 
 // ---------- APARELHO 2: só faz login e recebe tudo ----------
 const a2 = await novoAparelho('A2');
