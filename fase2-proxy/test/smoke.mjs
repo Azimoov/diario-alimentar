@@ -11,6 +11,7 @@ const CHAVE_RUIM = "sk-ant-api03-CHAVE-DE-TESTE-REVOGADA-000000";
 
 // --- mock da API /v1/messages ---------------------------------------------
 let ultimoSystem = "";   // guarda o system prompt recebido, p/ inspeção nos testes
+let ultimoSystemBruto = null;   // o mesmo, sem achatar: preserva os blocos e as marcas de cache
 const mock = createServer((req, res) => {
   // validação de chave (GET /v1/models): aceita só a chave "boa" do teste
   if (req.method === "GET" && req.url.startsWith("/v1/models")) {
@@ -24,8 +25,13 @@ const mock = createServer((req, res) => {
   req.on("end", () => {
     const body = JSON.parse(data || "{}");
     // detecta o modo pelo system prompt que o worker enviou
-    const sys = String(body.system || "");
+    // o system pode vir como texto ou como LISTA DE BLOCOS (é assim que o
+    // cache de prompt marca o prefixo estável) — achata para inspecionar
+    const sys = Array.isArray(body.system)
+      ? body.system.map((b) => (b && b.text) || "").join("\n\n")
+      : String(body.system || "");
     ultimoSystem = sys;
+    ultimoSystemBruto = body.system;
     const isRotulo = sys.includes("tabelas nutricionais");
     const isAnalise = sys.includes("dados de saúde PESSOAIS");
     const isChat = sys.includes("responde perguntas de UMA pessoa");
@@ -381,6 +387,22 @@ mock.listen(MOCK_PORT, async () => {
       ];
       const faltando = dominios.filter(([, re]) => !re.test(sysChat)).map(([n]) => n);
       ok("base cobre os domínios dos documentos de origem", !faltando.length, faltando.join(", "));
+      // CACHE DE PROMPT na conversa: a base é prefixo estável e viaja em toda
+      // pergunta. A marca tem que ficar no bloco de cima (prompt + base) e os
+      // dados da pessoa no bloco de baixo, sem marca — invertido, cada peso
+      // novo invalidaria o cache e a economia viraria prejuízo de 25%.
+      ok("conversa manda o system em blocos (cacheável)", Array.isArray(ultimoSystemBruto),
+        typeof ultimoSystemBruto);
+      if (Array.isArray(ultimoSystemBruto)) {
+        const marcados = ultimoSystemBruto.filter((b) => b.cache_control);
+        ok("exatamente um ponto de corte de cache", marcados.length === 1, String(marcados.length));
+        ok("o corte fica no bloco da base, não nos dados da pessoa",
+          marcados.length === 1 && /BASE DE REFERÊNCIA/.test(marcados[0].text)
+          && !/DADOS DA PESSOA/.test(marcados[0].text));
+        ok("dados da pessoa ficam DEPOIS do corte",
+          ultimoSystemBruto.findIndex((b) => /DADOS DA PESSOA/.test(b.text || ""))
+            > ultimoSystemBruto.findIndex((b) => b.cache_control));
+      }
       // Alvo de otimização nunca pode ser lido como faixa de laboratório: é a
       // confusão que faria a IA dizer "seu exame está alterado" sem estar.
       ok("marca o peso de evidência em TODAS as seções",

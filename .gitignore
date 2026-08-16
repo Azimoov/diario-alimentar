@@ -12,6 +12,12 @@ node_modules
 data/source-tbca/
 data/source-usda/
 
+# documentos clínicos PESSOAIS convertidos p/ leitura local.
+# O repositório é PÚBLICO: laudo, diagnóstico e medicação de alguém não entram
+# aqui. Fica na pasta local de quem usa; o que é generalizável já está em
+# fase2-proxy/src/conhecimento.js, sem dado individual.
+referencias-pessoais/
+
 # artefatos dos testes de navegador (screenshots gravados no cwd)
 shot-*.png
 previa-*.png

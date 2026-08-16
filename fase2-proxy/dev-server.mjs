@@ -28,7 +28,11 @@ createServer((req, res) => {
   req.on("data", (c) => (d += c));
   req.on("end", () => {
     const body = JSON.parse(d || "{}");
-    const sys = String(body.system || "");
+    // o system pode vir como texto ou como LISTA DE BLOCOS (é assim que o
+    // cache de prompt marca o prefixo estável) — achata para inspecionar
+    const sys = Array.isArray(body.system)
+      ? body.system.map((b) => (b && b.text) || "").join("\n\n")
+      : String(body.system || "");
     const isRotulo = sys.includes("tabelas nutricionais");
     const isAnalise = sys.includes("dados de saúde PESSOAIS");
     const isChat = sys.includes("responde perguntas de UMA pessoa");

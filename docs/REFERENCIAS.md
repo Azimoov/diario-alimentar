@@ -124,4 +124,12 @@ próximo passo natural.
 3. **Rode `node fase2-proxy/test/smoke.mjs`**: ele confere que a base chega às
    duas rotas, que as travas de uso continuam no prompt e que nada individual
    vazou.
-4. Lembre do custo: a base inteira viaja em toda pergunta. Mantenha densa.
+4. Lembre do custo: a base inteira viaja em toda pergunta. Mantenha densa —
+   **um fato mora em uma seção só**; quando outra precisar dele, aponte ("ver
+   X") em vez de repetir.
+5. O que vale para as duas rotas de IA com ou sem base (não inventar faixa
+   normal, comparar só com a faixa do laudo, não prescrever) NÃO entra aqui:
+   mora em `REGRAS_HONESTIDADE`, no `index.js`, e viaja no mesmo prompt.
+6. Não mexa na ordem dos blocos do `system` na conversa: o prefixo cacheável
+   (prompt + base) vem primeiro e leva a marca; os dados da pessoa vêm depois.
+   Inverter faria cada pesagem nova invalidar o cache.

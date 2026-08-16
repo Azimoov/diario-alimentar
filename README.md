@@ -358,8 +358,24 @@ O que a torna útil em vez de perigosa:
   também se a base encolher e perder um domínio.
 
 Procedência item a item — com o que está conferido e o que não está — em
-[`docs/REFERENCIAS.md`](docs/REFERENCIAS.md). Custo: ~2.900 tokens por
-chamada, algo como US$ 0,015 por pergunta.
+[`docs/REFERENCIAS.md`](docs/REFERENCIAS.md).
+
+**Custo, e o que foi feito para baixá-lo.** A base viaja em toda pergunta:
+~3.150 tokens de prompt + base, algo como US$ 0,016. Duas medidas:
+
+- **Cada fato mora em UMA seção.** Quando outra precisa dele, aponta ("ver X")
+  em vez de repetir. As regras de honestidade que valiam para a conversa e para
+  a análise viraram um bloco único (`REGRAS_HONESTIDADE`) — antes eram duas
+  redações quase iguais, que além do custo divergiriam com o tempo.
+- **Cache de prompt na conversa.** O prefixo (prompt + base) não muda; os dados
+  da pessoa vêm depois dele, num segundo bloco. Da 2ª pergunta em diante na
+  mesma sentada, esse prefixo custa 10% em vez de 100% — três perguntas seguidas
+  saem 52% mais baratas. A 1ª pergunta fica 25% mais cara: o empate é na
+  segunda. A **análise** não usa cache de propósito — roda poucas vezes por mês,
+  o cache dura 5 minutos, e o prefixo seria sempre escrito e nunca lido.
+  `test/smoke.mjs` trava a ordem dos blocos: se os dados da pessoa subirem para
+  antes da marca de cache, qualquer pesagem nova invalidaria tudo e a economia
+  viraria prejuízo.
 
 ## Envio de contexto para o Open Brain (opcional, desligado por padrão)
 

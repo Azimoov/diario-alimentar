@@ -270,21 +270,28 @@ async function handleFoods(request, env, json, token, url) {
 // POST /analyze {dados: {...}} — o app monta um RESUMO numérico local
 // (exames anotados, médias da dieta, peso/composição, métricas do relógio)
 // e recebe uma leitura em TEXTO PURO. Sem imagem: custo bem menor que a foto.
+// Regras que valem para as DUAS rotas de IA (análise e conversa) — e que antes
+// estavam escritas duas vezes, quase iguais. Além do custo (elas viajam em toda
+// chamada), duas cópias divergem: corrigir a redação numa e esquecer a outra
+// faria a mesma pergunta ter regra diferente conforme a tela usada.
+const REGRAS_HONESTIDADE = `Regras de honestidade (crítico):
+- Use SOMENTE os dados recebidos. Não invente valores, datas nem "faixas normais": se um exame veio sem faixa de referência anotada, diga isso e não classifique o valor.
+- "Fora da faixa" = comparado apenas com refMin/refMax que a própria pessoa anotou do laudo.
+- Correlação não é causa. Métricas de relógio são estimativas de sensor: trate como tendência, não medida exata.
+- Dados insuficientes (poucos dias de diário, exame único sem histórico): aponte a limitação em vez de especular. Não preencha lacuna com suposição.
+- Você NÃO é o médico da pessoa: não dá diagnóstico, não prescreve tratamento, suplemento ou dose, e não manda começar nem parar medicação. Decisão clínica é de quem examina.`;
+
 const SYSTEM_ANALISE = `Você analisa dados de saúde PESSOAIS que o próprio dono coletou num app local: diário alimentar (kcal/macros), peso e composição corporal, exames laboratoriais e de imagem anotados à mão, métricas de Apple Watch/iPhone e lembretes de exames.
 
-Sua tarefa: uma leitura honesta e útil, cruzando as fontes. Você NÃO é o médico da pessoa; NÃO faça diagnóstico nem prescreva tratamento, suplemento ou dose.
+Sua tarefa: uma leitura honesta e útil, cruzando as fontes.
 
 Formato da resposta (obrigatório):
 - Português do Brasil, TEXTO PURO: sem markdown, sem asteriscos, sem tabelas.
 - Seções com título em MAIÚSCULAS, nesta ordem: VISÃO GERAL, EXAMES, CRUZAMENTOS, PARA LEVAR AO MÉDICO, LACUNAS.
 - Itens começam com "– ". Máximo ~500 palavras no total.
 
-Regras de honestidade (crítico):
-- Use SOMENTE os dados recebidos. Não invente valores nem "faixas normais": se um exame veio sem faixa de referência anotada, diga isso e não classifique o valor.
-- "Fora da faixa" = comparado apenas com refMin/refMax que o usuário anotou do próprio laudo.
-- Correlação não é causa — deixe isso claro ao cruzar dieta × exames.
-- Dados insuficientes (poucos dias de diário, exame único sem histórico): aponte a limitação em vez de especular.
-- Métricas de relógio são estimativas de sensor; trate como tendência, não medida exata.
+${REGRAS_HONESTIDADE}
+- Ao cruzar dieta × exames, deixe explícito quando a relação for apenas temporal.
 - Em PARA LEVAR AO MÉDICO, liste perguntas e temas concretos (incluindo exames com lembrete vencido), sem alarmismo.`;
 
 async function handleAnalyze(request, env, json, uid) {
@@ -329,6 +336,10 @@ async function handleAnalyze(request, env, json, uid) {
       model: env.CLAUDE_MODEL_ANALISE || "claude-fable-5",
       max_tokens: 3000,
       thinking: { type: "adaptive" },
+      // SEM cache de prompt aqui, de propósito: a análise roda poucas vezes
+      // por mês e o cache dura 5 minutos. O prefixo seria sempre escrito
+      // (custa 1,25×) e nunca lido — encarecer sem contrapartida. Na conversa,
+      // onde as perguntas vêm em sequência, o cache vale; veja handleChat.
       system: SYSTEM_ANALISE + INSTRUCAO_CONHECIMENTO + "\n\n" + CONHECIMENTO,
       messages: [{ role: "user", content: "DADOS (JSON):\n" + texto }],
     });
@@ -374,13 +385,8 @@ Como responder:
 - Cite os números da pessoa quando forem relevantes, com a data.
 - Pode fazer contas com os dados recebidos (médias, variações, proporções) e explicar o raciocínio em uma linha.
 
-Regras de honestidade (crítico):
-- Use SOMENTE os dados recebidos. Não invente valores, datas nem "faixas normais": se um exame veio sem faixa de referência anotada, diga isso e não classifique o valor.
-- "Fora da faixa" = comparado apenas com refMin/refMax que a própria pessoa anotou do laudo.
-- Se os dados não respondem a pergunta, diga o que falta registrar em vez de especular. Não preencha lacuna com suposição.
-- Correlação não é causa. Métricas de relógio são estimativas de sensor.
+${REGRAS_HONESTIDADE}
 - Conhecimento geral de nutrição e fisiologia pode ser usado para explicar contexto, mas deixe claro o que é dado DA PESSOA e o que é informação geral.
-- Você NÃO dá diagnóstico, não prescreve tratamento e não manda parar nem começar medicação. Para decisão clínica, oriente a levar ao médico ou nutricionista.
 - Se a pergunta sugerir urgência médica (dor no peito, falta de ar, sinal neurológico súbito), diga para procurar atendimento agora, sem tentar analisar.`;
 
 async function handleChat(request, env, json, uid) {
@@ -441,10 +447,24 @@ async function handleChat(request, env, json, uid) {
       max_tokens: 2000,
       thinking: { type: "adaptive" },
       // os dados entram no system, não como mensagem: assim o histórico da
-      // conversa fica só com o que a pessoa e a IA disseram
-      system: SYSTEM_CHAT + INSTRUCAO_CONHECIMENTO
-        + "\n\n" + CONHECIMENTO
-        + "\n\nDADOS DA PESSOA (JSON):\n" + texto,
+      // conversa fica só com o que a pessoa e a IA disseram.
+      //
+      // DOIS BLOCOS, e a ordem importa: o cache de prompt é casamento de
+      // PREFIXO, então tudo que não muda vem primeiro e leva a marca. A partir
+      // da segunda pergunta da mesma conversa, esses ~2.700 tokens de prompt +
+      // base custam 10% em vez de 100%. Encarece a PRIMEIRA pergunta em 25% —
+      // o empate é na segunda, e quem abre a aba de conversa quase nunca faz
+      // só uma. O bloco de baixo é o que varia (dados da pessoa) e fica de
+      // fora do cache de propósito: se entrasse antes da marca, qualquer
+      // pesagem nova invalidaria tudo.
+      system: [
+        {
+          type: "text",
+          text: SYSTEM_CHAT + INSTRUCAO_CONHECIMENTO + "\n\n" + CONHECIMENTO,
+          cache_control: { type: "ephemeral" },
+        },
+        { type: "text", text: "DADOS DA PESSOA (JSON):\n" + texto },
+      ],
       messages: mensagens,
     });
   } catch (err) {
