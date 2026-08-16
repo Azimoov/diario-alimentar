@@ -40,6 +40,11 @@ da escola de otimização/longevidade, base mais fraca ou extrapolação ·
 - Alvo praticado na escola de longevidade: ApoB o mais baixo tolerável.
   [ESCOLA] — o alvo numérico exato é disputado.
 
+- Morfologia de partícula: partículas pequenas e densas (padrão B) atravessam
+  o endotélio com mais facilidade e se prendem na parede arterial; grandes e
+  leves (padrão A) são menos aterogênicas para a mesma massa de colesterol.
+  [ESCOLA quanto ao peso clínico de separar os dois]
+
 ## Metabólico
 - Resistência à insulina é a base de quase todo o resto. Marcadores úteis:
   HbA1c, insulina de jejum, triglicerídeos/HDL. [FORTE]
@@ -47,6 +52,19 @@ da escola de otimização/longevidade, base mais fraca ou extrapolação ·
   [ESCOLA]
 - Cinco alavancas: nutrição, exercício, sono, estresse e, quando insuficiente,
   farmacologia. [FORTE]
+- Índice de Vulnerabilidade Metabólica (MVI), derivado de RMN, combina GlycA
+  (inflamação sistêmica), escore LP-IR de resistência à insulina e aminoácidos
+  de cadeia ramificada num preditor de mortalidade. [ESCOLA]
+
+## Neurodegeneração
+- Paradigma do "diabetes tipo 3": boa parte da neurodegeneração passa por
+  falência metabólica e vascular no cérebro; a mitigação começa na meia-idade,
+  muito antes do primeiro sinal cognitivo. [ESCOLA]
+- APOE4 aumenta bastante o risco de Alzheimer e costuma motivar controle
+  lipídico e metabólico mais agressivo. [FORTE quanto ao risco; ESCOLA quanto à
+  conduta que se deriva dele]
+- Lp(a) e hsCRP elevados também contam aqui, pela via de dano microvascular
+  cerebral. [ESCOLA]
 
 ## Exercício
 - Aptidão cardiorrespiratória (VO2 máx) é dos preditores mais potentes de
@@ -57,8 +75,26 @@ da escola de otimização/longevidade, base mais fraca ou extrapolação ·
 - Treino de força é obrigatório: sarcopenia é preditor independente de
   mortalidade (razão de chances ~3,6 em revisão sistemática — Beaudart et al.,
   PLoS ONE, PMID 28095426), com risco bem maior acima dos 79 anos. [FORTE]
+- Prevalência de sarcopenia na mesma revisão: ~5–13% dos 60 aos 70 anos e
+  ~11–50% acima dos 80. [FORTE]
+- Resistência anabólica: com a idade o músculo exige estímulo mais intenso e
+  bolus proteico maior para disparar a mesma síntese. Menos músculo piora a
+  resistência à insulina, que aumenta a inflamação — o ciclo se retroalimenta.
+  [FORTE]
 - Exercício de alta intensidade aumenta BDNF; combinação força + cardio é a
   defesa mais consistente contra declínio cognitivo. [FORTE]
+- A meta prática é funcional, não estética: manter a capacidade física exigida
+  pelas tarefas que a pessoa quer executar na última década de vida (o
+  "decatlo do centenário"). [ESCOLA]
+
+## Função e autonomia (o que se mede além do sangue)
+- Composição corporal importa mais que peso isolado; o padrão-ouro citado é a
+  densitometria corporal total. [FORTE]
+- Testes funcionais usados para rastrear fragilidade: Berg Balance Scale
+  (≤ 45 indica risco elevado de queda), Timed Up and Go, Índice de Barthel
+  modificado (perto de 100 = autonomia plena) e MMSE (> 24 como critério de
+  rastreio cognitivo). [FORTE quanto aos instrumentos; ESCOLA quanto a usá-los
+  como meta de otimização em quem ainda não é idoso]
 
 ## Nutrição — ATENÇÃO: há disputa real aqui
 - Attia e Valter Longo DISCORDAM frontalmente sobre proteína e jejum. Não
@@ -71,10 +107,20 @@ da escola de otimização/longevidade, base mais fraca ou extrapolação ·
 - Ponto de concordância: após os 65 anos a necessidade proteica sobe, com
   bolus maiores pós-exercício. [FORTE]
 
+- Pilar dietético citado pela escola Longo: base vegetal/pescetariana, rica em
+  leguminosas e integrais, com gorduras vegetais (azeite, nozes) por volta de
+  30% das calorias. [SECUNDÁRIO]
+
 ## Suplementação
 - Creatina monoidratada: ~3–5 g/dia manutenção; saturação opcional
   0,3 g/kg/dia por 5–7 dias. Um dos suplementos com melhor base. [FORTE]
-- Co-ingestão com carboidrato melhora captação. [ESCOLA]
+- Ganho de desempenho citado na ordem de ~7%; o número exato varia com
+  protocolo e população. [SECUNDÁRIO]
+- Co-ingestão com carboidrato melhora captação (a insulina estimula a bomba
+  Na-K ATPase, que co-transporta sódio e creatina para dentro da célula).
+  [ESCOLA]
+- Combinação creatina + coenzima Q10 é citada para proteção mitocondrial
+  cerebral em Parkinson. [SECUNDÁRIO — não trate como conduta estabelecida]
 
 ## Hormônios (referência técnica geral — nunca prescrição)
 - Testosterona: a fração livre correlaciona melhor com sintoma do que a total;
@@ -93,6 +139,19 @@ da escola de otimização/longevidade, base mais fraca ou extrapolação ·
 - Pedir estradiol por ensaio sensível (LC-MS/MS): o imunoensaio comum é
   impreciso em homens. [FORTE]
 - LH/FSH suprimem com reposição exógena — é esperado, não é alarme. [FORTE]
+- Coleta de testosterona no VALE (antes da dose do dia) e pela manhã; total
+  muito acima da faixa num vale sugere dose acima do necessário. [ESCOLA]
+- Alvo praticado: terço superior da faixa do laboratório, não o meio nem o
+  teto. [ESCOLA]
+- Marcadores que andam junto do eixo hormonal: ferritina ~50–100 ng/mL (nem
+  baixa nem alta; reposição mexe na eritropoese) e vitamina D 25-OH
+  ~40–60 ng/mL (alvo debatido). [ESCOLA]
+- SEGURANÇA de apresentação em gel: transfere por contato pele a pele e
+  viriliza quem recebe — relevante com crianças e parceiros em casa. Lavar as
+  mãos, cobrir a área e deixar secar. [FORTE]
+- Ninguém sabe a dose ou formulação que Attia usa nele próprio: ele não
+  divulga. Quem afirma um número específico está preenchendo lacuna — é o
+  princípio que é público, não o número pessoal. [FORTE]
 
 ## Sono, ambiente e social
 - Sono regula ritmo circadiano e limpeza metabólica cerebral. [FORTE]
@@ -106,7 +165,12 @@ da escola de otimização/longevidade, base mais fraca ou extrapolação ·
   qualidade.
 - Lacunas sem fonte de suporte aqui: sono, rastreio oncológico, saúde mental.
 - Protocolos citados com fonte não confirmada: equilíbrio 3x/semana por 32
-  semanas; creatina em idosos (periódico de baixo impacto).`;
+  semanas; creatina em idosos (periódico de baixo impacto).
+- Faixas "ideais" de longevidade têm base mais fraca que as faixas clínicas:
+  são extrapolação de estudo observacional e opinião de escola, não desfecho
+  controlado. Onde o número exato importar, mande confirmar na fonte primária.
+- Valores numéricos que a própria fonte marcou como a conferir: alvos de
+  testosterona livre e estradiol variam por unidade e método entre episódios.`;
 
 // Instrução de USO — o que faz esta base pesar mais sem virar dogma.
 const INSTRUCAO_CONHECIMENTO = `

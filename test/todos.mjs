@@ -3,7 +3,7 @@
 //     node test/todos.mjs
 //
 // Ele mesmo sobe os dois servidores locais (app na 8123, Worker de
-// desenvolvimento na 8124), roda as onze suítes em ordem, imprime um resumo e
+// desenvolvimento na 8124), roda as doze suítes em ordem, imprime um resumo e
 // derruba o que subiu. Se os servidores já estiverem no ar, reaproveita.
 //
 // Nada aqui usa internet, chave de API ou conta na Cloudflare: o dev-server
@@ -21,7 +21,8 @@ const PROXY = 'http://localhost:8124';
 const SUITES = [
   ['health-parser', 'test/health-parser.mjs', RAIZ, 'leitura do export do app Saúde (sem navegador)'],
   ['import-saude', 'fase2-proxy/test/import-saude.mjs', join(RAIZ, 'fase2-proxy'), 'zip do Saúde em qualquer idioma'],
-  ['smoke', 'fase2-proxy/test/smoke.mjs', join(RAIZ, 'fase2-proxy'), 'Worker: rotas, contas, limites, CORS'],
+  ['smoke', 'fase2-proxy/test/smoke.mjs', join(RAIZ, 'fase2-proxy'), 'Worker: rotas, contas, limites, CORS, base de referência'],
+  ['openbrain', 'fase2-proxy/test/openbrain.mjs', join(RAIZ, 'fase2-proxy'), 'envio de contexto p/ o Open Brain'],
   ['recortar-icone', 'test/recortar-icone.mjs', RAIZ, 'ferramenta de recorte do ícone'],
   ['peso-composicao', 'test/peso-composicao.mjs', RAIZ, 'peso, % gordura e massa magra'],
   ['marca-e-pwa', 'test/marca-e-pwa.mjs', RAIZ, 'marca, manifest, ícones, as 4 áreas'],

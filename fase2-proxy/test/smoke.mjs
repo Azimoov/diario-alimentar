@@ -363,6 +363,28 @@ mock.listen(MOCK_PORT, async () => {
       // sobrado nele, senão vaza de um usuário para os outros.
       ok("base NÃO carrega dado clínico individual",
         !/AndroGel|falência testicular|41 anos|Você não tem PSA|seu caso/i.test(sysChat));
+      // Cobertura por domínio: cada bloco veio de um dos documentos de origem.
+      // Sem isto, uma edição futura pode encolher a base sem ninguém notar —
+      // e o sintoma seria só a IA respondendo mais raso, meses depois.
+      const dominios = [
+        ["cardiovascular", /ApoB/],
+        ["metabólico", /resistência à insulina/i],
+        ["neurodegeneração", /APOE4/],
+        ["exercício e VO2 máx", /VO2 máx/],
+        ["sarcopenia com a fonte primária", /28095426/],
+        ["função e autonomia", /Berg Balance/],
+        ["nutrição em disputa", /Longo/],
+        ["suplementação", /[Cc]reatina/],
+        ["hormônios", /[Ee]stradiol/],
+        ["sono, ambiente e social", /circadiano/],
+        ["limites da própria base", /Viés pró-Attia/],
+      ];
+      const faltando = dominios.filter(([, re]) => !re.test(sysChat)).map(([n]) => n);
+      ok("base cobre os domínios dos documentos de origem", !faltando.length, faltando.join(", "));
+      // Alvo de otimização nunca pode ser lido como faixa de laboratório: é a
+      // confusão que faria a IA dizer "seu exame está alterado" sem estar.
+      ok("marca o peso de evidência em TODAS as seções",
+        (sysChat.match(/\[FORTE\]|\[ESCOLA\]|\[SECUNDÁRIO\]/g) || []).length >= 30);
     }
     {
       // cota do chat é SEPARADA da análise: uma conversa longa não pode

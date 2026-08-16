@@ -327,6 +327,40 @@ intercalar dois fios produziria um diálogo que nunca aconteceu.
 
 Coberto por `fase2-proxy/test/area-ia.mjs` (`npm run test:ia`).
 
+## Base de referência de longevidade (o que a IA consulta)
+
+A conversa e a análise cruzada recebem junto uma **base de referência**
+(Medicina 3.0 / Attia) em `fase2-proxy/src/conhecimento.js`: framework geral,
+cardiovascular e lipídios (ApoB, Lp(a), morfologia de partícula), metabólico
+(incluindo o índice de vulnerabilidade metabólica), neurodegeneração (APOE4,
+"diabetes tipo 3"), exercício e VO₂ máx, testes de função e autonomia,
+nutrição, suplementação, hormônios e higiene de sono/ambiente.
+
+O que a torna útil em vez de perigosa:
+
+- **Peso preferencial, não obediência.** A instrução manda a IA raciocinar
+  dentro da base — e **discordar dela** quando os números da própria pessoa
+  apontarem outra direção, dizendo que está discordando.
+- **Etiqueta de evidência em cada item:** `[FORTE]`, `[ESCOLA]` (prática da
+  escola de otimização, base mais fraca) e `[SECUNDÁRIO]` (divulgação, não
+  literatura primária). Metade das fontes é secundária — apresentá-las com
+  cara de ensaio clínico seria pior do que não ter base.
+- **Disputa declarada:** em proteína e jejum, Attia e Longo discordam
+  frontalmente. A base manda mostrar os dois lados em vez de fingir consenso.
+- **Alvo de otimização ≠ faixa de laboratório.** Ao comentar um exame, vale a
+  faixa que VOCÊ anotou do seu laudo.
+- **Sem internet:** a IA é proibida de alegar consulta online ou inventar
+  links e números de estudo.
+- **Nada individual.** A base entra no prompt de todas as contas, então não
+  pode conter dado clínico de ninguém — o documento de origem sobre reposição
+  hormonal era personalizado, e só a parte técnica generalizável foi
+  aproveitada. `test/smoke.mjs` falha se algo individual reaparecer ali, e
+  também se a base encolher e perder um domínio.
+
+Procedência item a item — com o que está conferido e o que não está — em
+[`docs/REFERENCIAS.md`](docs/REFERENCIAS.md). Custo: ~2.900 tokens por
+chamada, algo como US$ 0,015 por pergunta.
+
 ## Envio de contexto para o Open Brain (opcional, desligado por padrão)
 
 Na aba **Análises** há um cartão para ligar o envio do seu contexto de saúde
@@ -526,7 +560,7 @@ novo** — o iOS guarda o antigo em cache.
 Nada aqui precisa de conta na Cloudflare, chave de API ou internet.
 
 ```
-node test/todos.mjs             # RODA TUDO (11 suítes) — sobe os dois
+node test/todos.mjs             # RODA TUDO (12 suítes) — sobe os dois
                                 # servidores locais sozinho e derruba no fim
 ```
 
@@ -559,6 +593,7 @@ node fase2-proxy/test/conta-e-login.mjs      # login, sync, recuperação, chave
 node fase2-proxy/test/isolamento-contas.mjs  # o que é compartilhado × individual
 node fase2-proxy/test/laudo-foto-pdf.mjs     # laudo por foto e por PDF
 node fase2-proxy/test/area-ia.mjs            # conversa com memória e análises
+node fase2-proxy/test/openbrain.mjs          # envio de contexto p/ o Open Brain
 node fase2-proxy/test/import-saude.mjs       # zip do Saúde em qualquer idioma
 
 # testes do APP (interface e cálculos)
