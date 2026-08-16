@@ -1,58 +1,201 @@
-# PONTO DE RETOMADA — Highlander (diário alimentar, exames e métricas)
+# PONTO DE RETOMADA — Highlander
 
-_Atualizado em 2026-07-13._
+_Atualizado em 2026-08-16. Quem chega agora lê só até "O que falta"; o resto é
+histórico e memória das decisões._
 
 ## O que é
-App pessoal de diário alimentar para perda de peso. Registro por **texto em
-linguagem natural** (o Daniel dita por voz no nível do SO; chega como texto),
-cálculo de **kcal e macros** por item/dia, **gráficos** (meta do dia + macros +
-histórico) e **histórico persistente**. Local-first, estático, sem IA e sem
-servidor na Fase 1.
 
-## Estado atual: **Fase 1 (MVP) COMPLETA e testada**
-Tudo funcionando e verificado ponta a ponta (parser em Node + app dirigido no
-navegador):
-- ✅ Setup de perfil → TMB, TDEE e meta (Mifflin-St Jeor) + guardrail de piso.
-- ✅ Registro do dia: texto → parser → itens com kcal/macros, gramas editáveis.
-- ✅ Dashboard: anel kcal vs meta + barras de macro (consumido vs alvo).
-- ✅ Histórico: linha de kcal/dia (com linha de meta) + linha de peso + tabela.
-- ✅ Export/import JSON; reset; **alimentos do usuário** (base extensível).
-- ✅ Base **TACO 4ª ed.** real embutida (597 alimentos), fonte citada.
+Hub pessoal de saúde, estático (HTML/CSS/JS puros, sem build), publicado no
+GitHub Pages e usável como app no iPhone. **Quatro áreas** na barra de cima:
 
-## Decisões de arquitetura (importantes)
-- **Zero IA / zero backend / zero chave** na Fase 1. Parser = regex +
-  normalização + busca com pontuação. (Regra do dono, respeitada.)
-- **Scripts clássicos + base embutida em `js/db.js`** (não `fetch` de JSON) para
-  o app funcionar **abrindo o arquivo direto** (`file://`) e no GitHub Pages.
-- **Gráficos em SVG puro** (sem Chart.js/CDN): funciona offline, nada de URL
-  externa para verificar.
-- **Persistência em localStorage** (volume pequeno) + export/import JSON.
-- **Base TACO:** CSVs de `raulfdm/taco-api` (MIT) → `data/build-db.mjs` gera
-  `js/db.js`. Valores **não** foram inventados; conferidos por amostragem.
+| Área | O que faz |
+|---|---|
+| 🍽️ Diário | registro por texto em linguagem natural → kcal e macros, gráficos, histórico. Base de 6.273 alimentos (TACO + TBCA + USDA) embutida em `js/db.js` |
+| 🧪 Exames | laboratoriais (analito por linha, com a faixa do SEU laudo) e de imagem; lembretes de repetição; leitura de laudo por **foto ou PDF** |
+| ❤️ Métricas | peso e composição corporal; import do export do app Saúde do iPhone (passos, energia, sono, FC, VO₂máx) e saldo energético |
+| 💬 IA | conversa com memória sobre os próprios dados + histórico de análises |
 
-## Regras de honestidade aplicadas
-- Nada de valor nutricional chutado. 6 alimentos sem kcal na fonte ficam
-  **sinalizados** e fora do total (não preenchidos). Medidas caseiras e pesos por
-  unidade são **estimativas editáveis**, sempre marcadas. Não encontrado/ambíguo
-  não entra no total até o usuário resolver.
+## Estado atual (16/08/2026)
 
-## Arquivos
-Ver seção "Estrutura dos arquivos" no `README.md`. Núcleo: `index.html`,
-`app.css`, `js/{db,measures,parser,nutrition,storage,charts,app}.js`.
-Tabelas editáveis pelo usuário-dono: **`js/measures.js`** (medidas, pesos/unidade,
-sinônimos/escolhas-padrão).
+- **Tudo o que foi pedido está implementado e no `main`.** Última rodada:
+  mesclagem de duas frentes de trabalho que corriam em paralelo + toda a suíte
+  de testes de volta ao verde.
+- **Suíte: 11 conjuntos, todos passando**, e rodando duas vezes seguidas sem
+  sujar estado. Um comando: `node test/todos.mjs` (ele mesmo sobe e derruba os
+  dois servidores locais).
+- **Site:** <https://azimoov.github.io/diario-alimentar/> — republica sozinho
+  a cada `git push` na `main` (~1 min).
+- **Proxy:** <https://diario-alimentar-proxy.azimoov.workers.dev> (Cloudflare
+  Worker, pasta `fase2-proxy/`).
 
-## Limitações conhecidas (ver README)
-- Medidas caseiras genéricas (densidade ~1) — aproximadas.
-- TACO não tem tudo cozido (ex.: macarrão só cru).
-- 6 itens da TACO sem valor calórico na digitalização usada.
+## O que falta — 1 passo, e é do Daniel
 
-## Publicado
-- **Site (usar no celular):** https://azimoov.github.io/diario-alimentar/
-- **Repositório:** https://github.com/Azimoov/diario-alimentar (conta **Azimoov**)
-- Deploy = GitHub Pages, branch `main`, raiz. Qualquer `git push` na main
-  republica sozinho em ~1 min.
-- `gh` CLI portátil em `%LOCALAPPDATA%\gh-cli\bin\gh.exe` (logado como Azimoov).
+O app inteiro está **atrás de login** (o "portão"). O Worker publicado ainda é
+a versão anterior, sem as rotas de conta: enquanto os segredos não forem
+cadastrados e o deploy não for feito, **ninguém consegue entrar** — nem no
+celular do Daniel. Na pasta `fase2-proxy/`, no computador dele:
+
+```
+npx wrangler secret put DATA_KEY        # texto longo e aleatório — GUARDE-O
+npx wrangler secret put INVITE_CODE     # código de convite (quem cria conta usa)
+npx wrangler secret put RESEND_API_KEY  # chave do Resend (recuperação de senha)
+npx wrangler deploy
+```
+
+- **`DATA_KEY` é insubstituível**: é ela que cifra os dados das contas em
+  repouso. Perdida ou trocada, as contas continuam existindo e os dados
+  guardados na nuvem viram lixo ilegível. Guarde fora do computador.
+- `MAIL_TO_OVERRIDE` está apontado para `serruyadaniel@gmail.com` porque o
+  Resend, sem domínio verificado, só entrega para o dono da conta. **Efeito
+  colateral aceito e explicado:** todo e-mail de recuperação, de qualquer
+  usuário, cai nessa caixa — e quem recebe o link entra naquela conta. Para
+  tirar isso, verifique um domínio no Resend e remova a variável.
+- No Windows use `npx.cmd`. O wrangler já está logado na conta
+  `serruyadaniel@gmail.com`.
+
+Depois do deploy: abrir o site, criar a conta com o convite, e cadastrar a
+chave da Anthropic em **Diário → Dados → Sua chave** (cada pessoa paga a
+própria IA — BYOK).
+
+## Como retomar em 5 minutos
+
+```
+git clone https://github.com/Azimoov/diario-alimentar   # ou git pull
+node data/devserver.mjs                 # app em http://localhost:8123
+cd fase2-proxy && npm run dev:local     # Worker REAL em Node, porta 8124
+```
+
+No app: **Dados → servidor** = `http://localhost:8124`, convite
+`convite-local`. Os e-mails de recuperação aparecem no terminal e em
+`http://localhost:8124/__emails`. Nada disso usa internet, chave de API ou
+conta na Cloudflare — a Anthropic é simulada pelo dev-server.
+
+Para rodar os testes (uma vez só: `npm i -D playwright && npx playwright
+install chromium`):
+
+```
+node test/todos.mjs
+```
+
+## Decisões que não devem ser revertidas sem conversa
+
+1. **Sem build, sem bundler, sem CDN.** Scripts clássicos e base embutida em
+   JS para o app abrir por `file://` e no Pages. Por isso a versão dos assets
+   (`?v=N` no `index.html`) é manual — e **precisa subir a cada publicação que
+   mexa em `.js`/`.css`**, senão o iPhone continua rodando o código velho
+   (já custou duas rodadas de diagnóstico em falso).
+2. **A senha nunca sai do aparelho.** PBKDF2 250k no navegador → o servidor
+   recebe só o `authKey` e guarda um HMAC dele. PBKDF2 no servidor estouraria
+   o limite de 10 ms de CPU do plano grátis do Workers.
+3. **Modelo recuperável, não zero-knowledge.** Os dados na nuvem são cifrados
+   com a chave DO SERVIDOR (`DATA_KEY`), não com a senha do usuário. É isso
+   que faz "esqueci minha senha" funcionar sem perder o histórico — e implica
+   que quem administra o Worker consegue ler os dados. O Daniel sabe e
+   escolheu assim, depois de perder um backup por senha esquecida.
+4. **Catálogo de alimentos é compartilhado; saúde e dieta são individuais.**
+   `exportJSON({paraNuvem:true})` tira `sharedFoods` (o servidor já serve em
+   `/foods`) e **sempre** tira o token de sessão. Coberto por
+   `fase2-proxy/test/isolamento-contas.mjs`, que cria duas contas e confere
+   item por item o que atravessa e o que não atravessa.
+5. **Nada sobe antes da checagem inicial.** `Auth.travarEnvio()/liberarEnvio()`
+   existe para o app não sobrescrever às cegas um histórico mais novo feito em
+   outro aparelho. Na dúvida ele pergunta (juntar / nuvem / aparelho).
+6. **Transcrição não é interpretação.** Os prompts de laudo proíbem inventar
+   faixa de referência, proíbem diagnosticar e mandam ignorar dados pessoais
+   (nome, CPF, convênio). Nada de laudo é salvo sem revisão humana.
+7. **Dois modelos por tarefa** (`wrangler.jsonc`): visão/transcrição no
+   `claude-opus-5` (volume alto e erro caro), análise cruzada no
+   `claude-fable-5` (rara, raciocínio pesado). `test/smoke.mjs` trava a
+   escolha — se trocarem, três testes falham.
+8. **Merge de dias por assinatura, não por `Object.assign`.** Juntar nuvem e
+   aparelho comparando `foodId|gramas|refeição|texto` foi o que impediu perder
+   itens quando o mesmo dia foi editado em dois lugares.
+
+## Mapa rápido
+
+```
+index.html app.css icons/     o app
+js/db.js                      base de alimentos (GERADA — não editar à mão)
+js/{parser,nutrition,storage,charts}.js
+js/health.js                  lê o export do app Saúde (zip/xml, streaming)
+js/auth.js                    conta, PBKDF2 no aparelho, sync com a nuvem
+js/app.js                     interface e orquestração das 4 áreas
+data/                         geração da base, servidor local, recorte do ícone
+test/todos.mjs                roda TUDO com um comando
+test/_comum.mjs               entrar pelo portão, conta descartável
+fase2-proxy/src/index.js      o Worker (contas, dados, visão, laudos, análise)
+fase2-proxy/dev-server.mjs    o Worker REAL em Node, com Anthropic simulada
+docs/FASE-2-FOTO.md           arquitetura, rotas, custos e deploy
+```
+
+## Limitações conhecidas
+
+- Estimar gramas por foto é impreciso por natureza — todo item de foto entra
+  como estimativa editável. Pesar continua sendo o método de referência.
+- O caminho de PDF de laudo foi validado contra a API **simulada**; a leitura
+  de PDF de verdade só se confirma com a chave real depois do deploy.
+- O backup antigo do Daniel (modelo por senha do app) segue cifrado com uma
+  senha esquecida. É irrecuperável **por desenho** — o registro no KV está
+  intocado, mas não existe caminho de volta. O modelo de conta atual existe
+  justamente para isso não se repetir.
+- Medidas caseiras genéricas são aproximadas; a TACO não tem tudo cozido.
+
+## Próximos passos sugeridos (nenhum é urgente)
+
+1. Verificar um domínio no Resend e remover `MAIL_TO_OVERRIDE`, para cada
+   pessoa receber o próprio e-mail de recuperação.
+2. Afinar `js/measures.js` (sinônimos, pesos por unidade) com o uso real.
+3. Qualidade de vida: copiar dia anterior, refeições favoritas, metas por
+   refeição.
+
+---
+
+# Histórico (mais recente primeiro)
+
+## 2026-08-16 — Duas frentes mescladas e suíte de volta ao verde
+- Duas conversas mexeram no app ao mesmo tempo. A mesclagem não deu conflito,
+  mas quebrou testes: `.weight-card` deixou de servir como marca de "app
+  montado" (o cartão foi para Métricas e nasce escondido → agora é `.daynav`),
+  três áreas viraram quatro, e a análise única (`analysis`) virou lista
+  (`analyses`).
+- Defeito que só aparecia rodando a suíte DUAS vezes com o mesmo dev-server:
+  e-mails fixos em dois testes e um alimento de nome fixo no catálogo comum
+  (que é global) davam 409 na segunda rodada. Todos levam selo por execução.
+- `test/todos.mjs`: um comando roda as 11 suítes, subindo e derrubando os
+  servidores locais sozinho.
+
+## 2026-08-09 — Área 💬 IA, modelos por tarefa e peso em Métricas
+- Conversa com memória (`/chat`) e histórico de análises: nenhuma análise é
+  sobrescrita; o campo antigo é migrado para a lista na carga.
+- Visão/transcrição no Opus 5, análise cruzada no Fable 5 — travado por teste.
+- Peso e composição corporal vão para o topo de Métricas, com **data própria**
+  (a aba não tem navegação de data).
+- Versão nos assets (`?v=N`) para o iPhone parar de rodar JS antigo do cache.
+
+## 2026-08-08 — Portão de login e laudo por foto/PDF
+- O app inteiro passa a exigir conta (`<body class="gate-active">` já no HTML,
+  para não piscar a tela do app antes do login). O portão tem "Esqueci minha
+  senha", e abrir um link de recuperação estando deslogado não pode deixar
+  ninguém preso em "Carregando…" (regressão coberta por teste).
+- Laudo lido por foto ou PDF nas duas abas de exames. O PDF vai nativo para a
+  API como bloco `document` — o app **não** carrega biblioteca de PDF.
+- Import do app Saúde passa a achar o XML pelo CONTEÚDO, não pelo nome: em
+  iPhone em português o arquivo não se chama `export.xml`.
+
+## 2026-08-07 — Contas, recuperação de senha e BYOK
+- Login por e-mail com recuperação de verdade (Resend); dados da conta na
+  nuvem; separação entre catálogo comum e dados individuais, com teste.
+- Cada conta usa a **própria** chave da Anthropic (`/account/apikey`): a chave
+  é validada contra `GET /v1/models` antes de salvar, fica cifrada no servidor
+  e nunca volta inteira para o navegador. Limites diários passam a ser por
+  conta.
+- App renomeado para **Highlander**; ícone vira silhueta de espada.
+- Áreas Diário / Exames / Métricas, e % de gordura e massa magra junto do peso.
+
+---
+
+_Daqui para baixo, o log antigo em ordem cronológica CRESCENTE (2026-07-13 →
+2026-08-03), preservado como está._
 
 ## Fase 2 (foto) — PUBLICADA em 2026-07-13
 - **Proxy no ar:** https://diario-alimentar-proxy.azimoov.workers.dev

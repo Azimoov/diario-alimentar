@@ -1,6 +1,6 @@
 # Highlander — diário alimentar, exames e métricas (local-first)
 
-Hub pessoal de saúde com **três áreas** na barra de cima:
+Hub pessoal de saúde com **quatro áreas** na barra de cima:
 
 - **🍽️ Diário** — o diário alimentar original: registro em **texto em
   linguagem natural** (ex.: `150 g patinho`, `120g arroz`, `1 ovo`), kcal e
@@ -10,9 +10,12 @@ Hub pessoal de saúde com **três áreas** na barra de cima:
   faixa de referência do SEU laudo e gráfico de evolução) e **Imagem**
   (data + resumo do laudo). **Lembretes de repetição** ("a cada N meses")
   avisam na própria área, na aba Hoje e com uma bolinha no botão Exames.
-- **❤️ Métricas** — importa o **export do app Saúde do iPhone**
-  (Apple Watch: passos, energia, sono, FC de repouso, VO₂máx…), agrega por
-  dia NESTE aparelho e cruza com o diário (saldo energético).
+- **❤️ Métricas** — peso e composição corporal no topo, e o import do
+  **export do app Saúde do iPhone** (Apple Watch: passos, energia, sono, FC de
+  repouso, VO₂máx…), agregado por dia NESTE aparelho e cruzado com o diário
+  (saldo energético).
+- **💬 IA** — conversa com memória sobre os seus próprios dados e o histórico
+  de análises já geradas (nenhuma é sobrescrita).
 
 Em qualquer área de exames/métricas, o botão **🔎 Analisar meus dados**
 (opcional, requer o proxy da Fase 2) manda um resumo numérico para a IA
@@ -485,6 +488,16 @@ novo** — o iOS guarda o antigo em cache.
 Nada aqui precisa de conta na Cloudflare, chave de API ou internet.
 
 ```
+node test/todos.mjs             # RODA TUDO (11 suítes) — sobe os dois
+                                # servidores locais sozinho e derruba no fim
+```
+
+Requisito único além do Node: o navegador de testes, uma vez só —
+`npm i -D playwright && npx playwright install chromium`.
+
+Para mexer no app com os servidores no ar (e testar à mão no navegador):
+
+```
 cd fase2-proxy && npm test      # Worker: contas, login, recuperação de senha,
                                 # dados na nuvem, foto, análise, limites, CORS
 cd fase2-proxy && npm run dev:local   # sobe o Worker REAL em Node (porta 8124)
@@ -503,15 +516,18 @@ que não atravessa entre elas. Com os dois servidores acima no ar:
 
 ```
 # testes do SERVIDOR (contas, dados, laudos, isolamento entre contas)
+node fase2-proxy/test/smoke.mjs              # rotas do Worker, limites, CORS
 node fase2-proxy/test/conta-e-login.mjs      # login, sync, recuperação, chave
 node fase2-proxy/test/isolamento-contas.mjs  # o que é compartilhado × individual
 node fase2-proxy/test/laudo-foto-pdf.mjs     # laudo por foto e por PDF
+node fase2-proxy/test/area-ia.mjs            # conversa com memória e análises
+node fase2-proxy/test/import-saude.mjs       # zip do Saúde em qualquer idioma
 
 # testes do APP (interface e cálculos)
 node test/health-parser.mjs       # leitura do export do app Saúde (só Node)
 node test/peso-composicao.mjs     # peso, % gordura e massa magra
 node test/exames-e-metricas.mjs   # áreas Exames e Métricas + análise
-node test/marca-e-pwa.mjs         # marca, manifest, ícones, 3 áreas
+node test/marca-e-pwa.mjs         # marca, manifest, ícones, as 4 áreas
 node test/recortar-icone.mjs      # ferramenta de recorte do ícone
 ```
 
@@ -536,7 +552,7 @@ js/
   charts.js         gráficos em SVG puro (sem biblioteca)
   health.js         lê o export do app Saúde (zip/xml) e agrega por dia
   auth.js           conta/login, PBKDF2 no aparelho e sync com a nuvem
-  app.js            interface e orquestração (3 áreas: Diário/Exames/Métricas)
+  app.js            interface e orquestração (4 áreas: Diário/Exames/Métricas/IA)
 data/
   source/*.csv      CSVs originais da TACO (raulfdm/taco-api, MIT)
   build-db.mjs      gera js/db.js a partir dos CSVs
@@ -545,6 +561,7 @@ data/
   recortar-icone.html  recorta uma foto e baixa os PNGs do ícone (offline)
   make-icon.mjs     o mesmo recorte por linha de comando
 test/               testes do app (interface, parser do Saúde, ícone)
+  todos.mjs         roda TUDO com um comando (sobe e derruba os servidores)
   _comum.mjs        utilitários: entrar pelo portão, conta descartável
 fase2-proxy/        Cloudflare Worker (chave da API, contas e backup)
   src/index.js      o proxy em si (contas, CORS, validações, visão, análise)
