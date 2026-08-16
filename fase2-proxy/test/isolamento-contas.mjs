@@ -20,6 +20,11 @@ const check = (n, ok, extra) => {
 // Na máquina de quem administra o app, `npx playwright install chromium` basta
 // e o launch() sem essa opção já encontra o navegador sozinho.
 const browser = await chromium.launch(process.env.PW_CHROMIUM_PATH ? { executablePath: process.env.PW_CHROMIUM_PATH } : {});
+// e-mails novos a cada execução: o KV do dev-server vive em memória e
+// sobrevive entre rodadas, então endereços fixos dariam "conta já existe"
+const selo = Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
+const EMAIL_A = 'ana+' + selo + '@example.com';
+const EMAIL_B = 'bruno+' + selo + '@example.com';
 
 async function aparelho(nome) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -50,7 +55,7 @@ async function esperarSync(page) {
 
 // ================== CONTA A: dados privados + 1 alimento compartilhado ======
 const A = await aparelho('A');
-await criarConta(A.page, 'ana@example.com', 'senha-da-ana-1');
+await criarConta(A.page, EMAIL_A, 'senha-da-ana-1');
 
 // dado de saúde e de alimentação, privados
 await A.page.locator('#entry').fill('100 g arroz');
@@ -104,7 +109,7 @@ check('arquivo exportado também sem token de sessão', !/"session":\s*"[0-9a-f]
 
 // ================== CONTA B: outra pessoa, mesmo servidor ==================
 const B = await aparelho('B');
-await criarConta(B.page, 'bruno@example.com', 'senha-do-bruno-2');
+await criarConta(B.page, EMAIL_B, 'senha-do-bruno-2');
 await B.page.waitForTimeout(1200);   // deixa o syncSharedFoods rodar
 
 const estadoB = await B.page.evaluate(() => {

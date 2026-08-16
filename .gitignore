@@ -15,3 +15,6 @@ data/source-usda/
 # artefatos dos testes de navegador (screenshots gravados no cwd)
 shot-*.png
 previa-*.png
+card*.png
+hist.png
+export-teste.zip

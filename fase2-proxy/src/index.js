@@ -291,7 +291,7 @@ async function handleAnalyze(request, env, json, uid) {
   const cred = await resolverChave(env, uid);
   if (cred.erro) return json(cred.erro, cred.erro.error === "no_api_key" ? 402 : 500);
   const ip = request.headers.get("CF-Connecting-IP") || "?";
-  if (rateLimited("analyze:" + ip, 6)) return json({ error: "rate_limited", detail: "Muitas análises em pouco tempo — aguarde um minuto." }, 429);
+  if (limitado(env, "analyze:" + ip, 6)) return json({ error: "rate_limited", detail: "Muitas análises em pouco tempo — aguarde um minuto." }, 429);
 
   let body;
   try { body = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
@@ -601,7 +601,7 @@ async function handleAuth(request, env, json, url, ip) {
 
   // ---- POST /auth/signup {email, authKey, invite} ----
   if (rota === "signup") {
-    if (rateLimited("signup:" + ip, 5)) return json({ error: "rate_limited", detail: "Muitas tentativas — aguarde um minuto." }, 429);
+    if (limitado(env, "signup:" + ip, 5)) return json({ error: "rate_limited", detail: "Muitas tentativas — aguarde um minuto." }, 429);
     const email = normEmail(body.email);
     if (!emailValido(email)) return json({ error: "invalid_email", detail: "E-mail inválido." }, 400);
     if (!authKeyValido(body.authKey)) return json({ error: "invalid_password", detail: "Senha inválida (o app deve enviar authKey)." }, 400);
@@ -631,7 +631,7 @@ async function handleAuth(request, env, json, url, ip) {
   // ---- POST /auth/login {email, authKey} ----
   if (rota === "login") {
     const email = normEmail(body.email);
-    if (rateLimited("login:" + ip + ":" + email, 10)) {
+    if (limitado(env, "login:" + ip + ":" + email, 10)) {
       return json({ error: "rate_limited", detail: "Muitas tentativas — aguarde um minuto." }, 429);
     }
     const uid = await sha256Hex(email);
@@ -646,7 +646,7 @@ async function handleAuth(request, env, json, url, ip) {
 
   // ---- POST /auth/forgot {email} -> manda e-mail com link de redefinição ----
   if (rota === "forgot") {
-    if (rateLimited("forgot:" + ip, 4)) return json({ error: "rate_limited", detail: "Muitas tentativas — aguarde um minuto." }, 429);
+    if (limitado(env, "forgot:" + ip, 4)) return json({ error: "rate_limited", detail: "Muitas tentativas — aguarde um minuto." }, 429);
     const email = normEmail(body.email);
     // resposta SEMPRE igual (existindo conta ou não) p/ não vazar cadastro
     const resposta = { ok: true, detail: "Se existe conta com este e-mail, enviamos o link de redefinição." };
@@ -683,7 +683,7 @@ async function handleAuth(request, env, json, url, ip) {
 
   // ---- POST /auth/reset {token, authKey} ----
   if (rota === "reset") {
-    if (rateLimited("reset:" + ip, 10)) return json({ error: "rate_limited" }, 429);
+    if (limitado(env, "reset:" + ip, 10)) return json({ error: "rate_limited" }, 429);
     if (!authKeyValido(body.authKey)) return json({ error: "invalid_password", detail: "Senha inválida." }, 400);
     const chave = "reset:" + (await sha256Hex(String(body.token || "")));
     const raw = await env.DIARIO_KV.get(chave);
@@ -759,6 +759,15 @@ async function handleAccountData(request, env, json, uid) {
 
 // rate-limit simples em memória (por isolate — best-effort, não é garantia)
 const hits = new Map();
+// Envolve o rate-limit permitindo desligá-lo APENAS no servidor de
+// desenvolvimento (RATE_LIMIT_OFF=1). Em produção a variável não existe, então
+// o limite vale sempre — rodar a bateria de testes local é que ficaria
+// impraticável com 5 cadastros por minuto.
+function limitado(env, chave, max) {
+  if (env && env.RATE_LIMIT_OFF === "1") return false;
+  return rateLimited(chave, max);
+}
+
 function rateLimited(ip, max = 15, windowMs = 60_000) {
   const now = Date.now();
   const rec = hits.get(ip) || [];
@@ -844,7 +853,7 @@ export default {
     const cred = await resolverChave(env, uid);
     if (cred.erro) return json(cred.erro, cred.erro.error === "no_api_key" ? 402 : 500);
 
-    if (rateLimited(ip)) return json({ error: "rate_limited", detail: "Muitas fotos em pouco tempo — aguarde um minuto." }, 429);
+    if (limitado(env, ip, 15)) return json({ error: "rate_limited", detail: "Muitas fotos em pouco tempo — aguarde um minuto." }, 429);
 
     let body;
     try { body = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }

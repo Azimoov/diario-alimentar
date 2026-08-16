@@ -109,6 +109,9 @@ const ENV = {
   PHOTO_DAILY_LIMIT: "999",
   ANALYSIS_DAILY_LIMIT: "999",
   DATA_KEY: "chave-de-desenvolvimento-local-nao-usar-em-producao",
+  // só no desenvolvimento: sem isto, rodar a bateria de testes seguida esbarra
+  // no limite de 5 cadastros por minuto por IP
+  RATE_LIMIT_OFF: "1",
   INVITE_CODE: "convite-local",
   RESEND_API_KEY: "re_dev_falsa",
   RESEND_API_URL: `http://localhost:${MOCK_MAIL}`,

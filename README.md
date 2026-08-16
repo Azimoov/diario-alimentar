@@ -435,10 +435,23 @@ ele cria duas contas simultâneas e confere item por item o que atravessa e o
 que não atravessa entre elas. Com os dois servidores acima no ar:
 
 ```
+# testes do SERVIDOR (contas, dados, laudos, isolamento entre contas)
 node fase2-proxy/test/conta-e-login.mjs      # login, sync, recuperação, chave
 node fase2-proxy/test/isolamento-contas.mjs  # o que é compartilhado × individual
 node fase2-proxy/test/laudo-foto-pdf.mjs     # laudo por foto e por PDF
+
+# testes do APP (interface e cálculos)
+node test/health-parser.mjs       # leitura do export do app Saúde (só Node)
+node test/peso-composicao.mjs     # peso, % gordura e massa magra
+node test/exames-e-metricas.mjs   # áreas Exames e Métricas + análise
+node test/marca-e-pwa.mjs         # marca, manifest, ícones, 3 áreas
+node test/recortar-icone.mjs      # ferramenta de recorte do ícone
 ```
+
+Todos criam contas descartáveis a cada execução, então dá para rodar quantas
+vezes quiser. `test/_comum.mjs` guarda o que eles compartilham (entrar pelo
+portão, cadastrar chave de teste). O `dev-server` desliga o rate-limit
+(`RATE_LIMIT_OFF`) só no ambiente local — em produção ele continua valendo.
 
 ## Estrutura dos arquivos
 
@@ -464,6 +477,8 @@ data/
   mock-proxy.mjs    proxy falso p/ testar 📷 e 🔎 sem gastar API
   recortar-icone.html  recorta uma foto e baixa os PNGs do ícone (offline)
   make-icon.mjs     o mesmo recorte por linha de comando
+test/               testes do app (interface, parser do Saúde, ícone)
+  _comum.mjs        utilitários: entrar pelo portão, conta descartável
 fase2-proxy/        Cloudflare Worker (chave da API, contas e backup)
   src/index.js      o proxy em si (contas, CORS, validações, visão, análise)
   dev-server.mjs    roda o Worker REAL em Node p/ testar login sem deploy
