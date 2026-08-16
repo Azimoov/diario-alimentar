@@ -62,10 +62,10 @@ await page.evaluate(({ dietDates }) => {
   window.Store.save();
 }, { dietDates });
 await page.reload();
-await page.waitForSelector('.weight-card');
+await page.waitForSelector('.daynav');
 
 // ---- navegação em 2 níveis ----
-check('3 áreas no topo', await page.locator('.app-btn').count() === 3);
+check('4 áreas no topo', await page.locator('.app-btn').count() === 4, await page.locator('.app-btn').count());
 check('Diário ativo por padrão', await page.locator('.app-btn[data-app="diario"].active').count() === 1);
 check('sub-abas do Diário visíveis', await page.locator('nav.tabs[data-app="diario"]:not([hidden])').count() === 1);
 await page.click('.app-btn[data-app="exames"]');
@@ -181,29 +181,30 @@ await page.getByRole('button', { name: '🔎 Analisar agora' }).click();
 await page.waitForSelector('.analysis-text', { timeout: 20000 });
 const analise = await page.locator('.analysis-text').textContent();
 check('análise volta em texto', analise.includes('VISÃO GERAL'), analise.slice(0, 60));
-check('análise fica guardada para reler', await page.evaluate(() => !!window.Store.get().analysis));
+check('análise entra na lista de análises', await page.evaluate(() => window.Store.get().analyses.length) === 1);
 await page.locator('.modal .icon-btn').click();
-check('card mostra "ver última"', await saude.getByRole('button', { name: /Ver última/ }).count() === 1);
+check('card leva às análises guardadas', await saude.getByRole('button', { name: /Ver análises \(1\)/ }).count() === 1);
 
 // ---- persistência e export ----
 await page.reload();
-await page.waitForSelector('.weight-card');
+await page.waitForSelector('.daynav');
 await page.click('.app-btn[data-app="exames"]');
 check('exames persistem após reload', await page.locator('#tab-exlab .exam-table td', { hasText: 'Glicose em jejum' }).count() === 2);
 await page.click('.app-btn[data-app="saude"]');
 check('métricas persistem após reload', await page.locator('#tab-saude .card', { hasText: 'Médias' }).count() === 1);
-check('última análise persiste', await page.locator('#tab-saude button', { hasText: 'Ver última' }).count() === 1);
+check('análise guardada persiste', await page.locator('#tab-saude button', { hasText: 'Ver análises' }).count() === 1);
 
 const exp = await page.evaluate(() => JSON.parse(window.Store.exportJSON()));
 check('export inclui exames/health/análise',
   exp.labExams.length === 4 && exp.imgExams.length === 1 && exp.examReminders.length === 1
-  && Object.keys(exp.health.daily).length === 20 && !!exp.analysis,
+  && Object.keys(exp.health.daily).length === 20 && exp.analyses.length === 1,
   'labs=' + exp.labExams.length + ' img=' + exp.imgExams.length + ' rem=' + exp.examReminders.length + ' health=' + Object.keys(exp.health.daily).length);
 
 // import (mesclar) não duplica exames com mesmo id
 await page.evaluate(() => { window.Store.importJSON(window.Store.exportJSON(), 'merge'); });
 const exp2 = await page.evaluate(() => JSON.parse(window.Store.exportJSON()));
-check('merge não duplica por id', exp2.labExams.length === 4 && exp2.imgExams.length === 1 && exp2.examReminders.length === 1);
+check('merge não duplica por id', exp2.labExams.length === 4 && exp2.imgExams.length === 1
+  && exp2.examReminders.length === 1 && exp2.analyses.length === 1);
 
 // ---- regressão: fluxo antigo do diário continua vivo ----
 await page.click('.app-btn[data-app="diario"]');

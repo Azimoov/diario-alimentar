@@ -102,11 +102,14 @@ const zres = await HK.parseExportFile(new Blob([zipBuf]), {
 await runChecks('zip', zres);
 check('zip: progresso chegou a 100%', lastFrac === 1 && progressCalls >= 1, [progressCalls, lastFrac]);
 
-// zip sem export.xml -> erro claro
+// zip sem XML do Saúde -> erro claro, dizendo o que veio no lugar
+// (quem escolhe é o CONTEÚDO, não o nome: em iPhone traduzido o arquivo não
+// se chama export.xml. A cobertura por idioma está em fase2-proxy/test/import-saude.mjs.)
 const bad = makeZip('outra-coisa.txt', Buffer.from('oi'));
 let err = null;
 try { await HK.parseExportFile(new Blob([bad])); } catch (e) { err = e.message; }
-check('zip sem export.xml dá erro claro', /export\.xml não encontrado/.test(err || ''), err);
+check('zip sem XML do Saúde dá erro claro',
+  /XML do app Saúde/.test(err || '') && /outra-coisa\.txt/.test(err || ''), err);
 
 console.log(fails ? 'RESULTADO: ' + fails + ' falha(s)' : 'RESULTADO: tudo passou');
 process.exit(fails ? 1 : 0);

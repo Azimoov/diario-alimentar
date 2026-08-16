@@ -64,6 +64,9 @@ export async function paginaLogada(browser, opts = {}) {
   }
   await page.reload();
   await page.waitForFunction(() => !document.body.classList.contains('gate-active'), { timeout: 25000 });
-  await page.waitForSelector('.weight-card');
+  // marca de "app montado": a navegação de data da aba Hoje, que é onde o app
+  // abre. (Já foi `.weight-card`; o cartão de peso mudou para o topo de
+  // Métricas e passou a nascer escondido.)
+  await page.waitForSelector('.daynav');
   return { ctx, page, email };
 }

@@ -1,4 +1,4 @@
-// Confere a marca Highlander na interface + regressão rápida das 3 áreas.
+// Confere a marca Highlander na interface + regressão rápida das 4 áreas.
 import { abrirNavegador, paginaLogada, APP as BASE } from './_comum.mjs';
 let fails = 0;
 const check = (n, ok, extra) => { console.log((ok ? 'PASS' : 'FAIL') + '  ' + n + (extra != null ? '  [' + extra + ']' : '')); if (!ok) fails++; };
@@ -50,11 +50,14 @@ const dl = await page.evaluate(() => {
 });
 check('export baixa como highlander-*.json', /^highlander-\d{4}-\d{2}-\d{2}\.json$/.test(dl || ''), dl);
 
-// regressão: as 3 áreas ainda abrem
+// regressão: as 4 áreas ainda abrem
+check('4 áreas no topo', await page.locator('.app-btn').count() === 4, await page.locator('.app-btn').count());
 await page.click('.app-btn[data-app="exames"]');
 check('área Exames abre', await page.locator('#tab-exlab.active').count() === 1);
 await page.click('.app-btn[data-app="saude"]');
 check('área Métricas abre', await page.locator('#tab-saude.active').count() === 1);
+await page.click('.app-btn[data-app="ia"]');
+check('área IA abre', await page.locator('#tab-conversa.active').count() === 1);
 await page.click('.app-btn[data-app="diario"]');
 check('área Diário abre', await page.locator('#tab-hoje.active').count() === 1);
 

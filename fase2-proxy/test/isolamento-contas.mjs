@@ -25,6 +25,9 @@ const browser = await chromium.launch(process.env.PW_CHROMIUM_PATH ? { executabl
 const selo = Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
 const EMAIL_A = 'ana+' + selo + '@example.com';
 const EMAIL_B = 'bruno+' + selo + '@example.com';
+// idem para o alimento COMPARTILHADO: o catálogo comum é global e recusa
+// nome repetido com 409 — sem o selo, a segunda rodada não compartilha nada
+const WHEY = 'Whey da Ana ' + selo;
 
 async function aparelho(nome) {
   const ctx = await browser.newContext({ viewport: { width: 390, height: 844 } });
@@ -95,15 +98,15 @@ await A.page.evaluate(() => {
   window.Store.addCustomFood({ name: 'Marmita secreta da Ana', kcal: 155, prot: 12, carb: 9, fat: 7 });
 });
 // alimento COMPARTILHADO (vai para o catálogo comum)
-await A.page.evaluate(async () => {
-  const rec = window.Store.addCustomFood({ name: 'Whey da Ana', kcal: 400, prot: 80, carb: 8, fat: 5 });
+await A.page.evaluate(async (WHEY) => {
+  const rec = window.Store.addCustomFood({ name: WHEY, kcal: 400, prot: 80, carb: 8, fat: 5 });
   const res = await fetch(window.Auth.urlProxy('/foods'), {
     method: 'POST',
     headers: window.Auth.cabecalhosProxy({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ name: rec.name, kcal: rec.kcal, prot: rec.prot, carb: rec.carb, fat: rec.fat }),
   });
   if (!res.ok) throw new Error('falhou compartilhar: ' + res.status);
-});
+}, WHEY);
 await A.page.evaluate(() => window.Auth.enviarDados());
 await esperarSync(A.page);
 check('conta A sincronizou', true);
@@ -145,15 +148,15 @@ check('B não vê as métricas do relógio de A', estadoB.metricas === 0);
 check('B não vê o alimento PRIVADO de A', !estadoB.custom.includes('Marmita secreta da Ana'), JSON.stringify(estadoB.custom));
 
 // ---- COMPARTILHADO: o catálogo atravessa ----
-check('B VÊ o alimento compartilhado por A', estadoB.comuns.includes('Whey da Ana'), JSON.stringify(estadoB.comuns));
+check('B VÊ o alimento compartilhado por A', estadoB.comuns.includes(WHEY), JSON.stringify(estadoB.comuns));
 check('catálogo comum não traz o alimento privado de A', !estadoB.comuns.includes('Marmita secreta da Ana'));
 
 // o compartilhado é usável na busca/parser de B
-const achouB = await B.page.evaluate(() => {
-  const m = window.Parser.matchFood('whey da ana');
+const achouB = await B.page.evaluate((WHEY) => {
+  const m = window.Parser.matchFood(WHEY.toLowerCase());
   const f = m && window.Parser.getFood(m.foodId);
   return f ? { nome: f.name, kcal: f.kcal, src: f.src } : null;
-});
+}, WHEY);
 check('B consegue registrar o alimento compartilhado', achouB && achouB.kcal === 400, JSON.stringify(achouB));
 const achouPrivado = await B.page.evaluate(() => {
   const foods = window.Parser.getFoods();
@@ -185,7 +188,7 @@ check('A mantém a própria pesagem', estadoA.pesos.includes(61.5), JSON.stringi
 check('A NÃO recebe a pesagem de B', !estadoA.pesos.includes(88.8), JSON.stringify(estadoA.pesos));
 check('A mantém o próprio exame', estadoA.labs.includes('Ferritina'), JSON.stringify(estadoA.labs));
 check('A mantém as próprias métricas', estadoA.metricas.includes('2026-08-01'));
-check('A recuperou o catálogo comum após restaurar', estadoA.comuns.includes('Whey da Ana'), JSON.stringify(estadoA.comuns));
+check('A recuperou o catálogo comum após restaurar', estadoA.comuns.includes(WHEY), JSON.stringify(estadoA.comuns));
 check('A mantém seus alimentos privados', estadoA.custom.includes('Marmita secreta da Ana'), JSON.stringify(estadoA.custom));
 
 // ---- no servidor: um não alcança os dados do outro ----

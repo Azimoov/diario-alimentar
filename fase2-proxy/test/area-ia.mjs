@@ -20,7 +20,9 @@ const check = (n, ok, extra) => {
   if (!ok) fails++;
 };
 
-const EMAIL = 'ia@example.com';
+// e-mail novo a cada execução (o KV do dev-server sobrevive entre rodadas)
+const selo = Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
+const EMAIL = 'ia+' + selo + '@example.com';
 const SENHA = 'senha-da-conversa-1';
 const CHAVE = 'sk-ant-api03-chave-de-teste-do-e2e-ia-00000';
 // PW_CHROMIUM_PATH: só necessário em sandboxes com Chromium em local não padrão.

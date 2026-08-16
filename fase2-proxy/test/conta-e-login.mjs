@@ -17,7 +17,10 @@ const check = (n, ok, extra) => {
   if (!ok) fails++;
 };
 
-const EMAIL = 'daniel@example.com';
+// e-mail novo a cada execução: o KV do dev-server vive em memória e sobrevive
+// entre rodadas, então um endereço fixo daria "conta já existe" na segunda vez
+const selo = Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
+const EMAIL = 'daniel+' + selo + '@example.com';
 const SENHA = 'senha-forte-123';
 // PW_CHROMIUM_PATH: só necessário em sandboxes com Chromium em local não padrão.
 // Na máquina de quem administra o app, `npx playwright install chromium` basta
