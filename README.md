@@ -1,6 +1,6 @@
 # Highlander — diário alimentar, exames e métricas (local-first)
 
-Hub pessoal de saúde com **quatro áreas** na barra de cima:
+Hub pessoal de saúde com **cinco áreas** na barra de cima:
 
 - **🍽️ Diário** — o diário alimentar original: registro em **texto em
   linguagem natural** (ex.: `150 g patinho`, `120g arroz`, `1 ovo`), kcal e
@@ -14,6 +14,8 @@ Hub pessoal de saúde com **quatro áreas** na barra de cima:
   **export do app Saúde do iPhone** (Apple Watch: passos, energia, sono, FC de
   repouso, VO₂máx…), agregado por dia NESTE aparelho e cruzado com o diário
   (saldo energético).
+- **💊 Remédios** — o que você toma (e o que já tomou), para a análise ler seus
+  exames sabendo disso.
 - **💬 IA** — conversa com memória sobre os seus próprios dados e o histórico
   de análises já geradas (nenhuma é sobrescrita).
 
@@ -327,6 +329,30 @@ intercalar dois fios produziria um diálogo que nunca aconteceu.
 
 Coberto por `fase2-proxy/test/area-ia.mjs` (`npm run test:ia`).
 
+## Remédios — o que você toma, e o que já tomou
+
+Área **💊 Remédios**: nome, dose, como toma, para quê e desde quando. Marque
+como *remédio* ou *suplemento*.
+
+O ponto não é a lista em si — é que **a análise e a conversa recebem essa lista
+junto dos exames**. Um exame alterado se lê de um jeito quando a pessoa começou
+uma medicação há três meses e de outro quando não tomava nada.
+
+- **Parar não apaga.** "⏹ encerrar" pede a data real da parada e move o item
+  para *Encerrados*, riscado mas legível. É de propósito: quando um exame vira,
+  a explicação costuma estar justamente no que foi suspenso. Quem quiser sumir
+  com o registro tem "apagar", que avisa a diferença.
+- **Voltou a tomar?** Um toque reabre o item, sem redigitar.
+- **O que vai para a IA:** os em uso e os encerrados no último ano — encerrado
+  há dois anos não explica exame de agora e só gastaria tokens.
+- **A IA não opina sobre isso.** A regra no Worker é explícita: remédio é
+  contexto de leitura, e ela é proibida de indicar começar, parar ou mudar dose.
+  Levantar a pergunta para você levar ao médico, sim; dar a conduta, não.
+
+O que a área **não** faz, de propósito: não lembra de tomar, não confere
+interação entre medicamentos e não sugere nada. Nenhuma das três dá para fazer
+com honestidade num app local sem base farmacológica.
+
 ## Base de referência de longevidade (o que a IA consulta)
 
 A conversa e a análise cruzada recebem junto uma **base de referência**
@@ -576,7 +602,7 @@ novo** — o iOS guarda o antigo em cache.
 Nada aqui precisa de conta na Cloudflare, chave de API ou internet.
 
 ```
-node test/todos.mjs             # RODA TUDO (12 suítes) — sobe os dois
+node test/todos.mjs             # RODA TUDO (13 suítes) — sobe os dois
                                 # servidores locais sozinho e derruba no fim
 ```
 
@@ -616,7 +642,8 @@ node fase2-proxy/test/import-saude.mjs       # zip do Saúde em qualquer idioma
 node test/health-parser.mjs       # leitura do export do app Saúde (só Node)
 node test/peso-composicao.mjs     # peso, % gordura e massa magra
 node test/exames-e-metricas.mjs   # áreas Exames e Métricas + análise
-node test/marca-e-pwa.mjs         # marca, manifest, ícones, as 4 áreas
+node test/marca-e-pwa.mjs         # marca, manifest, ícones, as 5 áreas
+node test/remedios.mjs            # área Remédios: anotar, encerrar, chegar na IA
 node test/recortar-icone.mjs      # ferramenta de recorte do ícone
 ```
 
@@ -641,7 +668,7 @@ js/
   charts.js         gráficos em SVG puro (sem biblioteca)
   health.js         lê o export do app Saúde (zip/xml) e agrega por dia
   auth.js           conta/login, PBKDF2 no aparelho e sync com a nuvem
-  app.js            interface e orquestração (4 áreas: Diário/Exames/Métricas/IA)
+  app.js            interface e orquestração (5 áreas: Diário/Exames/Métricas/Remédios/IA)
 data/
   source/*.csv      CSVs originais da TACO (raulfdm/taco-api, MIT)
   build-db.mjs      gera js/db.js a partir dos CSVs

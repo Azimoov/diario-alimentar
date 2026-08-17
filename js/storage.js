@@ -24,6 +24,11 @@ window.Store = (function () {
       labExams: [],         // [{id, date, name, norm, value, num, unit, refLow, refHigh, obs}] — 1 linha por analito
       imgExams: [],         // [{id, date, name, norm, place, report}] — exames de imagem c/ resumo do laudo
       examReminders: [],    // [{id, name, norm, kind:'lab'|'img', months, baseDate}] — "repetir a cada N meses"
+      // ---- área Remédios ----
+      // O que foi ENCERRADO continua na lista, com `end` preenchido. Não é
+      // descuido: "o colesterol subiu" só faz sentido junto de "parei a
+      // estatina em março". Apagar o remédio apagaria a explicação do exame.
+      meds: [],             // [{id, name, norm, kind:'remedio'|'suplemento', dose, schedule, reason, start, end, endReason, obs}]
       // ---- área Métricas de saúde (Apple Health) ----
       health: { daily: {}, lastImportAt: null }, // daily: 'YYYY-MM-DD' -> {steps, distKm, kcalOut, kcalBasal, exMin, hrRest, hrv, vo2max, sleepMin}
       // ---- área IA ----
@@ -72,6 +77,7 @@ window.Store = (function () {
     state.labExams = state.labExams || [];
     state.imgExams = state.imgExams || [];
     state.examReminders = state.examReminders || [];
+    state.meds = state.meds || [];
     state.health = Object.assign({}, d.health, state.health || {});
     state.health.daily = state.health.daily || {};
     state.customFoods = state.customFoods || [];
@@ -221,6 +227,7 @@ window.Store = (function () {
       mergeById(state.labExams, incoming.labExams);
       mergeById(state.imgExams, incoming.imgExams);
       mergeById(state.examReminders, incoming.examReminders);
+      mergeById(state.meds, incoming.meds);
       // análises: juntam-se por id e voltam à ordem "mais recente primeiro".
       // Sem isto, "Juntar os dois" descartaria em silêncio as análises feitas
       // no outro aparelho.

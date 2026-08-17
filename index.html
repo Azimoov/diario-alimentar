@@ -13,7 +13,7 @@
   <!-- ?v=N: mesma versão em todos os assets locais (CSS e JS). Suba o número a
        cada publicação que mexa em JS/CSS — sem isso o iPhone continua rodando o
        arquivo antigo do cache. Ver README, "Versão dos assets". -->
-  <link rel="stylesheet" href="app.css?v=3" />
+  <link rel="stylesheet" href="app.css?v=4" />
 </head>
 <body class="gate-active">
   <div id="gate" class="gate">
@@ -28,10 +28,11 @@
       <button id="conta-chip" class="conta-chip" hidden></button>
     </div>
     <nav class="apps">
-      <button class="app-btn active" data-app="diario">🍽️ Diário</button>
-      <button class="app-btn" data-app="exames">🧪 Exames<span class="dot" hidden></span></button>
-      <button class="app-btn" data-app="saude">❤️ Métricas</button>
-      <button class="app-btn" data-app="ia">💬 IA</button>
+      <button class="app-btn active" data-app="diario"><span class="ico">🍽️</span>Diário</button>
+      <button class="app-btn" data-app="exames"><span class="ico">🧪</span>Exames<span class="dot" hidden></span></button>
+      <button class="app-btn" data-app="saude"><span class="ico">❤️</span>Métricas</button>
+      <button class="app-btn" data-app="remedios"><span class="ico">💊</span>Remédios</button>
+      <button class="app-btn" data-app="ia"><span class="ico">💬</span>IA</button>
     </nav>
     <nav class="tabs" data-app="diario">
       <button class="tab-btn active" data-tab="hoje">Hoje</button>
@@ -56,6 +57,7 @@
     <section id="tab-alimentos" class="tab"></section>
     <section id="tab-perfil" class="tab"></section>
     <section id="tab-dados" class="tab"></section>
+    <section id="tab-remedios" class="tab"></section>
     <section id="tab-exlab" class="tab"></section>
     <section id="tab-eximg" class="tab"></section>
     <section id="tab-saude" class="tab"></section>
@@ -68,14 +70,14 @@
   </footer>
 
   <!-- ordem importa: base -> medidas -> parser -> cálculo -> storage -> charts -> health -> app -->
-  <script src="js/db.js?v=3"></script>
-  <script src="js/measures.js?v=3"></script>
-  <script src="js/parser.js?v=3"></script>
-  <script src="js/nutrition.js?v=3"></script>
-  <script src="js/storage.js?v=3"></script>
-  <script src="js/charts.js?v=3"></script>
-  <script src="js/health.js?v=3"></script>
-  <script src="js/auth.js?v=3"></script>
-  <script src="js/app.js?v=3"></script>
+  <script src="js/db.js?v=4"></script>
+  <script src="js/measures.js?v=4"></script>
+  <script src="js/parser.js?v=4"></script>
+  <script src="js/nutrition.js?v=4"></script>
+  <script src="js/storage.js?v=4"></script>
+  <script src="js/charts.js?v=4"></script>
+  <script src="js/health.js?v=4"></script>
+  <script src="js/auth.js?v=4"></script>
+  <script src="js/app.js?v=4"></script>
 </body>
 </html>

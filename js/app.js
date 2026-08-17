@@ -281,15 +281,16 @@ window.App = (function () {
     renderDados();
     renderExLab();
     renderExImg();
+    renderMeds();
     renderSaude();
     renderConversa();
     renderAnalises();
     updateNavBadges();
   }
 
-  // ---- navegação em dois níveis: área (Diário · Exames · Métricas · IA) + abas ----
+  // ---- navegação em dois níveis: área (Diário · Exames · Métricas · Remédios · IA) + abas ----
   let currentApp = 'diario';
-  const APP_TAB = { diario: 'hoje', exames: 'exlab', saude: 'saude', ia: 'conversa' }; // aba lembrada por área
+  const APP_TAB = { diario: 'hoje', exames: 'exlab', saude: 'saude', remedios: 'remedios', ia: 'conversa' }; // aba lembrada por área
   function bindTabs() {
     document.querySelectorAll('.app-btn').forEach(btn => {
       btn.addEventListener('click', () => { currentApp = btn.dataset.app; applyNav(); });
@@ -2150,6 +2151,25 @@ window.App = (function () {
       data: x.date, exame: x.name, local: x.place || undefined,
       resumoLaudo: (x.report || '').slice(0, 500) || undefined,
     }));
+    // Remédios: os em uso e os encerrados no último ano. Encerrado há dois
+    // anos não explica exame de agora e só gastaria tokens; encerrado há três
+    // meses explica, e muito.
+    const corteMed = shiftDate(hoje, -365);
+    const meds = (S.meds || [])
+      .filter(m => !m.end || m.end >= corteMed)
+      .sort((a, b) => ((a.start || '') < (b.start || '') ? 1 : -1))
+      .map(m => ({
+        nome: m.name,
+        tipo: m.kind === 'suplemento' ? 'suplemento' : 'remédio',
+        dose: m.dose || undefined,
+        posologia: m.schedule || undefined,
+        motivo: m.reason || undefined,
+        desde: m.start || undefined,
+        ate: m.end || undefined,
+        situacao: m.end ? 'encerrado' : 'em uso',
+        motivoDaParada: m.endReason || undefined,
+        obs: m.obs || undefined,
+      }));
     const hDates = Object.keys(S.health.daily || {}).sort();
     const ult30 = hDates.slice(-30).map(d => S.health.daily[d]);
     const met = k => {
@@ -2174,6 +2194,7 @@ window.App = (function () {
       composicaoCorporal: composicao,
       examesLaboratoriais: labs,
       examesImagem: imagem,
+      medicamentos: meds,
       metricasRelogio: metricas,
       lembretesVencidos: (S.examReminders || []).filter(r => reminderDue(r).days <= 0).map(r => r.name + ' (venceu em ' + fmtBR(reminderDue(r).due) + ')'),
     };
@@ -2253,6 +2274,204 @@ window.App = (function () {
         }, '📄 Ver análises (' + S.analyses.length + ')') : null,
       ]),
     ]);
+  }
+
+
+  // ================= ÁREA REMÉDIOS =================
+  // O que a pessoa toma é contexto de LEITURA dos outros dados: um exame
+  // alterado se lê diferente sabendo que ela começou uma medicação em março.
+  // Por isso o que foi encerrado não some da lista — vira histórico com data
+  // de fim, e é isso que explica uma virada no gráfico do exame.
+  //
+  // Nada aqui vira conselho: a IA recebe a lista como contexto e é proibida de
+  // sugerir começar, parar ou mudar dose (REGRAS_HONESTIDADE, no Worker).
+  let medEditando = null;   // id do remédio aberto para edição, ou null
+
+  function medAtivo(m) { return !m.end; }
+
+  function saveMeds() {
+    window.Store.save();
+    scheduleBackup();
+    renderMeds();
+  }
+
+  function renderMeds() {
+    const root = $('#tab-remedios');
+    if (!root) return;
+    clear(root);
+    root.appendChild(renderMedForm());
+    root.appendChild(renderMedList(true));
+    const historico = renderMedList(false);
+    if (historico) root.appendChild(historico);   // sem nada encerrado, o cartão não aparece
+  }
+
+  function renderMedForm() {
+    const nameIn = h('input', { class: 'in', type: 'text', placeholder: 'ex.: Rosuvastatina' });
+    const kindIn = h('select', { class: 'in' }, [
+      h('option', { value: 'remedio' }, 'Remédio'),
+      h('option', { value: 'suplemento' }, 'Suplemento'),
+    ]);
+    const doseIn = h('input', { class: 'in', type: 'text', placeholder: 'ex.: 10 mg' });
+    const schedIn = h('input', { class: 'in', type: 'text', placeholder: 'ex.: 1x ao dia, à noite' });
+    const reasonIn = h('input', { class: 'in', type: 'text', placeholder: 'opcional — ex.: colesterol' });
+    const startIn = h('input', { class: 'in', type: 'date', value: isoLocal(new Date()) });
+    const obsIn = h('textarea', { rows: '2', placeholder: 'opcional — quem receitou, como toma, o que sentiu…' });
+
+    return h('div', { class: 'card' }, [
+      h('h3', {}, '➕ Novo remédio ou suplemento'),
+      h('p', { class: 'note' }, 'Serve para a análise ler seus exames sabendo o que você toma. '
+        + 'O app não lembra de tomar, não confere interação e não dá conselho: '
+        + 'quem ajusta dose é o seu médico.'),
+      h('div', { class: 'exam-form-grid' }, [
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Nome'), nameIn]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Tipo'), kindIn]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Dose'), doseIn]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Como toma'), schedIn]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Para quê'), reasonIn]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Começou em'), startIn]),
+        h('div', { class: 'field span2' }, [h('label', { class: 'lbl' }, 'Observação'), obsIn]),
+        h('div', { class: 'span2' }, h('button', {
+          class: 'btn primary',
+          onclick: () => {
+            const name = nameIn.value.trim();
+            if (!name) { toast('Qual remédio? Preencha o nome.', 'error'); return; }
+            S.meds.push({
+              id: uid('m'), name, norm: window.Parser.normalize(name),
+              kind: kindIn.value, dose: doseIn.value.trim(), schedule: schedIn.value.trim(),
+              reason: reasonIn.value.trim(), start: startIn.value || isoLocal(new Date()),
+              end: null, endReason: '', obs: obsIn.value.trim(),
+            });
+            saveMeds();
+            toast(name + ' anotado ✅', 'ok');
+          },
+        }, '+ Adicionar')),
+      ]),
+    ]);
+  }
+
+  // ativos=true → "em uso"; false → o histórico do que foi encerrado
+  function renderMedList(ativos) {
+    const lista = S.meds.filter(m => medAtivo(m) === ativos)
+      .sort((a, b) => ((a.start || '') < (b.start || '') ? 1 : -1));
+    const card = h('div', { class: 'card' }, [
+      h('h3', {}, ativos ? '💊 Em uso' : '📕 Encerrados'),
+    ]);
+    if (!ativos && !lista.length) return null;   // sem histórico, nem mostra o cartão
+    if (!lista.length) {
+      card.appendChild(h('p', { class: 'empty' }, 'Nada anotado ainda.'));
+      return card;
+    }
+    if (!ativos) {
+      card.appendChild(h('p', { class: 'note' }, 'Ficam guardados de propósito: '
+        + 'uma mudança no exame muitas vezes se explica pelo que foi parado.'));
+    }
+    lista.forEach(m => card.appendChild(renderMedItem(m)));
+    return card;
+  }
+
+  function renderMedItem(m) {
+    const box = h('div', { class: 'med-item' + (medAtivo(m) ? '' : ' med-off') });
+    if (medEditando === m.id) { montarEdicaoMed(box, m); return box; }
+
+    const linha1 = [h('strong', {}, m.name)];
+    if (m.dose) linha1.push(h('span', { class: 'med-dose' }, m.dose));
+    if (m.kind === 'suplemento') linha1.push(h('span', { class: 'tag' }, 'suplemento'));
+    box.appendChild(h('div', { class: 'med-head' }, linha1));
+
+    const det = [];
+    if (m.schedule) det.push(m.schedule);
+    if (m.reason) det.push('para ' + m.reason);
+    if (det.length) box.appendChild(h('p', { class: 'med-linha' }, det.join(' · ')));
+
+    const periodo = medAtivo(m)
+      ? 'Desde ' + fmtBR(m.start) + ' · ' + tempoDeUso(m.start)
+      : 'De ' + fmtBR(m.start) + ' a ' + fmtBR(m.end) + (m.endReason ? ' · ' + m.endReason : '');
+    box.appendChild(h('p', { class: 'hint' }, periodo));
+    if (m.obs) box.appendChild(h('p', { class: 'med-linha' }, m.obs));
+
+    const botoes = [h('button', { class: 'link-btn', onclick: () => { medEditando = m.id; renderMeds(); } }, '✏️ editar')];
+    if (medAtivo(m)) {
+      botoes.push(h('button', { class: 'link-btn', onclick: () => encerrarMed(m) }, '⏹ encerrar'));
+    } else {
+      botoes.push(h('button', {
+        class: 'link-btn',
+        onclick: () => { m.end = null; m.endReason = ''; saveMeds(); toast(m.name + ' voltou para “em uso”.', 'ok'); },
+      }, '↩︎ voltei a tomar'));
+    }
+    botoes.push(h('button', {
+      class: 'link-btn danger',
+      onclick: () => {
+        if (!confirm('Apagar ' + m.name + ' de vez?\n\nSe você só parou de tomar, use “encerrar”: '
+          + 'assim ele vira histórico e continua explicando seus exames.')) return;
+        S.meds = S.meds.filter(x => x.id !== m.id);
+        saveMeds();
+      },
+    }, 'apagar'));
+    box.appendChild(h('div', { class: 'btn-row' }, botoes));
+    return box;
+  }
+
+  // "encerrar" pede a data real da parada: parar em março e anotar em julho é
+  // o caso comum, e a data errada estragaria justamente o cruzamento com o exame
+  function encerrarMed(m) {
+    const dataIn = h('input', { class: 'in', type: 'date', value: isoLocal(new Date()), max: isoLocal(new Date()) });
+    const porqueIn = h('input', { class: 'in', type: 'text', placeholder: 'opcional — ex.: médico suspendeu' });
+    const mod = modal('Encerrar ' + m.name, h('div', {}, [
+      h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Parou em'), dataIn]),
+      h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Por quê'), porqueIn]),
+      h('p', { class: 'hint' }, 'Ele sai de “em uso” e vira histórico — não é apagado.'),
+      h('div', { class: 'btn-row' }, [h('button', {
+        class: 'btn primary',
+        onclick: () => {
+          m.end = dataIn.value || isoLocal(new Date());
+          m.endReason = porqueIn.value.trim();
+          mod.close();
+          saveMeds();
+          toast(m.name + ' encerrado ✅', 'ok');
+        },
+      }, 'Encerrar')]),
+    ]));
+  }
+
+  function montarEdicaoMed(box, m) {
+    const campo = (rot, el) => h('div', { class: 'field' }, [h('label', { class: 'lbl' }, rot), el]);
+    const nameIn = h('input', { class: 'in', type: 'text', value: m.name });
+    const doseIn = h('input', { class: 'in', type: 'text', value: m.dose || '' });
+    const schedIn = h('input', { class: 'in', type: 'text', value: m.schedule || '' });
+    const reasonIn = h('input', { class: 'in', type: 'text', value: m.reason || '' });
+    const startIn = h('input', { class: 'in', type: 'date', value: m.start || '' });
+    const obsIn = h('textarea', { rows: '2' }, m.obs || '');
+    box.appendChild(h('div', { class: 'exam-form-grid' }, [
+      campo('Nome', nameIn), campo('Dose', doseIn),
+      campo('Como toma', schedIn), campo('Para quê', reasonIn),
+      campo('Começou em', startIn),
+      h('div', { class: 'field span2' }, [h('label', { class: 'lbl' }, 'Observação'), obsIn]),
+    ]));
+    box.appendChild(h('div', { class: 'btn-row' }, [
+      h('button', {
+        class: 'btn primary',
+        onclick: () => {
+          const nome = nameIn.value.trim();
+          if (!nome) { toast('O nome não pode ficar vazio.', 'error'); return; }
+          m.name = nome; m.norm = window.Parser.normalize(nome);
+          m.dose = doseIn.value.trim(); m.schedule = schedIn.value.trim();
+          m.reason = reasonIn.value.trim(); m.start = startIn.value || m.start;
+          m.obs = obsIn.value.trim();
+          medEditando = null;
+          saveMeds();
+        },
+      }, 'Salvar'),
+      h('button', { class: 'btn', onclick: () => { medEditando = null; renderMeds(); } }, 'Cancelar'),
+    ]));
+  }
+
+  function tempoDeUso(inicio) {
+    const dias = Math.round((Date.parse(isoLocal(new Date())) - Date.parse(inicio)) / 86400000);
+    if (!isFinite(dias) || dias < 0) return '';
+    if (dias < 31) return 'há ' + dias + ' dia' + (dias === 1 ? '' : 's');
+    const meses = Math.round(dias / 30.44);
+    if (meses < 24) return 'há ' + meses + ' mês' + (meses === 1 ? '' : 'es');
+    return 'há ' + (Math.round(dias / 365.25 * 10) / 10).toString().replace('.', ',') + ' anos';
   }
 
   // ================= ÁREA IA (conversa + análises guardadas) =================
@@ -3280,7 +3499,7 @@ window.App = (function () {
   return {
     init, addPhotoItems, compressPhoto, analyzePhoto, computeRecipe, openRecipeForm,
     applyLabelToForm, pushBackup, restoreBackup,
-    buildAnalysisPayload, reminderDue, goTo,
+    buildAnalysisPayload, reminderDue, goTo, renderMeds,
     atualizarStatusConta, abrirLogin, sincronizarAoEntrar,
   };
 })();
