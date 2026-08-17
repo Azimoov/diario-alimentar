@@ -1,18 +1,19 @@
 # PONTO DE RETOMADA — Highlander
 
-_Atualizado em 2026-08-16. Quem chega agora lê só até "O que falta"; o resto é
+_Atualizado em 2026-08-17. Quem chega agora lê só até "O que falta"; o resto é
 histórico e memória das decisões._
 
 ## O que é
 
 Hub pessoal de saúde, estático (HTML/CSS/JS puros, sem build), publicado no
-GitHub Pages e usável como app no iPhone. **Quatro áreas** na barra de cima:
+GitHub Pages e usável como app no iPhone. **Cinco áreas** na barra de cima:
 
 | Área | O que faz |
 |---|---|
 | 🍽️ Diário | registro por texto em linguagem natural → kcal e macros, gráficos, histórico. Base de 6.273 alimentos (TACO + TBCA + USDA) embutida em `js/db.js` |
 | 🧪 Exames | laboratoriais (analito por linha, com a faixa do SEU laudo) e de imagem; lembretes de repetição; leitura de laudo por **foto ou PDF** |
 | ❤️ Métricas | peso e composição corporal; import do export do app Saúde do iPhone (passos, energia, sono, FC, VO₂máx) e saldo energético |
+| 💊 Remédios | o que a pessoa toma e o que já tomou; encerrar guarda como histórico, não apaga |
 | 💬 IA | conversa com memória sobre os próprios dados + histórico de análises |
 
 A conversa e a análise consultam uma **base de referência de longevidade**
@@ -20,12 +21,12 @@ A conversa e a análise consultam uma **base de referência de longevidade**
 evidência item a item e procedência em `docs/REFERENCIAS.md`. Há ainda um
 envio opcional de contexto para o **Open Brain**, desligado por padrão.
 
-## Estado atual (16/08/2026)
+## Estado atual (17/08/2026)
 
 - **Tudo o que foi pedido está implementado e no `main`.** Última rodada:
   mesclagem de duas frentes de trabalho que corriam em paralelo + toda a suíte
   de testes de volta ao verde.
-- **Suíte: 12 conjuntos, todos passando**, e rodando duas vezes seguidas sem
+- **Suíte: 13 conjuntos, todos passando**, e rodando duas vezes seguidas sem
   sujar estado. Um comando: `node test/todos.mjs` (ele mesmo sobe e derruba os
   dois servidores locais).
 - **Site:** <https://azimoov.github.io/diario-alimentar/> — republica sozinho
@@ -134,7 +135,7 @@ js/db.js                      base de alimentos (GERADA — não editar à mão)
 js/{parser,nutrition,storage,charts}.js
 js/health.js                  lê o export do app Saúde (zip/xml, streaming)
 js/auth.js                    conta, PBKDF2 no aparelho, sync com a nuvem
-js/app.js                     interface e orquestração das 4 áreas
+js/app.js                     interface e orquestração das 5 áreas
 data/                         geração da base, servidor local, recorte do ícone
 test/todos.mjs                roda TUDO com um comando
 test/_comum.mjs               entrar pelo portão, conta descartável
@@ -150,19 +151,40 @@ docs/FASE-2-FOTO.md           arquitetura, rotas, custos e deploy
 - Estimar gramas por foto é impreciso por natureza — todo item de foto entra
   como estimativa editável. Pesar continua sendo o método de referência.
 - O caminho de PDF de laudo foi validado contra a API **simulada**; a leitura
-  de PDF de verdade só se confirma com a chave real depois do deploy.
+  de PDF de verdade só se confirma com a chave real depois do deploy. Vale para
+  tudo que fala com a Anthropic: foto de refeição, rótulo, laudo, análise,
+  conversa e o cache de prompt foram exercitados contra o mock, nunca contra a
+  API de produção — o container onde o código foi escrito não tem saída de rede.
 - O backup antigo do Daniel (modelo por senha do app) segue cifrado com uma
   senha esquecida. É irrecuperável **por desenho** — o registro no KV está
   intocado, mas não existe caminho de volta. O modelo de conta atual existe
   justamente para isso não se repetir.
 - Medidas caseiras genéricas são aproximadas; a TACO não tem tudo cozido.
 
+## O que foi decidido NÃO fazer (e por quê)
+
+Não são pendências esquecidas — são escolhas. Se mudar de ideia, é aqui que
+está o motivo original:
+
+- **Remédios não vão para o Open Brain.** O envio leva retrato semanal e exames;
+  medicação é dado sensível saindo para um serviço externo, e a decisão é do
+  dono, não do código. Incluir é pequeno: entra no retrato em `src/index.js`.
+- **Sem lembrete de tomar remédio.** O app não roda em segundo plano no iPhone;
+  um lembrete que não dispara é pior do que nenhum.
+- **Sem checagem de interação entre medicamentos.** Exigiria base
+  farmacológica; improvisar isso seria perigoso.
+- **A análise não usa cache de prompt** (a conversa usa). Roda poucas vezes por
+  mês e o cache dura 5 minutos: o prefixo seria sempre escrito e nunca lido.
+
 ## Próximos passos sugeridos (nenhum é urgente)
 
 1. Verificar um domínio no Resend e remover `MAIL_TO_OVERRIDE`, para cada
    pessoa receber o próprio e-mail de recuperação.
-2. Afinar `js/measures.js` (sinônimos, pesos por unidade) com o uso real.
-3. Qualidade de vida: copiar dia anterior, refeições favoritas, metas por
+2. Completar as lacunas da base de referência com literatura primária: sono,
+   rastreio oncológico e saúde mental são citados sem fonte de suporte (a
+   própria base declara a lacuna quando o assunto surge).
+3. Afinar `js/measures.js` (sinônimos, pesos por unidade) com o uso real.
+4. Qualidade de vida: copiar dia anterior, refeições favoritas, metas por
    refeição.
 
 ---
