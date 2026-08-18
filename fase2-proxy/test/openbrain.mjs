@@ -69,6 +69,8 @@ const ENV = {
   OPENBRAIN_URL: `http://localhost:${PORT}`,
   OPENBRAIN_KEY: CHAVE,
   OPENBRAIN_DIAS_RETRATO: "7",
+  // o app é multiusuário e a chave do Open Brain é uma só: só esta conta pode
+  OPENBRAIN_CONTAS: EMAIL,
 };
 
 const hojeISO = new Date().toISOString().slice(0, 10);
@@ -223,6 +225,55 @@ brain.listen(PORT, async () => {
     check("desativado para de enviar", capturados.length === antes4);
     check("desativar preserva o que já foi enviado (religar não reenvia tudo)",
       JSON.parse(kv.get("openbrain:" + UID)).examesEnviados.length > 0);
+
+    // ---- 9) TRAVA POR CONTA: o app é multiusuário e a chave do Open Brain é
+    // UMA, de quem hospeda. Sem esta trava, o retrato e os exames de qualquer
+    // pessoa que ligasse a opção cairiam no brain do dono do app.
+    const OUTRO = "outra.pessoa@example.com";
+    const authOutro = await derivarAuthKey(OUTRO, "senha-da-outra-1");
+    const rOutro = await worker.fetch(new Request("https://p.example/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: OUTRO, authKey: authOutro, invite: "convite-teste" }),
+    }), ENV);
+    const sessaoOutro = (await rOutro.json()).session;
+    const uidOutro = [...kv.keys()].filter((k) => k.startsWith("acct:"))
+      .map((k) => k.slice(5)).find((u) => u !== UID);
+
+    const gStatus = await worker.fetch(new Request("https://p.example/openbrain/sync", {
+      method: "GET", headers: { "X-Session": sessaoOutro },
+    }), ENV);
+    const statusOutro = await gStatus.json();
+    check("outra conta é avisada que não pode (o app esconde o cartão)",
+      statusOutro.permitido === false, JSON.stringify(statusOutro));
+
+    const pAtivar = await worker.fetch(new Request("https://p.example/openbrain/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Session": sessaoOutro },
+      body: JSON.stringify({ ativar: true }),
+    }), ENV);
+    check("outra conta não consegue ativar -> 403", pAtivar.status === 403, pAtivar.status);
+    check("e nem cria livro-caixa", !kv.has("openbrain:" + uidOutro));
+
+    // mesmo com um livro-caixa plantado (ativado antes da regra existir, ou
+    // alguém tirado da lista depois), o cron não pode voltar a enviar
+    kv.set("openbrain:" + uidOutro, JSON.stringify({ ativo: true, ultimoRetratoEm: null, examesEnviados: [] }));
+    const antes9 = capturados.length;
+    await scheduled({}, ENV, {});
+    check("cron ignora quem não está na lista, mesmo com livro-caixa antigo",
+      capturados.length === antes9, capturados.length - antes9 + " envio(s) indevido(s)");
+
+    // ---- 10) falha FECHADA: sem lista configurada, ninguém sincroniza ----
+    const semLista = { ...ENV, OPENBRAIN_CONTAS: "" };
+    const pDono = await worker.fetch(new Request("https://p.example/openbrain/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Session": SESSAO },
+      body: JSON.stringify({ ativar: true }),
+    }), semLista);
+    check("sem lista, nem o dono sincroniza (falha fechada)", pDono.status === 403, pDono.status);
+    const antes10 = capturados.length;
+    await scheduled({}, semLista, {});
+    check("e o cron também não envia nada", capturados.length === antes10);
   } catch (e) {
     console.log("ERRO NO TESTE:", e && e.stack || e);
     fails++;

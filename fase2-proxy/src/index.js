@@ -503,6 +503,26 @@ async function handleChat(request, env, json, uid) {
 // O que NUNCA sobe: foto, laudo em texto livre, resumo de exame de imagem,
 // e o diário item a item.
 
+// QUEM pode mandar contexto para o Open Brain.
+//
+// O app é multiusuário e a chave do Open Brain é UMA só, do Worker: sem esta
+// trava, o retrato semanal e os exames de QUALQUER pessoa que ligasse a opção
+// cairiam no brain de quem hospeda — que não é dono desses dados e não deveria
+// virar depositário deles. `OPENBRAIN_CONTAS` lista os e-mails autorizados.
+//
+// FALHA FECHADA de propósito: lista vazia = ninguém sincroniza, nem o dono.
+// Um deploy que esqueceu de configurar tem que não enviar nada, e não enviar
+// tudo de todo mundo.
+async function podeOpenBrain(env, uid) {
+  const lista = String(env.OPENBRAIN_CONTAS || "")
+    .split(",").map((e) => normEmail(e)).filter(Boolean);
+  if (!lista.length) return false;
+  for (const email of lista) {
+    if ((await sha256Hex(email)) === uid) return true;
+  }
+  return false;
+}
+
 const OPENBRAIN_URL_PADRAO = "https://speueyaplfprjpgnakxm.supabase.co/functions/v1/open-brain-capture";
 
 // A API dispara um LEMBRETE com data quando o texto contém "me lembre de" e
@@ -680,11 +700,13 @@ async function handleOpenBrain(request, env, json, uid) {
   if (!uid) return json({ error: "login_required", detail: "Entre na sua conta." }, 401);
   if (!env.DIARIO_KV) return json({ error: "server_not_configured" }, 500);
   const chaveLedger = "openbrain:" + uid;
+  const permitido = await podeOpenBrain(env, uid);
 
   if (request.method === "GET") {
     const bruto = await env.DIARIO_KV.get(chaveLedger);
     const l = bruto ? JSON.parse(bruto) : null;
     return json({
+      permitido,
       ativo: !!(l && l.ativo),
       configurado: !!env.OPENBRAIN_KEY,
       ultimoRetratoEm: l ? l.ultimoRetratoEm : null,
@@ -692,6 +714,13 @@ async function handleOpenBrain(request, env, json, uid) {
     });
   }
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+
+  if (!permitido) {
+    return json({
+      error: "openbrain_nao_permitido",
+      detail: "O envio ao Open Brain está restrito à conta de quem administra este app.",
+    }, 403);
+  }
 
   let body = {};
   try { body = await request.json(); } catch { /* corpo vazio é válido aqui */ }
@@ -1433,6 +1462,9 @@ export default {
       const pag = await env.DIARIO_KV.list({ prefix: "openbrain:", cursor });
       for (const k of pag.keys) {
         const uid = k.name.slice("openbrain:".length);
+        // trava também aqui, não só na rota: um livro-caixa criado antes da
+        // regra (ou depois de tirarem alguém da lista) não pode voltar a enviar
+        if (!(await podeOpenBrain(env, uid))) continue;
         try {
           const r = await sincronizarOpenBrain(env, uid);
           if (r && r.falhas && r.falhas.length) console.log("OPENBRAIN falhas", uid, r.falhas.join(" | "));

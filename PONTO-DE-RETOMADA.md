@@ -49,8 +49,11 @@ npx wrangler deploy
 ```
 
 Opcional, só se for usar o envio para o Open Brain:
-`npx wrangler secret put OPENBRAIN_KEY` (o cron semanal já vai no
-`wrangler.jsonc`; sem a chave o envio simplesmente não acontece).
+`npx wrangler secret put OPENBRAIN_KEY`. **Confira também `OPENBRAIN_CONTAS`
+no `wrangler.jsonc`**: é a lista de e-mails autorizados a sincronizar. A chave
+do Open Brain é uma só, do Worker — sem essa lista, os dados de saúde de
+qualquer usuário que ligasse a opção cairiam no seu brain. Lista vazia =
+ninguém sincroniza, nem você.
 
 - **`DATA_KEY` é insubstituível**: é ela que cifra os dados das contas em
   repouso. Perdida ou trocada, as contas continuam existindo e os dados
@@ -169,6 +172,10 @@ está o motivo original:
 - **Remédios não vão para o Open Brain.** O envio leva retrato semanal e exames;
   medicação é dado sensível saindo para um serviço externo, e a decisão é do
   dono, não do código. Incluir é pequeno: entra no retrato em `src/index.js`.
+- **O Open Brain é só do dono (`OPENBRAIN_CONTAS`), não de cada usuário.** A
+  alternativa avaliada foi chave por conta, como a da Anthropic — mais correta
+  para multiusuário, mas exige que cada pessoa tenha conta no Open Brain. Ficou
+  a trava por lista; o caminho para mudar está no README.
 - **Sem lembrete de tomar remédio.** O app não roda em segundo plano no iPhone;
   um lembrete que não dispara é pior do que nenhum.
 - **Sem checagem de interação entre medicamentos.** Exigiria base

@@ -403,11 +403,24 @@ Procedência item a item — com o que está conferido e o que não está — em
   antes da marca de cache, qualquer pesagem nova invalidaria tudo e a economia
   viraria prejuízo.
 
-## Envio de contexto para o Open Brain (opcional, desligado por padrão)
+## Envio de contexto para o Open Brain (restrito, desligado por padrão)
 
 Na aba **Análises** há um cartão para ligar o envio do seu contexto de saúde
 para o [Open Brain](https://speueyaplfprjpgnakxm.supabase.co/functions/v1/open-brain-capture),
 de modo que outras IAs suas encontrem esse histórico depois.
+
+> **Só para as contas listadas em `OPENBRAIN_CONTAS`.** A chave do Open Brain é
+> **uma só, do Worker** — ela não é por usuário. Num app multiusuário isso
+> significa que, sem trava, o retrato semanal e os exames de *qualquer* pessoa
+> que ligasse a opção cairiam no brain de quem hospeda o app, que não é dono
+> desses dados. Por isso a rota e o cron conferem a conta, e para quem não está
+> na lista **o cartão nem aparece**. A lista **vazia = ninguém** (falha
+> fechada): um deploy que esqueceu de configurar não envia nada, em vez de
+> enviar tudo de todo mundo.
+>
+> Se um dia cada pessoa precisar do próprio destino, o caminho é o mesmo da
+> chave da Anthropic (`/account/apikey`): guardar uma chave por conta, cifrada
+> com a chave de dados daquele usuário. Aí a trava por lista sai de cena.
 
 - **O que sobe:** um **retrato semanal** (médias de dieta dos últimos 30 dias,
   peso e variação, composição corporal, médias do relógio) e **um pensamento

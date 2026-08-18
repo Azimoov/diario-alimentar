@@ -51,6 +51,11 @@
     // conversa longa não pode consumir as análises do dia)
     "CHAT_DAILY_LIMIT": "100",
     // ---- Open Brain (envio de contexto de saúde) ----
+    // QUEM pode sincronizar com o Open Brain: e-mails separados por vírgula.
+    // A chave do Open Brain é uma só, do Worker — sem esta lista, o retrato e
+    // os exames de qualquer usuário que ligasse a opção cairiam no brain de
+    // quem hospeda. VAZIO = NINGUÉM (falha fechada, de propósito).
+    "OPENBRAIN_CONTAS": "serruyadaniel@gmail.com",
     // A CHAVE é segredo: npx wrangler secret put OPENBRAIN_KEY
     // Sem ela o recurso fica desligado e a interface diz isso.
     // Autenticação é o cabeçalho x-brain-key — Authorization é IGNORADO pela

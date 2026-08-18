@@ -2537,7 +2537,12 @@ window.App = (function () {
   // consciente, não padrão herdado.
   function renderOpenBrainCard() {
     const card = h('div', { class: 'card' }, [h('h3', {}, '🧠 Enviar contexto para o Open Brain')]);
+    // Escondido até o servidor dizer se esta conta pode. Mostrar primeiro e
+    // remover depois faria o cartão piscar na tela de quem nunca vai poder
+    // usá-lo — pior do que nunca ter aparecido.
+    card.hidden = true;
     if (!window.Auth.logado()) {
+      card.hidden = false;
       card.appendChild(h('p', { class: 'note' }, 'Entre na sua conta para configurar o envio.'));
       return card;
     }
@@ -2556,6 +2561,12 @@ window.App = (function () {
       // exame; quem manda de verdade é o servidor (é ele que tem o livro-caixa)
       if (S.settings.openBrain !== !!st.ativo) { S.settings.openBrain = !!st.ativo; window.Store.save(); }
       clear(acoes);
+      // A chave do Open Brain é UMA, de quem hospeda o app: se todo mundo
+      // pudesse ligar, os dados de saúde de todos cairiam no brain dele. O
+      // servidor decide quem pode; para os demais o cartão some inteiro em vez
+      // de oferecer um botão que responderia 403.
+      if (st.permitido === false) { card.remove(); return; }
+      card.hidden = false;
       if (!st.configurado) {
         estado.className = 'hint comp-warn';
         estado.textContent = '⚠ Quem administra o app ainda não cadastrou a chave do Open Brain no servidor.';
@@ -2610,7 +2621,13 @@ window.App = (function () {
 
     fetch(window.Auth.urlProxy('/openbrain/sync'), { method: 'GET', headers: window.Auth.cabecalhosProxy() })
       .then(r => r.json()).then(pintar)
-      .catch(() => { estado.className = 'hint comp-warn'; estado.textContent = '⚠ Não consegui falar com o servidor agora.'; });
+      .catch(() => {
+        // sem resposta não dá para saber se esta conta pode; mostra o aviso em
+        // vez de sumir calado — quem não puder ainda esbarra no 403 ao tentar
+        card.hidden = false;
+        estado.className = 'hint comp-warn';
+        estado.textContent = '⚠ Não consegui falar com o servidor agora.';
+      });
     return card;
   }
 
