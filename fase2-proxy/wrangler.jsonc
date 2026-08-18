@@ -50,6 +50,10 @@
     // máx. de perguntas na conversa por dia (cota separada da análise: uma
     // conversa longa não pode consumir as análises do dia)
     "CHAT_DAILY_LIMIT": "100",
+    // máx. de chamadas ao coach de treino (/treino) POR CONTA por dia. O uso
+    // normal é ~1 por semana (fechar a semana); 10 cobre refazer o plano e
+    // fechar no mesmo dia com folga, e segura loop de bug no app.
+    "TRAINING_DAILY_LIMIT": "10",
     // ---- Open Brain (envio de contexto de saúde) ----
     // QUEM pode sincronizar com o Open Brain: e-mails separados por vírgula.
     // A chave do Open Brain é uma só, do Worker — sem esta lista, o retrato e

@@ -13,7 +13,7 @@
   <!-- ?v=N: mesma versão em todos os assets locais (CSS e JS). Suba o número a
        cada publicação que mexa em JS/CSS — sem isso o iPhone continua rodando o
        arquivo antigo do cache. Ver README, "Versão dos assets". -->
-  <link rel="stylesheet" href="app.css?v=5" />
+  <link rel="stylesheet" href="app.css?v=6" />
 </head>
 <body class="gate-active">
   <div id="gate" class="gate">
@@ -32,6 +32,7 @@
       <button class="app-btn" data-app="exames"><span class="ico">🧪</span>Exames<span class="dot" hidden></span></button>
       <button class="app-btn" data-app="saude"><span class="ico">❤️</span>Métricas</button>
       <button class="app-btn" data-app="remedios"><span class="ico">💊</span>Remédios</button>
+      <button class="app-btn" data-app="treino"><span class="ico">🏋️</span>Treino</button>
       <button class="app-btn" data-app="ia"><span class="ico">💬</span>IA</button>
     </nav>
     <nav class="tabs" data-app="diario">
@@ -44,6 +45,10 @@
     <nav class="tabs" data-app="exames" hidden>
       <button class="tab-btn" data-tab="exlab">🧪 Laboratoriais</button>
       <button class="tab-btn" data-tab="eximg">🩻 Imagem</button>
+    </nav>
+    <nav class="tabs" data-app="treino" hidden>
+      <button class="tab-btn" data-tab="trsemana">📋 Semana</button>
+      <button class="tab-btn" data-tab="trevolucao">📈 Evolução</button>
     </nav>
     <nav class="tabs" data-app="ia" hidden>
       <button class="tab-btn" data-tab="conversa">💬 Conversa</button>
@@ -61,6 +66,8 @@
     <section id="tab-exlab" class="tab"></section>
     <section id="tab-eximg" class="tab"></section>
     <section id="tab-saude" class="tab"></section>
+    <section id="tab-trsemana" class="tab"></section>
+    <section id="tab-trevolucao" class="tab"></section>
     <section id="tab-conversa" class="tab"></section>
     <section id="tab-analises" class="tab"></section>
   </main>
@@ -70,14 +77,14 @@
   </footer>
 
   <!-- ordem importa: base -> medidas -> parser -> cálculo -> storage -> charts -> health -> app -->
-  <script src="js/db.js?v=5"></script>
-  <script src="js/measures.js?v=5"></script>
-  <script src="js/parser.js?v=5"></script>
-  <script src="js/nutrition.js?v=5"></script>
-  <script src="js/storage.js?v=5"></script>
-  <script src="js/charts.js?v=5"></script>
-  <script src="js/health.js?v=5"></script>
-  <script src="js/auth.js?v=5"></script>
-  <script src="js/app.js?v=5"></script>
+  <script src="js/db.js?v=6"></script>
+  <script src="js/measures.js?v=6"></script>
+  <script src="js/parser.js?v=6"></script>
+  <script src="js/nutrition.js?v=6"></script>
+  <script src="js/storage.js?v=6"></script>
+  <script src="js/charts.js?v=6"></script>
+  <script src="js/health.js?v=6"></script>
+  <script src="js/auth.js?v=6"></script>
+  <script src="js/app.js?v=6"></script>
 </body>
 </html>

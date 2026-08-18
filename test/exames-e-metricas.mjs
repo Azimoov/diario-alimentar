@@ -65,7 +65,7 @@ await page.reload();
 await page.waitForSelector('.daynav');
 
 // ---- navegação em 2 níveis ----
-check('5 áreas no topo', await page.locator('.app-btn').count() === 5, await page.locator('.app-btn').count());
+check('6 áreas no topo', await page.locator('.app-btn').count() === 6, await page.locator('.app-btn').count());
 check('Diário ativo por padrão', await page.locator('.app-btn[data-app="diario"].active').count() === 1);
 check('sub-abas do Diário visíveis', await page.locator('nav.tabs[data-app="diario"]:not([hidden])').count() === 1);
 await page.click('.app-btn[data-app="exames"]');

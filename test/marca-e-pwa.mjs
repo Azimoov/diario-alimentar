@@ -1,4 +1,4 @@
-// Confere a marca Highlander na interface + regressão rápida das 5 áreas.
+// Confere a marca Highlander na interface + regressão rápida das 6 áreas.
 import { abrirNavegador, paginaLogada, APP as BASE } from './_comum.mjs';
 let fails = 0;
 const check = (n, ok, extra) => { console.log((ok ? 'PASS' : 'FAIL') + '  ' + n + (extra != null ? '  [' + extra + ']' : '')); if (!ok) fails++; };
@@ -50,14 +50,16 @@ const dl = await page.evaluate(() => {
 });
 check('export baixa como highlander-*.json', /^highlander-\d{4}-\d{2}-\d{2}\.json$/.test(dl || ''), dl);
 
-// regressão: as 5 áreas ainda abrem
-check('5 áreas no topo', await page.locator('.app-btn').count() === 5, await page.locator('.app-btn').count());
+// regressão: as 6 áreas ainda abrem
+check('6 áreas no topo', await page.locator('.app-btn').count() === 6, await page.locator('.app-btn').count());
 await page.click('.app-btn[data-app="exames"]');
 check('área Exames abre', await page.locator('#tab-exlab.active').count() === 1);
 await page.click('.app-btn[data-app="saude"]');
 check('área Métricas abre', await page.locator('#tab-saude.active').count() === 1);
 await page.click('.app-btn[data-app="remedios"]');
 check('área Remédios abre', await page.locator('#tab-remedios.active').count() === 1);
+await page.click('.app-btn[data-app="treino"]');
+check('área Treino abre', await page.locator('#tab-trsemana.active').count() === 1);
 await page.click('.app-btn[data-app="ia"]');
 check('área IA abre', await page.locator('#tab-conversa.active').count() === 1);
 await page.click('.app-btn[data-app="diario"]');

@@ -11,11 +11,11 @@ const browser = await abrirNavegador();
 const { page } = await paginaLogada(browser, { onErro: e => { console.log('PAGEERROR', e.message); fails++; } });
 
 // ---- a área abre ----
-check('5 áreas no topo', await page.locator('.app-btn').count() === 5, await page.locator('.app-btn').count());
+check('6 áreas no topo', await page.locator('.app-btn').count() === 6, await page.locator('.app-btn').count());
 await page.click('.app-btn[data-app="remedios"]');
 check('área Remédios abre', await page.locator('#tab-remedios.active').count() === 1);
 check('não tem sub-abas', await page.locator('nav.tabs[data-app="remedios"]').count() === 0);
-// rótulo cortado no celular seria defeito visível: são 5 numa tela de 390 px
+// rótulo cortado no celular seria defeito visível: são 6 numa tela de 390 px
 check('nenhum rótulo de área cortado', (await page.locator('.app-btn').evaluateAll(
   els => els.filter(e => e.scrollWidth > e.clientWidth + 1).map(e => e.textContent))).length === 0);
 

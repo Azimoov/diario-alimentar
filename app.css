@@ -99,17 +99,17 @@ body.gate-active #gate {
 .sync-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
 .sync-dot.pend { background: var(--warn); }
 
-/* nível 1: as áreas do app (Diário · Exames · Métricas · Remédios · IA) */
-/* São cinco: numa tela de 390 px sobra ~69 px por botão, e "💊 Remédios" numa
-   linha só não cabe (era cortado com reticências). Ícone em cima, palavra
+/* nível 1: as áreas do app (Diário · Exames · Métricas · Remédios · Treino · IA) */
+/* São seis: numa tela de 390 px sobram ~57 px por botão, então a palavra vai a
+   11 px para "Remédios"/"Métricas" caberem sem corte. Ícone em cima, palavra
    embaixo — padrão de barra de abas de celular, e todos ficam da mesma altura. */
-.apps { display: flex; gap: 4px; margin-bottom: 8px; }
+.apps { display: flex; gap: 3px; margin-bottom: 8px; }
 .app-btn {
-  position: relative; flex: 1; min-width: 0; padding: 6px 2px 7px;
+  position: relative; flex: 1; min-width: 0; padding: 6px 1px 7px;
   display: flex; flex-direction: column; align-items: center; gap: 1px;
   border: 1px solid var(--border); background: transparent;
-  color: var(--muted); border-radius: 10px; font-size: 12px; font-weight: 700; cursor: pointer;
-  white-space: nowrap; overflow: hidden; line-height: 1.25;
+  color: var(--muted); border-radius: 10px; font-size: 11px; font-weight: 700; cursor: pointer;
+  white-space: nowrap; overflow: hidden; line-height: 1.25; letter-spacing: -.1px;
 }
 .app-btn .ico { font-size: 17px; line-height: 1.1; }
 .app-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
@@ -440,3 +440,38 @@ input[type=number] { width: 100%; }
 /* encerrado fica visivelmente de lado, mas legível: é histórico, não lixo */
 .med-off { opacity: 0.72; }
 .med-off .med-head strong { text-decoration: line-through; text-decoration-thickness: 1px; }
+
+/* ---- área Treino ---- */
+/* Cabeçalho da semana: bloco + foco viram contexto, não decoração. */
+.tr-bloco { display: inline-block; padding: 2px 9px; border-radius: 999px;
+  background: var(--accent-weak); color: var(--accent); font-size: 12px; font-weight: 700; }
+.tr-sessao-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.tr-dia { min-width: 38px; font-weight: 700; color: var(--accent); text-transform: uppercase; font-size: 12px; }
+/* cor por capacidade, para o olho achar "cadê o Z2 desta semana?" de longe */
+.tr-tipo { font-size: 11px; font-weight: 700; padding: 1px 8px; border-radius: 999px;
+  background: var(--track); color: var(--muted); }
+.tr-tipo-forca, .tr-tipo-hipertrofia { background: color-mix(in srgb, var(--p) 16%, transparent); color: var(--p); }
+.tr-tipo-potencia { background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--c); }
+.tr-tipo-z2, .tr-tipo-z5 { background: var(--accent-weak); color: var(--accent); }
+.tr-tipo-equilibrio, .tr-tipo-mobilidade { background: color-mix(in srgb, var(--g) 16%, transparent); color: var(--g); }
+.tr-item { margin: 8px 0 0 0; padding-left: 10px; border-left: 2px solid var(--track); }
+.tr-item-nome { font-size: 14px; }
+.tr-alvo { color: var(--muted); font-size: 13px; }
+/* linha de registro: os campos que a pessoa preenche depois do treino */
+.tr-reg { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
+.tr-reg .lblzin { font-size: 11px; color: var(--muted); }
+.tr-in { width: 62px; padding: 6px 6px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--bg); color: var(--fg); font: inherit; font-size: 14px; }
+.tr-in-rpe { width: auto; }
+/* item com registro anotado ganha um "feito" visual sem esconder os números */
+.tr-item.tr-ok { border-left-color: var(--accent); }
+/* ---- Evolução: notas 0-10 como barras ---- */
+.nota-row { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.nota-nome { flex: 0 0 92px; font-size: 13px; }
+.nota-track { flex: 1; height: 10px; background: var(--track); border-radius: 5px; overflow: hidden; }
+.nota-fill { height: 100%; border-radius: 5px; background: var(--accent); }
+.nota-fill.baixa { background: var(--warn); }
+.nota-val { flex: 0 0 44px; text-align: right; font-weight: 700; font-size: 13px; }
+.nota-val.semdado { color: var(--muted); font-weight: 400; font-size: 12px; }
+.tr-aval-texto { white-space: pre-wrap; font-size: 14px; }
+.tr-melhoria { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--accent); font-size: 14px; }

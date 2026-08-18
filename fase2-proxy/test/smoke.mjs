@@ -37,10 +37,52 @@ const mock = createServer((req, res) => {
     const isChat = sys.includes("responde perguntas de UMA pessoa");
     const isLab = sys.includes("laudos de exames laboratoriais");
     const isImg = sys.includes("laudos de exames de imagem");
+    const isTreino = sys.includes("coach de treino");
     // o mock devolve o tipo do anexo recebido p/ o teste conferir que PDF
     // virou bloco "document" e foto virou bloco "image"
     const anexo = ((body.messages || [])[0] || {}).content || [];
     const tipoAnexo = (anexo[0] || {}).type || "?";
+    // ---- modo coach de treino: fixtures fixas que os testes conhecem ------
+    const semanaTreino = (n, carga) => ({
+      numero: n,
+      bloco: "Base geral", semanaDoBloco: n, semanasNoBloco: 4,
+      foco: "Adaptação e técnica",
+      orientacoes: "Comece leve, anote tudo. Dor articular aguda não é dor boa: troque o exercício.",
+      sessoes: [
+        { dia: "seg", titulo: "Força A", tipo: "forca", duracaoMin: 45, itens: [
+          { nome: "Agachamento", registro: "carga", series: 3, reps: "5", cargaSugerida: carga + " kg", minutos: null, detalhe: "3 min de descanso" },
+          { nome: "Supino", registro: "carga", series: 3, reps: "5", cargaSugerida: "30 kg", minutos: null, detalhe: "" },
+        ] },
+        { dia: "qua", titulo: "Zona 2", tipo: "z2", duracaoMin: 40, itens: [
+          { nome: "Caminhada rápida ou bike", registro: "tempo", series: null, reps: null, cargaSugerida: null, minutos: 40, detalhe: "ritmo de conversa" },
+        ] },
+        { dia: "sex", titulo: "Potência e equilíbrio", tipo: "potencia", duracaoMin: 30, itens: [
+          { nome: "Salto horizontal", registro: "carga", series: 3, reps: "3", cargaSugerida: "peso do corpo", minutos: null, detalhe: "intenção máxima, descansado" },
+          { nome: "Apoio unipodal olhos fechados", registro: "tempo", series: null, reps: null, cargaSugerida: null, minutos: 2, detalhe: "anote os segundos por perna" },
+        ] },
+      ],
+    });
+    if (isTreino) {
+      const corpo = JSON.stringify(body.messages || []);
+      const m = /SEMANA FECHADA \(número (\d+)\)/.exec(corpo);
+      const conteudoTreino = m
+        ? {
+            notas: { forca: 6.5, potencia: 5, equilibrio: 7, mobilidade: 6, cardioZ2: 5.5, cardioZ5: null },
+            avaliacao: "RESPOSTA FIXA DO COACH: melhor capacidade equilíbrio, pior potência. Zona 5 sem registro — sem nota.",
+            melhorias: ["Priorizar potência: saltos no começo da sessão", "Registrar uma sessão de Zona 5 para ter nota"],
+            proximaSemana: semanaTreino(parseInt(m[1], 10) + 1, "42"),
+          }
+        : {
+            apresentacao: "PLANO FIXO DO MOCK: blocos de 4 semanas, começando por base geral.",
+            semana: semanaTreino(1, "40"),
+          };
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        id: "msg_treino", type: "message", role: "assistant", model: "dev", stop_reason: "end_turn",
+        content: [{ type: "text", text: JSON.stringify(conteudoTreino) }],
+        usage: { input_tokens: 100, output_tokens: 50 },
+      }));
+    }
     const texto = isChat
       // devolve o que recebeu, p/ o teste conferir que o histórico da conversa
       // chegou inteiro e na ordem certa
@@ -689,6 +731,64 @@ mock.listen(MOCK_PORT, async () => {
       await check("foto continua limitada a 5 MB", worker.fetch(laudoReq("exame_lab", { image: "x".repeat(7_000_001) }), ENV), 413);
       await check("tipo de imagem inválido segue barrado", worker.fetch(laudoReq("exame_lab", { mediaType: "image/tiff" }), ENV), 415);
       // limpa a chave p/ não interferir nos testes seguintes
+      await worker.fetch(keyReq({ method: "DELETE" }), ENV);
+    }
+
+    // =====================================================================
+    // COACH DE TREINO (/treino): plano semanal + fechar semana com notas
+    // =====================================================================
+    {
+      let ipTreino = 0;
+      const treinoReq = (body, opts = {}) => new Request("https://proxy.example/treino", {
+        method: opts.method || "POST",
+        headers: {
+          "Content-Type": "application/json", Origin: ORIGIN,
+          ...(opts.session !== null ? { "X-Session": sessao } : {}),
+          "CF-Connecting-IP": "198.51.101." + (++ipTreino),
+        },
+        body: opts.method === "GET" ? undefined : JSON.stringify(body),
+      });
+      const perfilT = { objetivo: "saude", dias: 3, local: "academia", experiencia: "iniciante", limitacoes: "" };
+
+      await check("treino sem login nem senha -> 401", worker.fetch(new Request("https://proxy.example/treino", {
+        method: "POST", headers: { "Content-Type": "application/json", Origin: ORIGIN },
+        body: JSON.stringify({ acao: "plano", dados: {}, perfilTreino: perfilT }),
+      }), ENV), 401);
+      await check("treino por GET -> 405", worker.fetch(treinoReq(null, { method: "GET" }), ENV), 405);
+      // o bloco anterior terminou APAGANDO a chave — aproveita p/ conferir o 402
+      await check("treino sem chave da conta -> 402", worker.fetch(treinoReq({ acao: "plano", dados: {}, perfilTreino: perfilT }), ENV), 402,
+        (res, body) => body.error === "no_api_key" || "sem orientação de cadastro");
+      await worker.fetch(keyReq(), ENV);   // cadastra a chave p/ o resto do bloco
+      await check("ação desconhecida -> 400", worker.fetch(treinoReq({ acao: "zzz", dados: {}, perfilTreino: perfilT }), ENV), 400);
+      await check("plano sem perfil -> 400", worker.fetch(treinoReq({ acao: "plano", dados: {} }), ENV), 400);
+      await check("fechar sem a semana -> 400", worker.fetch(treinoReq({ acao: "fechar", dados: {}, perfilTreino: perfilT }), ENV), 400);
+
+      await check("plano devolve a semana 1 válida", worker.fetch(treinoReq({ acao: "plano", dados: { perfil: {} }, perfilTreino: perfilT }), ENV), 200,
+        (res, body) => {
+          if (!body.semana || body.semana.numero !== 1) return "semana errada: " + JSON.stringify(body.semana && body.semana.numero);
+          if (!Array.isArray(body.semana.sessoes) || body.semana.sessoes.length !== 3) return "sessões: " + (body.semana.sessoes || []).length;
+          const tipos = body.semana.sessoes.map((x) => x.tipo).join(",");
+          if (!/forca/.test(tipos) || !/z2/.test(tipos)) return "tipos: " + tipos;
+          if (!body.apresentacao) return "sem apresentação";
+          return true;
+        });
+      await check("o prompt do coach leva a base de treino junto",
+        Promise.resolve(new Response(null, { status: 200 })), 200,
+        () => (/BASE DE TREINO/.test(ultimoSystem) && /Galpin/.test(ultimoSystem)
+          && /Betabloqueador/.test(ultimoSystem)) || "base de treino não viajou");
+      await check("fechar devolve notas e a PRÓXIMA semana", worker.fetch(treinoReq({
+        acao: "fechar", dados: { perfil: {} }, perfilTreino: perfilT,
+        semanaFechada: { numero: 3, sessoes: [{ titulo: "Força A", itens: [{ nome: "Agachamento", feito: { carga: 42.5, series: 3, reps: 5 } }] }] },
+        historicoNotas: [{ at: "2026-08-10", notas: { forca: 6 } }],
+      }), ENV), 200,
+        (res, body) => {
+          if (!body.notas || body.notas.forca !== 6.5) return "notas: " + JSON.stringify(body.notas);
+          if (body.notas.cardioZ5 !== null) return "Z5 sem registro deveria ser null";
+          if (!body.proximaSemana || body.proximaSemana.numero !== 4) return "próxima: " + JSON.stringify(body.proximaSemana && body.proximaSemana.numero);
+          if (!Array.isArray(body.melhorias) || !body.melhorias.length) return "sem plano de melhoria";
+          return true;
+        });
+      // deixa como encontrou: sem chave (o invariante que o bloco anterior criou)
       await worker.fetch(keyReq({ method: "DELETE" }), ENV);
     }
 

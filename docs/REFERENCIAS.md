@@ -1,7 +1,8 @@
 # Referências da base de conhecimento
 
 De onde vem cada afirmação de `fase2-proxy/src/conhecimento.js` — a base que a
-IA consulta na conversa (`/chat`) e na análise cruzada (`/analyze`).
+IA consulta na conversa (`/chat`) e na análise cruzada (`/analyze`), e a base
+de treino (`CONHECIMENTO_TREINO`) que o coach consulta em `/treino`.
 
 Marcações: `[verificado]` = fonte localizada e conferida · `[verificar]` =
 citação registrada como fornecida, **não** confirmada em fonte primária.
@@ -105,6 +106,39 @@ item carrega o peso, e a instrução de uso proíbe achatar essa diferença.
 
 15. **Os 7 Pilares da Longevidade, com Dr. Thiago Volpi** — *TalksbyLeo* #142
     `[verificar]` — opinião clínica; serve para hipótese, não para afirmação.
+
+## Base de treino (`CONHECIMENTO_TREINO` — usada só em `/treino`)
+
+Protocolos públicos de Andrew Huberman (Huberman Lab) e Andy Galpin,
+conferidos nas páginas dos episódios e em resumos independentes em 2026-08.
+Tudo aqui é **[SECUNDÁRIO]** por definição (podcast/divulgação), de
+divulgadores que citam a literatura primária — a base marca isso e o coach é
+instruído a tratar como orientação de treino, nunca como conduta clínica.
+
+16. **Huberman Lab — Guest Series com Dr. Andy Galpin** `[verificado]`
+    <https://www.hubermanlab.com/episode/dr-andy-galpin-how-to-assess-improve-all-aspects-of-your-fitness>
+    e os demais episódios da série (força/hipertrofia, resistência,
+    recuperação, programa otimizado).
+    *Na base:* bateria de avaliação (salto horizontal ≈ estatura, preensão,
+    dead hang, VO₂máx mínimo/ideal), regra 3-a-5 para força (≥85% 1RM),
+    hipertrofia 10–20 séries/músculo/semana com 4–30 reps perto da falha,
+    blocos de ênfase com manutenção do resto, deload periódico.
+
+17. **Huberman Lab — Fitness Toolkit / Foundational Fitness Protocol**
+    `[verificado]` <https://www.hubermanlab.com/episode/fitness-toolkit-protocol-and-tools-to-optimize-physical-health>
+    *Na base:* distribuição semanal (Z2 ≥ 180–200 min/semana pelo teste da
+    fala, Z5/VO₂máx 1–2×/semana com intervalos, força 2–3×/semana), potência e
+    velocidade no começo da sessão.
+
+18. **Andy Galpin (podcast/aulas públicas) — envelhecimento neuromuscular**
+    `[verificado — direção; números conferidos nos resumos dos episódios]`
+    *Na base:* a sequência do envelhecimento (perde-se primeiro velocidade,
+    depois força, depois tamanho), atrofia preferencial de fibras tipo II e o
+    antídoto — saltos/arremessos/sprints curtos, descansado, no início da
+    sessão; progressão ~2–5% de carga OU 1–2 reps; alongamento estático 30 s.
+    > Nada da base de treino é dado clínico individual, e as adaptações a
+    > medicamentos (betabloqueador → RPE/fala; estatina → dor muscular nova ao
+    > médico) são regras de SEGURANÇA no prompt do coach, não prescrição.
 
 ## O que esta base ainda não cobre
 

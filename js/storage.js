@@ -29,6 +29,16 @@ window.Store = (function () {
       // descuido: "o colesterol subiu" só faz sentido junto de "parei a
       // estatina em março". Apagar o remédio apagaria a explicação do exame.
       meds: [],             // [{id, name, norm, kind:'remedio'|'suplemento', dose, schedule, reason, start, end, endReason, obs}]
+      // ---- área Treino (coach) ----
+      // plano.semana é a semana CORRENTE: a pessoa preenche `feito` em cada
+      // item e, ao fechar, a semana vai para semanasFechadas com os registros
+      // — é esse histórico que deixa o coach progredir carga sem chutar.
+      treino: {
+        perfil: null,         // {objetivo, diasSemana, local, experiencia, limitacoes}
+        plano: null,          // {criadoEm, apresentacao, semana:{numero, bloco, ..., sessoes:[{itens:[{... , feito}]}]}}
+        semanasFechadas: [],  // [{...semana, fechadaEm}] — identidade = numero da semana
+        avaliacoes: [],       // [{id, at, semanaNumero, notas, texto, melhorias, modelo}] mais recente primeiro
+      },
       // ---- área Métricas de saúde (Apple Health) ----
       health: { daily: {}, lastImportAt: null }, // daily: 'YYYY-MM-DD' -> {steps, distKm, kcalOut, kcalBasal, exMin, hrRest, hrv, vo2max, sleepMin}
       // ---- área IA ----
@@ -78,6 +88,9 @@ window.Store = (function () {
     state.imgExams = state.imgExams || [];
     state.examReminders = state.examReminders || [];
     state.meds = state.meds || [];
+    state.treino = Object.assign({}, d.treino, state.treino || {});
+    state.treino.semanasFechadas = state.treino.semanasFechadas || [];
+    state.treino.avaliacoes = state.treino.avaliacoes || [];
     state.health = Object.assign({}, d.health, state.health || {});
     state.health.daily = state.health.daily || {};
     state.customFoods = state.customFoods || [];
@@ -228,6 +241,24 @@ window.Store = (function () {
       mergeById(state.imgExams, incoming.imgExams);
       mergeById(state.examReminders, incoming.examReminders);
       mergeById(state.meds, incoming.meds);
+      // Treino: só existe UMA semana corrente por vez — mesclar duas viraria
+      // um plano que ninguém montou. Fica a mais AVANÇADA (maior número);
+      // semanas fechadas juntam pelo número (a identidade de uma semana) e
+      // avaliações por id, voltando à ordem "mais recente primeiro".
+      const tIn = incoming.treino || {};
+      const numSemana = (pl) => (pl && pl.semana && pl.semana.numero) || 0;
+      if (numSemana(tIn.plano) > numSemana(state.treino.plano)) {
+        state.treino.plano = tIn.plano;
+        if (tIn.perfil) state.treino.perfil = tIn.perfil;
+      }
+      if (!state.treino.perfil && tIn.perfil) state.treino.perfil = tIn.perfil;
+      const numerosFechados = new Set(state.treino.semanasFechadas.map(x => x && x.numero));
+      (Array.isArray(tIn.semanasFechadas) ? tIn.semanasFechadas : []).forEach(x => {
+        if (x && x.numero != null && !numerosFechados.has(x.numero)) state.treino.semanasFechadas.push(x);
+      });
+      state.treino.semanasFechadas.sort((a, b) => (a.numero || 0) - (b.numero || 0));
+      mergeById(state.treino.avaliacoes, tIn.avaliacoes);
+      state.treino.avaliacoes.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
       // análises: juntam-se por id e voltam à ordem "mais recente primeiro".
       // Sem isto, "Juntar os dois" descartaria em silêncio as análises feitas
       // no outro aparelho.

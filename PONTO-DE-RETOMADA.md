@@ -21,12 +21,16 @@ A conversa e a análise consultam uma **base de referência de longevidade**
 evidência item a item e procedência em `docs/REFERENCIAS.md`. Há ainda um
 envio opcional de contexto para o **Open Brain**, desligado por padrão.
 
-## Estado atual (17/08/2026)
+## Estado atual (18/08/2026)
 
-- **Tudo o que foi pedido está implementado e no `main`.** Última rodada:
-  mesclagem de duas frentes de trabalho que corriam em paralelo + toda a suíte
-  de testes de volta ao verde.
-- **Suíte: 13 conjuntos, todos passando**, e rodando duas vezes seguidas sem
+- **Tudo o que foi pedido está implementado e no `main`.** Última rodada: a
+  área **🏋️ Treino** — coach semanal nos protocolos Huberman/Galpin (força,
+  potência/fibras rápidas, equilíbrio, mobilidade, Z2, Z5), com registro de
+  carga/minutos, notas 0–10 por capacidade ao fechar a semana e progressão em
+  blocos. Rota `/treino` no Worker (BYOK + `TRAINING_DAILY_LIMIT` 10/dia),
+  base própria `CONHECIMENTO_TREINO` que só viaja nessa rota, área com abas
+  Semana/Evolução no app. **Assets em `?v=6`.**
+- **Suíte: 14 conjuntos, todos passando**, e rodando duas vezes seguidas sem
   sujar estado. Um comando: `node test/todos.mjs` (ele mesmo sobe e derruba os
   dois servidores locais).
 - **Site:** <https://azimoov.github.io/diario-alimentar/> — republica sozinho
@@ -138,7 +142,7 @@ js/db.js                      base de alimentos (GERADA — não editar à mão)
 js/{parser,nutrition,storage,charts}.js
 js/health.js                  lê o export do app Saúde (zip/xml, streaming)
 js/auth.js                    conta, PBKDF2 no aparelho, sync com a nuvem
-js/app.js                     interface e orquestração das 5 áreas
+js/app.js                     interface e orquestração das 6 áreas
 data/                         geração da base, servidor local, recorte do ícone
 test/todos.mjs                roda TUDO com um comando
 test/_comum.mjs               entrar pelo portão, conta descartável
@@ -197,6 +201,26 @@ está o motivo original:
 ---
 
 # Histórico (mais recente primeiro)
+
+## 2026-08-18 — Área 🏋️ Treino: coach semanal (Huberman/Galpin)
+
+O coach monta UMA semana por vez e evolui pelos números registrados. Worker:
+rota `/treino` (ações `plano`/`fechar`), saída estruturada por JSON-schema,
+validação defensiva antes de guardar, notas 0–10 clampadas com null permitido
+("sem registro não há nota — chutar é proibido"), modelo o mesmo da análise
+(chamada rara, raciocínio pesado), sem cache de prompt (semanal + TTL 5 min =
+prefixo sempre escrito, nunca lido). Base `CONHECIMENTO_TREINO` separada — só
+viaja em `/treino` (força 3-a-5, hipertrofia 10–20 séries, potência/fibras
+tipo II no começo da sessão, Z2 pelo teste da fala, Z5 1–2×/sem, bateria de
+avaliação Galpin, progressão 2–5% OU 1–2 reps OU 5–10% tempo, deload, troca de
+bloco; betabloqueador → RPE/fala, estatina → dor nova ao médico). App: estado
+`treino` em storage.js (perfil, plano com a semana corrente, semanasFechadas
+por número, avaliações), merge entre aparelhos fica com a semana MAIS
+AVANÇADA, inputs de registro em `type=text inputmode=decimal` (o teclado
+pt-BR digita "42,5" e o input numérico descartaria a vírgula) gravando em
+`oninput` (change só dispara ao sair do campo — o último registro se perderia
+ao fechar o app). Suíte `test/treino.mjs` cobre o ciclo inteiro contra os
+fixtures do dev-server. Fontes em `docs/REFERENCIAS.md` §16–18.
 
 ## 2026-08-16 — Base de referência de longevidade e envio ao Open Brain
 - Chegaram por patch (commits 4 e 5 de uma frente paralela) e foram ampliados

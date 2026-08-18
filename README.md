@@ -1,6 +1,6 @@
 # Highlander — diário alimentar, exames e métricas (local-first)
 
-Hub pessoal de saúde com **cinco áreas** na barra de cima:
+Hub pessoal de saúde com **seis áreas** na barra de cima:
 
 - **🍽️ Diário** — o diário alimentar original: registro em **texto em
   linguagem natural** (ex.: `150 g patinho`, `120g arroz`, `1 ovo`), kcal e
@@ -16,6 +16,9 @@ Hub pessoal de saúde com **cinco áreas** na barra de cima:
   (saldo energético).
 - **💊 Remédios** — o que você toma (e o que já tomou), para a análise ler seus
   exames sabendo disso.
+- **🏋️ Treino** — coach semanal (protocolos Huberman/Galpin): força,
+  potência/fibras rápidas, equilíbrio, mobilidade, cardio Z2 e Z5. Você
+  registra carga e minutos; ele dá notas por capacidade e evolui a semana.
 - **💬 IA** — conversa com memória sobre os seus próprios dados e o histórico
   de análises já geradas (nenhuma é sobrescrita).
 
@@ -353,6 +356,52 @@ O que a área **não** faz, de propósito: não lembra de tomar, não confere
 interação entre medicamentos e não sugere nada. Nenhuma das três dá para fazer
 com honestidade num app local sem base farmacológica.
 
+## Treino — o coach semanal (opcional — usa o seu proxy)
+
+Área **🏋️ Treino**: um coach que monta **uma semana por vez** e evolui o plano
+pelos **números que você registra** — carga, séries, repetições, minutos, RPE.
+A base do que ele prescreve vem dos protocolos públicos de **Andrew Huberman e
+Andy Galpin** (fontes em `docs/REFERENCIAS.md`), resumidos em
+`fase2-proxy/src/conhecimento.js` (`CONHECIMENTO_TREINO`) e enviados junto de
+cada chamada.
+
+O que ele cobre, e por quê:
+
+- **Força e hipertrofia** — a base; força é a capacidade que mais protege a
+  independência com a idade.
+- **Potência (fibras rápidas/tipo II)** — o envelhecimento perde primeiro
+  velocidade, depois força, depois tamanho; saltos e arremessos no começo da
+  sessão, descansado, são o antídoto. Foi o pedido que originou a área.
+- **Equilíbrio e mobilidade** — dose de manutenção toda semana.
+- **Cardio Zona 2** — volume na base (~180+ min/semana como alvo de longo
+  prazo, teste da fala).
+- **Cardio Zona 5/VO₂máx** — 1–2×/semana, intervalos curtos.
+
+Como funciona o ciclo:
+
+1. **Perfil** (uma vez): objetivo, dias por semana, tempo por sessão, onde
+   treina, experiência e limitações. Editável depois.
+2. **Plano**: o coach monta a semana 1 em **blocos de 4–6 semanas** com uma
+   ênfase por bloco (e deload programado), respeitando seus dias e equipamento.
+   Ele recebe também o resumo do app — dieta, peso/composição, exames,
+   **remédios** e métricas do relógio — e considera isso (ex.: betabloqueador →
+   zonas por RPE/fala em vez de frequência cardíaca).
+3. **Registrar**: cada item tem campos de **kg × séries × reps** (ou minutos)
+   e RPE. Aceita vírgula ("42,5"). O que ficou vazio conta como "não
+   registrado" — de propósito.
+4. **Fechar a semana**: o coach devolve **nota 0–10 por capacidade** (força,
+   potência, equilíbrio, mobilidade, Z2, Z5), a leitura da semana, um **plano
+   de melhoria** priorizado no que está pior, e já monta a semana seguinte com
+   a progressão (~2–5% de carga OU 1–2 reps OU 5–10% de tempo — nunca tudo).
+5. **Evolução**: notas em barras, avaliação e histórico de semanas fechadas.
+
+As regras de honestidade valem aqui também: **sem registro não há nota** (vem
+"sem registro", nunca um chute), notas são relativas a você (não a atleta), e
+o coach não é médico — dor no peito/tontura/lesão = parar e procurar um. Os
+dados de treino ficam na sua conta como tudo o mais (local + nuvem da conta);
+a chamada usa a **sua** chave da Anthropic (BYOK), custa centavos e é limitada
+por `TRAINING_DAILY_LIMIT` (10/dia por conta).
+
 ## Base de referência de longevidade (o que a IA consulta)
 
 A conversa e a análise cruzada recebem junto uma **base de referência**
@@ -615,7 +664,7 @@ novo** — o iOS guarda o antigo em cache.
 Nada aqui precisa de conta na Cloudflare, chave de API ou internet.
 
 ```
-node test/todos.mjs             # RODA TUDO (13 suítes) — sobe os dois
+node test/todos.mjs             # RODA TUDO (14 suítes) — sobe os dois
                                 # servidores locais sozinho e derruba no fim
 ```
 
@@ -655,8 +704,9 @@ node fase2-proxy/test/import-saude.mjs       # zip do Saúde em qualquer idioma
 node test/health-parser.mjs       # leitura do export do app Saúde (só Node)
 node test/peso-composicao.mjs     # peso, % gordura e massa magra
 node test/exames-e-metricas.mjs   # áreas Exames e Métricas + análise
-node test/marca-e-pwa.mjs         # marca, manifest, ícones, as 5 áreas
+node test/marca-e-pwa.mjs         # marca, manifest, ícones, as 6 áreas
 node test/remedios.mjs            # área Remédios: anotar, encerrar, chegar na IA
+node test/treino.mjs              # área Treino: plano, registro, notas, evolução
 node test/recortar-icone.mjs      # ferramenta de recorte do ícone
 ```
 
@@ -681,7 +731,7 @@ js/
   charts.js         gráficos em SVG puro (sem biblioteca)
   health.js         lê o export do app Saúde (zip/xml) e agrega por dia
   auth.js           conta/login, PBKDF2 no aparelho e sync com a nuvem
-  app.js            interface e orquestração (5 áreas: Diário/Exames/Métricas/Remédios/IA)
+  app.js            interface e orquestração (6 áreas: Diário/Exames/Métricas/Remédios/Treino/IA)
 data/
   source/*.csv      CSVs originais da TACO (raulfdm/taco-api, MIT)
   build-db.mjs      gera js/db.js a partir dos CSVs

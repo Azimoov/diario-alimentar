@@ -38,7 +38,49 @@ createServer((req, res) => {
     const isChat = sys.includes("responde perguntas de UMA pessoa");
     const isLab = sys.includes("laudos de exames laboratoriais");
     const isImg = sys.includes("laudos de exames de imagem");
+    const isTreino = sys.includes("coach de treino");
     const tipoAnexo = ((((body.messages || [])[0] || {}).content || [])[0] || {}).type || "?";
+    // ---- modo coach de treino: fixtures fixas que os testes conhecem ------
+    const semanaTreino = (n, carga) => ({
+      numero: n,
+      bloco: "Base geral", semanaDoBloco: n, semanasNoBloco: 4,
+      foco: "Adaptação e técnica",
+      orientacoes: "Comece leve, anote tudo. Dor articular aguda não é dor boa: troque o exercício.",
+      sessoes: [
+        { dia: "seg", titulo: "Força A", tipo: "forca", duracaoMin: 45, itens: [
+          { nome: "Agachamento", registro: "carga", series: 3, reps: "5", cargaSugerida: carga + " kg", minutos: null, detalhe: "3 min de descanso" },
+          { nome: "Supino", registro: "carga", series: 3, reps: "5", cargaSugerida: "30 kg", minutos: null, detalhe: "" },
+        ] },
+        { dia: "qua", titulo: "Zona 2", tipo: "z2", duracaoMin: 40, itens: [
+          { nome: "Caminhada rápida ou bike", registro: "tempo", series: null, reps: null, cargaSugerida: null, minutos: 40, detalhe: "ritmo de conversa" },
+        ] },
+        { dia: "sex", titulo: "Potência e equilíbrio", tipo: "potencia", duracaoMin: 30, itens: [
+          { nome: "Salto horizontal", registro: "carga", series: 3, reps: "3", cargaSugerida: "peso do corpo", minutos: null, detalhe: "intenção máxima, descansado" },
+          { nome: "Apoio unipodal olhos fechados", registro: "tempo", series: null, reps: null, cargaSugerida: null, minutos: 2, detalhe: "anote os segundos por perna" },
+        ] },
+      ],
+    });
+    if (isTreino) {
+      const corpo = JSON.stringify(body.messages || []);
+      const m = /SEMANA FECHADA \(número (\d+)\)/.exec(corpo);
+      const conteudoTreino = m
+        ? {
+            notas: { forca: 6.5, potencia: 5, equilibrio: 7, mobilidade: 6, cardioZ2: 5.5, cardioZ5: null },
+            avaliacao: "RESPOSTA FIXA DO COACH: melhor capacidade equilíbrio, pior potência. Zona 5 sem registro — sem nota.",
+            melhorias: ["Priorizar potência: saltos no começo da sessão", "Registrar uma sessão de Zona 5 para ter nota"],
+            proximaSemana: semanaTreino(parseInt(m[1], 10) + 1, "42"),
+          }
+        : {
+            apresentacao: "PLANO FIXO DO MOCK: blocos de 4 semanas, começando por base geral.",
+            semana: semanaTreino(1, "40"),
+          };
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        id: "msg_treino", type: "message", role: "assistant", model: "dev", stop_reason: "end_turn",
+        content: [{ type: "text", text: JSON.stringify(conteudoTreino) }],
+        usage: { input_tokens: 100, output_tokens: 50 },
+      }));
+    }
     if (isLab || isImg) {
       const conteudo = isLab
         ? {

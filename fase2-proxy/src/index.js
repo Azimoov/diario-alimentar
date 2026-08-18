@@ -13,7 +13,7 @@
 // chamadas de navegador; limite de tamanho/tipo de imagem; rate-limit por IP.
 
 import Anthropic from "@anthropic-ai/sdk";
-import { CONHECIMENTO, INSTRUCAO_CONHECIMENTO } from "./conhecimento.js";
+import { CONHECIMENTO, INSTRUCAO_CONHECIMENTO, CONHECIMENTO_TREINO } from "./conhecimento.js";
 
 // Saída estruturada: o modelo é OBRIGADO a devolver JSON neste formato.
 const SCHEMA = {
@@ -389,6 +389,271 @@ Como responder:
 ${REGRAS_HONESTIDADE}
 - Conhecimento geral de nutrição e fisiologia pode ser usado para explicar contexto, mas deixe claro o que é dado DA PESSOA e o que é informação geral.
 - Se a pergunta sugerir urgência médica (dor no peito, falta de ar, sinal neurológico súbito), diga para procurar atendimento agora, sem tentar analisar.`;
+
+
+// ===========================================================================
+// COACH DE TREINO (/treino) — monta UMA semana por vez e evolui pelos números
+// que a pessoa registrou. Duas ações no mesmo endpoint:
+//   {acao:"plano"}  primeira semana, a partir do formulário + dados do app
+//   {acao:"fechar"} recebe a semana com os registros, devolve notas 0-10 por
+//                   capacidade, plano de melhoria e a PRÓXIMA semana
+// Sem registro não há nota: o schema aceita null e o prompt proíbe chutar.
+
+// A semana é o objeto central: o app guarda, a pessoa preenche `feito` em cada
+// item, e ela volta inteira na ação "fechar" para virar nota e progressão.
+const SCHEMA_TREINO_SEMANA = {
+  type: "object",
+  properties: {
+    numero: { type: "integer", description: "Número da semana no plano (1, 2, 3…)" },
+    bloco: { type: "string", description: "Nome do bloco de ênfase atual (ex.: 'Base de força', 'Deload')" },
+    semanaDoBloco: { type: "integer", description: "Posição desta semana dentro do bloco (1 = primeira)" },
+    semanasNoBloco: { type: "integer", description: "Duração prevista do bloco, em semanas (4-6 tipicamente; deload = 1)" },
+    foco: { type: "string", description: "Ênfase da semana em poucas palavras" },
+    orientacoes: { type: "string", description: "Recado curto do coach para a semana: o que observar, como aquecer, quando parar. Texto puro, sem markdown." },
+    sessoes: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          dia: { type: "string", enum: ["seg", "ter", "qua", "qui", "sex", "sab", "dom"], description: "Dia sugerido (a pessoa pode trocar)" },
+          titulo: { type: "string", description: "Nome da sessão (ex.: 'Força A — inferiores')" },
+          tipo: { type: "string", enum: ["forca", "hipertrofia", "potencia", "equilibrio", "mobilidade", "z2", "z5"], description: "Capacidade principal da sessão" },
+          duracaoMin: { type: "integer", description: "Duração estimada em minutos" },
+          itens: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                nome: { type: "string", description: "Exercício ou tarefa" },
+                registro: { type: "string", enum: ["carga", "tempo"], description: "O que a pessoa registra: 'carga' = kg × séries × reps; 'tempo' = minutos" },
+                series: { type: ["integer", "null"], description: "Séries alvo (null quando registro = tempo)" },
+                reps: { type: ["string", "null"], description: "Repetições alvo, como texto ('5', '6-8'). null quando registro = tempo" },
+                cargaSugerida: { type: ["string", "null"], description: "Sugestão de carga ('20 kg', 'peso do corpo'). Se não houver histórico, sugira 'comece leve e anote' em vez de inventar número" },
+                minutos: { type: ["integer", "null"], description: "Minutos alvo (null quando registro = carga)" },
+                detalhe: { type: "string", description: "Como executar/medir, em uma linha. String vazia se nada a dizer" },
+              },
+              required: ["nome", "registro", "series", "reps", "cargaSugerida", "minutos", "detalhe"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["dia", "titulo", "tipo", "duracaoMin", "itens"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["numero", "bloco", "semanaDoBloco", "semanasNoBloco", "foco", "orientacoes", "sessoes"],
+  additionalProperties: false,
+};
+
+const SCHEMA_TREINO_PLANO = {
+  type: "object",
+  properties: {
+    apresentacao: { type: "string", description: "Apresentação curta do plano: a lógica dos blocos e o que esperar. Texto puro." },
+    semana: SCHEMA_TREINO_SEMANA,
+  },
+  required: ["apresentacao", "semana"],
+  additionalProperties: false,
+};
+
+const NOTA = { type: ["number", "null"], description: "0 a 10, uma casa decimal. null quando NÃO há registro suficiente para avaliar — nunca chute." };
+const SCHEMA_TREINO_FECHAR = {
+  type: "object",
+  properties: {
+    notas: {
+      type: "object",
+      properties: {
+        forca: NOTA, potencia: NOTA, equilibrio: NOTA,
+        mobilidade: NOTA, cardioZ2: NOTA, cardioZ5: NOTA,
+      },
+      required: ["forca", "potencia", "equilibrio", "mobilidade", "cardioZ2", "cardioZ5"],
+      additionalProperties: false,
+    },
+    avaliacao: { type: "string", description: "Leitura da semana: o que os números registrados mostram, melhor e pior capacidade, e o porquê de cada nota (ou de não haver nota). Texto puro." },
+    melhorias: { type: "array", items: { type: "string" }, description: "Plano de melhoria priorizado: 2 a 5 ações concretas, a mais importante primeiro, partindo do que está pior sem largar o que está melhor" },
+    proximaSemana: SCHEMA_TREINO_SEMANA,
+  },
+  required: ["notas", "avaliacao", "melhorias", "proximaSemana"],
+  additionalProperties: false,
+};
+
+const SYSTEM_TREINO = `Você é o coach de treino físico de um app pessoal de saúde ("coach de treino" do Highlander). Monta UMA semana de treino por vez e evolui o plano pelos NÚMEROS que a pessoa registrou — carga, séries, repetições, minutos, RPE.
+
+O que você recebe junto do pedido: o perfil de treino (objetivo, dias por semana, onde treina, experiência, limitações declaradas) e os dados do app — dieta média, peso e composição corporal, exames laboratoriais anotados, MEDICAMENTOS em uso, métricas do relógio (passos, sono, FC de repouso, VO2máx estimado). Use tudo como contexto.
+
+Capacidades que você treina e equilibra: força máxima, hipertrofia, potência (fibras rápidas/tipo II), equilíbrio, mobilidade, cardio Zona 2 e cardio Zona 5/VO2máx. Trabalhe em BLOCOS de 4-6 semanas com uma ênfase, mantendo o resto em dose de manutenção; troque o bloco quando a ênfase estagnar, quando outra capacidade ficar muito atrás, ou ao fim do prazo — e diga o porquê da troca nas orientações. Programe deload (1 semana leve) a cada 4-6 semanas.
+
+Regras de progressão (siga a base de treino anexa):
+- Semana cumprida com RPE confortável → subir ~2-5% a carga OU 1-2 reps OU 5-10% o tempo de Z2. Nunca tudo de uma vez.
+- Itens não cumpridos ou RPE alto → manter ou reduzir; diga isso sem cobrança.
+- SEM REGISTRO NÃO HÁ NOTA: se a pessoa não anotou números de uma capacidade, a nota daquela capacidade é null e a avaliação pede o registro — chutar nota é proibido.
+- Notas (0-10) são relativas à PRÓPRIA pessoa e aos mínimos da bateria de avaliação da base — nunca comparação com atleta. Explique cada nota em uma linha na avaliação.
+- Potência vem no COMEÇO da sessão, depois do aquecimento. Respeite os dias por semana e o equipamento declarados: nunca prescreva o que a pessoa não tem ou disse não poder.
+
+Regras de honestidade e segurança (crítico):
+- Você NÃO é médico nem fisioterapeuta: nada de diagnóstico, nada de conduta clínica. Dor no peito, tontura ou dor articular aguda = parar e procurar médico — deixe isso claro nas orientações quando prescrever intensidade alta.
+- Betabloqueador na lista de medicamentos → zonas por frequência cardíaca NÃO valem; prescreva por teste da fala/RPE e diga o porquê.
+- Estatina na lista → se houver relato de dor muscular nova e incomum, oriente a anotar e conversar com o médico, sem alarmismo e sem diagnóstico.
+- 1RM estimado e VO2máx de relógio são ESTIMATIVAS — trate como tal.
+- Use SOMENTE os dados recebidos; não invente histórico nem números que a pessoa não registrou.
+- Textos em português do Brasil, SEM markdown (texto puro nos campos de texto).`;
+
+async function handleTreino(request, env, json, uid) {
+  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+  const cred = await resolverChave(env, uid);
+  if (cred.erro) return json(cred.erro, cred.erro.error === "no_api_key" ? 402 : 500);
+  const ip = request.headers.get("CF-Connecting-IP") || "?";
+  if (limitado(env, "treino:" + ip, 4)) return json({ error: "rate_limited", detail: "Muitas chamadas ao coach em pouco tempo — aguarde um minuto." }, 429);
+
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
+  const acao = body && body.acao;
+  if (acao !== "plano" && acao !== "fechar") {
+    return json({ error: "bad_action", detail: 'Envie {acao: "plano"} ou {acao: "fechar"}.' }, 400);
+  }
+  const dados = body.dados;
+  if (!dados || typeof dados !== "object") return json({ error: "missing_data", detail: "Envie {dados: {…}} com o resumo do app." }, 400);
+  const perfil = body.perfilTreino;
+  if (!perfil || typeof perfil !== "object") return json({ error: "missing_profile", detail: "Envie {perfilTreino: {…}}." }, 400);
+  if (acao === "fechar" && (!body.semanaFechada || typeof body.semanaFechada !== "object")) {
+    return json({ error: "missing_week", detail: "Para fechar, envie {semanaFechada: {…}} com os registros." }, 400);
+  }
+
+  // monta o pedido em seções nomeadas — e limita o TOTAL, não cada pedaço
+  const partes = [
+    "PERFIL DE TREINO (do formulário):\n" + JSON.stringify(perfil),
+    "DADOS DA PESSOA (JSON do app):\n" + JSON.stringify(dados),
+  ];
+  if (acao === "fechar") {
+    const n = parseInt(body.semanaFechada.numero, 10) || 0;
+    partes.push("SEMANA FECHADA (número " + n + ") — o plano e o que foi REGISTRADO em cada item (campo feito; ausente = não registrado):\n"
+      + JSON.stringify(body.semanaFechada));
+    if (Array.isArray(body.historicoNotas) && body.historicoNotas.length) {
+      partes.push("HISTÓRICO DE NOTAS (mais recente primeiro):\n" + JSON.stringify(body.historicoNotas.slice(0, 8)));
+    }
+    partes.push("Avalie a semana fechada, dê as notas por capacidade (null onde não houver registro), o plano de melhoria e a PRÓXIMA semana (número " + (n + 1) + "), aplicando as regras de progressão.");
+  } else {
+    partes.push("Monte a apresentação do plano e a SEMANA 1, respeitando dias por semana, equipamento e limitações do perfil. Sem histórico de cargas, sugira começar leve e anotar.");
+  }
+  const texto = partes.join("\n\n");
+  if (texto.length > 250_000) return json({ error: "data_too_large", detail: "Pedido grande demais (~250 KB máx)." }, 413);
+
+  // limite diário por conta: o coach roda ~1x por semana; 10/dia já cobre
+  // refazer plano e fechar semana no mesmo dia com folga
+  if (env.DIARIO_KV) {
+    const tz = env.TIMEZONE || "America/Sao_Paulo";
+    const day = new Date().toLocaleDateString("en-CA", { timeZone: tz });
+    const quotaKey = "treino:" + (uid ? uid + ":" : "") + day;
+    const used = parseInt((await env.DIARIO_KV.get(quotaKey)) || "0", 10);
+    const limit = parseInt(env.TRAINING_DAILY_LIMIT || "10", 10);
+    if (used >= limit) {
+      return json({ error: "daily_limit", detail: `Limite de ${limit} chamadas ao coach por dia atingido — tente amanhã.` }, 429);
+    }
+    await env.DIARIO_KV.put(quotaKey, String(used + 1), { expirationTtl: 172800 });
+  }
+
+  const client = new Anthropic({
+    apiKey: cred.chave,
+    baseURL: env.ANTHROPIC_BASE_URL || undefined,
+    fetch: globalThis.fetch.bind(globalThis),
+  });
+  let msg;
+  try {
+    msg = await client.messages.create({
+      // mesmo modelo da análise cruzada: chamada rara (semanal) e o raciocínio
+      // mais pesado — equilibrar 7 capacidades com o histórico da pessoa.
+      // SEM cache de prompt pelo mesmo motivo da análise: semanal + TTL de 5
+      // min = prefixo sempre escrito e nunca lido.
+      model: env.CLAUDE_MODEL_ANALISE || "claude-fable-5",
+      // a semana inteira em JSON (até 6 sessões com itens) precisa de espaço
+      max_tokens: 8192,
+      thinking: { type: "adaptive" },
+      output_config: {
+        effort: "high",
+        format: { type: "json_schema", schema: acao === "fechar" ? SCHEMA_TREINO_FECHAR : SCHEMA_TREINO_PLANO },
+      },
+      system: SYSTEM_TREINO + "\n\n" + CONHECIMENTO_TREINO,
+      messages: [{ role: "user", content: texto }],
+    });
+  } catch (err) {
+    console.log("ERRO API /treino:", err && err.status, String((err && err.message) || err).slice(0, 300));
+    if (err instanceof Anthropic.RateLimitError) {
+      return json({ error: "upstream_rate_limited", detail: "API ocupada — tente de novo em instantes." }, 429);
+    }
+    if (err instanceof Anthropic.AuthenticationError) {
+      return json({ error: "bad_api_key", detail: "Sua chave da Anthropic foi recusada. Cadastre de novo em Dados." }, 502);
+    }
+    return json({ error: "upstream_error", detail: String((err && err.message) || err) }, 502);
+  }
+  if (msg.stop_reason === "refusal") {
+    console.log("RECUSA /treino:", JSON.stringify(msg.stop_details || null));
+    return json({ error: "refused", detail: "O modelo recusou montar este treino." }, 502);
+  }
+  const textBlock = (msg.content || []).find((b) => b.type === "text");
+  let parsed;
+  try { parsed = JSON.parse(textBlock ? textBlock.text : ""); } catch {
+    return json({ error: "bad_model_output", detail: "Resposta do coach em formato inesperado." }, 502);
+  }
+
+  // validação defensiva: o schema garante a forma, mas o app vai GUARDAR isto
+  // e reapresentar por semanas — limites de tamanho e faixas valem revalidar
+  const txt = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  const intOk = (v, min, max, padrao) => (Number.isInteger(v) && v >= min && v <= max ? v : padrao);
+  const validarSemana = (s) => {
+    if (!s || typeof s !== "object" || !Array.isArray(s.sessoes) || !s.sessoes.length) return null;
+    const DIAS = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"];
+    const TIPOS = ["forca", "hipertrofia", "potencia", "equilibrio", "mobilidade", "z2", "z5"];
+    const sessoes = s.sessoes.slice(0, 7).map((x) => ({
+      dia: DIAS.includes(x.dia) ? x.dia : "seg",
+      titulo: txt(x.titulo, 80) || "Sessão",
+      tipo: TIPOS.includes(x.tipo) ? x.tipo : "forca",
+      duracaoMin: intOk(x.duracaoMin, 5, 240, 45),
+      itens: (Array.isArray(x.itens) ? x.itens : []).slice(0, 12)
+        .filter((it) => it && txt(it.nome, 100))
+        .map((it) => ({
+          id: null,   // o app preenche
+          nome: txt(it.nome, 100),
+          registro: it.registro === "tempo" ? "tempo" : "carga",
+          series: intOk(it.series, 1, 12, null),
+          reps: txt(it.reps, 20) || null,
+          cargaSugerida: txt(it.cargaSugerida, 40) || null,
+          minutos: intOk(it.minutos, 1, 240, null),
+          detalhe: txt(it.detalhe, 200),
+        })),
+    })).filter((x) => x.itens.length);
+    if (!sessoes.length) return null;
+    return {
+      numero: intOk(s.numero, 1, 999, 1),
+      bloco: txt(s.bloco, 60) || "Bloco",
+      semanaDoBloco: intOk(s.semanaDoBloco, 1, 12, 1),
+      semanasNoBloco: intOk(s.semanasNoBloco, 1, 12, 4),
+      foco: txt(s.foco, 100),
+      orientacoes: txt(s.orientacoes, 1200),
+      sessoes,
+    };
+  };
+
+  if (acao === "plano") {
+    const semana = validarSemana(parsed.semana);
+    if (!semana) return json({ error: "bad_model_output", detail: "O coach devolveu uma semana vazia — tente de novo." }, 502);
+    return json({ apresentacao: txt(parsed.apresentacao, 1500), semana, modelo: msg.model });
+  }
+  // acao === "fechar"
+  const nota = (v) => (typeof v === "number" && isFinite(v) ? Math.max(0, Math.min(10, Math.round(v * 10) / 10)) : null);
+  const semana = validarSemana(parsed.proximaSemana);
+  if (!semana) return json({ error: "bad_model_output", detail: "O coach não devolveu a próxima semana — tente de novo." }, 502);
+  const n0 = parsed.notas || {};
+  return json({
+    notas: {
+      forca: nota(n0.forca), potencia: nota(n0.potencia), equilibrio: nota(n0.equilibrio),
+      mobilidade: nota(n0.mobilidade), cardioZ2: nota(n0.cardioZ2), cardioZ5: nota(n0.cardioZ5),
+    },
+    avaliacao: txt(parsed.avaliacao, 3000),
+    melhorias: (Array.isArray(parsed.melhorias) ? parsed.melhorias : []).slice(0, 5).map((m) => txt(m, 300)).filter(Boolean),
+    proximaSemana: semana,
+    modelo: msg.model,
+  });
+}
 
 async function handleChat(request, env, json, uid) {
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -1233,6 +1498,9 @@ export default {
 
     // ---- conversa sobre os próprios dados (perguntas pontuais) ----
     if (url.pathname === "/chat") return handleChat(request, env, json, uid);
+
+    // ---- coach de treino (semana a semana, com notas) ----
+    if (url.pathname === "/treino") return handleTreino(request, env, json, uid);
 
     // ---- envio de contexto de saúde para o Open Brain ----
     if (url.pathname === "/openbrain/sync") return handleOpenBrain(request, env, json, uid);

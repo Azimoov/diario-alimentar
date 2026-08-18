@@ -283,14 +283,15 @@ window.App = (function () {
     renderExImg();
     renderMeds();
     renderSaude();
+    renderTreino();
     renderConversa();
     renderAnalises();
     updateNavBadges();
   }
 
-  // ---- navegação em dois níveis: área (Diário · Exames · Métricas · Remédios · IA) + abas ----
+  // ---- navegação em dois níveis: área (Diário · Exames · Métricas · Remédios · Treino · IA) + abas ----
   let currentApp = 'diario';
-  const APP_TAB = { diario: 'hoje', exames: 'exlab', saude: 'saude', remedios: 'remedios', ia: 'conversa' }; // aba lembrada por área
+  const APP_TAB = { diario: 'hoje', exames: 'exlab', saude: 'saude', remedios: 'remedios', treino: 'trsemana', ia: 'conversa' }; // aba lembrada por área
   function bindTabs() {
     document.querySelectorAll('.app-btn').forEach(btn => {
       btn.addEventListener('click', () => { currentApp = btn.dataset.app; applyNav(); });
@@ -2474,6 +2475,436 @@ window.App = (function () {
     return 'há ' + (Math.round(dias / 365.25 * 10) / 10).toString().replace('.', ',') + ' anos';
   }
 
+  // ================= ÁREA TREINO (coach semanal) =================
+  // O coach monta UMA semana por vez no Worker (/treino) e evolui pelos números
+  // que a pessoa registrou em cada item (campo `feito`). Fechar a semana manda
+  // o plano + registros de volta e recebe notas 0-10 por capacidade, um plano
+  // de melhoria e a próxima semana. Sem registro a nota vem null — o coach é
+  // proibido de chutar, então registrar é o que faz a área funcionar.
+
+  const TR_DIAS = { seg: 'Seg', ter: 'Ter', qua: 'Qua', qui: 'Qui', sex: 'Sex', sab: 'Sáb', dom: 'Dom' };
+  const TR_TIPOS = {
+    forca: 'força', hipertrofia: 'hipertrofia', potencia: 'potência',
+    equilibrio: 'equilíbrio', mobilidade: 'mobilidade', z2: 'zona 2', z5: 'zona 5',
+  };
+  const TR_NOTAS = [
+    ['forca', 'Força'], ['potencia', 'Potência'], ['equilibrio', 'Equilíbrio'],
+    ['mobilidade', 'Mobilidade'], ['cardioZ2', 'Cardio Z2'], ['cardioZ5', 'Cardio Z5'],
+  ];
+
+  function saveTreino() {
+    window.Store.save();
+    scheduleBackup();
+    renderTreino();
+  }
+
+  // A semana chega do Worker com id:null nos itens; o app dá identidade aqui.
+  // O id fica estável pela vida do item — é o que liga o input ao registro.
+  function adotarSemana(semana) {
+    (semana.sessoes || []).forEach(s => (s.itens || []).forEach(it => { if (!it.id) it.id = uid('ti'); }));
+    return semana;
+  }
+
+  // corpo do POST /treino — exposto p/ testes (window.App.buildTreinoPayload)
+  function buildTreinoPayload(acao) {
+    const t = S.treino;
+    const body = { acao, perfilTreino: t.perfil, dados: buildAnalysisPayload() };
+    if (acao === 'fechar') {
+      body.semanaFechada = t.plano.semana;
+      body.historicoNotas = (t.avaliacoes || []).slice(0, 8)
+        .map(a => ({ semana: a.semanaNumero, notas: a.notas }));
+    }
+    return body;
+  }
+
+  async function chamarTreino(acao) {
+    const res = await fetch(window.Auth.urlProxy('/treino'), {
+      method: 'POST',
+      headers: window.Auth.cabecalhosProxy({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(buildTreinoPayload(acao)),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) {
+      const e = new Error((data && (data.detail || data.error)) || 'HTTP ' + res.status);
+      e.semChave = res.status === 402;
+      throw e;
+    }
+    return data;
+  }
+
+  // aviso de erro com o atalho p/ cadastrar a chave quando o problema é esse
+  function trErro(out, err, oQue) {
+    clear(out);
+    out.appendChild(h('p', { class: 'note', style: 'color:var(--danger)' }, 'Não consegui ' + oQue + ': ' + err.message));
+    if (err.semChave) {
+      out.appendChild(h('button', { class: 'btn', onclick: () => goTo('diario', 'dados') }, '🔑 Cadastrar minha chave'));
+    }
+  }
+
+  function renderTreino() {
+    renderTrSemana();
+    renderTrEvolucao();
+  }
+
+  // ---- aba Semana ----
+  function renderTrSemana() {
+    const root = $('#tab-trsemana');
+    if (!root) return;
+    clear(root);
+    const t = S.treino;
+    if (!t.perfil) { root.appendChild(trFormPerfil(null)); return; }
+    if (!t.plano) { root.appendChild(trCardMontar()); return; }
+    trRenderSemanaCorrente(root);
+  }
+
+  // formulário de perfil de treino; `existente` preenchido = modo edição
+  function trFormPerfil(existente) {
+    const p = existente || {};
+    const sel = (opcoes, atual) => {
+      const s = h('select', { class: 'in' }, opcoes.map(([v, rot]) => h('option', { value: v }, rot)));
+      if (atual != null) s.value = String(atual);
+      return s;
+    };
+    const objetivoIn = sel([
+      ['saude', 'Saúde e longevidade (geral)'],
+      ['forca', 'Ganhar força'],
+      ['massa', 'Ganhar massa muscular'],
+      ['emagrecer', 'Emagrecer sem perder músculo'],
+      ['folego', 'Fôlego e condicionamento'],
+    ], p.objetivo);
+    const diasIn = sel([['2', '2 dias'], ['3', '3 dias'], ['4', '4 dias'], ['5', '5 dias'], ['6', '6 dias']], p.diasSemana || '3');
+    const minIn = sel([['30', 'até 30 min'], ['45', '~45 min'], ['60', '~1 hora'], ['90', '1h30 ou mais']], p.minutosPorSessao || '60');
+    const localIn = sel([
+      ['academia', 'Academia completa'],
+      ['casa-pesos', 'Casa com halteres/elásticos'],
+      ['casa-livre', 'Casa sem equipamento'],
+    ], p.local);
+    const expIn = sel([
+      ['comecando', 'Começando agora'],
+      ['retomando', 'Já treinei, estou retomando'],
+      ['regular', 'Treino sem parar há mais de 1 ano'],
+    ], p.experiencia);
+    const limIn = h('textarea', { rows: '2', placeholder: 'opcional — ex.: dor no joelho direito; não posso correr' }, p.limitacoes || '');
+
+    const lerPerfil = () => ({
+      objetivo: objetivoIn.value,
+      diasSemana: parseInt(diasIn.value, 10),
+      minutosPorSessao: parseInt(minIn.value, 10),
+      local: localIn.value,
+      experiencia: expIn.value,
+      limitacoes: limIn.value.trim(),
+    });
+
+    const out = h('div');
+    const goBtn = h('button', { class: 'btn primary' }, existente ? 'Salvar perfil' : '🏋️ Montar meu plano');
+    goBtn.addEventListener('click', async () => {
+      S.treino.perfil = lerPerfil();
+      window.Store.save();
+      scheduleBackup();
+      if (existente) { renderTreino(); toast('Perfil de treino atualizado ✅', 'ok'); return; }
+      await trMontarPlano(goBtn, out);
+    });
+
+    return h('div', { class: 'card' }, [
+      h('h3', {}, existente ? '✏️ Ajustar perfil de treino' : '🏋️ Coach de treino'),
+      existente ? h('p', { class: 'note' }, 'Vale a partir da próxima semana que o coach montar.')
+        : h('p', { class: 'note' }, 'Um plano semanal que cobre força, potência (fibras rápidas), equilíbrio, '
+          + 'mobilidade e cardio em zona 2 e zona 5 — nas doses dos protocolos de Huberman e Andy Galpin. '
+          + 'Você registra carga e minutos; o coach dá nota por capacidade e evolui a semana seguinte pelos seus números.'),
+      h('div', { class: 'exam-form-grid' }, [
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Objetivo principal'), objetivoIn]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Dias por semana'), diasIn]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Tempo por sessão'), minIn]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Onde treina'), localIn]),
+        h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Experiência'), expIn]),
+        h('div', { class: 'field span2' }, [h('label', { class: 'lbl' }, 'Dores ou limitações'), limIn]),
+        h('div', { class: 'span2' }, goBtn),
+      ]),
+      existente ? null : h('p', { class: 'hint' }, 'O coach lê também o que você já tem no app — dieta, peso, exames, '
+        + 'remédios e métricas do relógio — e monta o treino considerando isso. Não é prescrição médica: com dor no '
+        + 'peito, tontura ou lesão, pare e procure seu médico.'),
+      out,
+    ]);
+  }
+
+  // perfil existe mas o plano não (primeira chamada falhou ou plano refeito)
+  function trCardMontar() {
+    const out = h('div');
+    const goBtn = h('button', { class: 'btn primary' }, '🏋️ Montar meu plano');
+    goBtn.addEventListener('click', () => trMontarPlano(goBtn, out));
+    return h('div', { class: 'card' }, [
+      h('h3', {}, '🏋️ Coach de treino'),
+      h('p', { class: 'note' }, 'Perfil pronto. Falta o coach montar a primeira semana — leva até um minuto.'),
+      h('div', { class: 'btn-row' }, [
+        goBtn,
+        h('button', { class: 'btn', onclick: () => { S.treino.perfil = null; saveTreino(); } }, '✏️ Refazer o perfil'),
+      ]),
+      out,
+    ]);
+  }
+
+  async function trMontarPlano(goBtn, out) {
+    if (!window.Auth.podeUsarProxy()) {
+      toast('Para usar o coach, entre na sua conta (toque em “entrar”, no topo).', 'error');
+      return;
+    }
+    goBtn.disabled = true;
+    const rotulo = goBtn.textContent;
+    goBtn.textContent = '⏳ montando o plano (até ~1 min)…';
+    clear(out);
+    try {
+      const data = await chamarTreino('plano');
+      S.treino.plano = {
+        criadoEm: new Date().toISOString(),
+        apresentacao: data.apresentacao || '',
+        modelo: data.modelo || '',
+        semana: adotarSemana(data.semana),
+      };
+      saveTreino();
+      toast('Plano montado ✅ — semana 1 na tela.', 'ok');
+      return;
+    } catch (err) {
+      trErro(out, err, 'montar o plano');
+    }
+    goBtn.disabled = false;
+    goBtn.textContent = rotulo;
+  }
+
+  function trRenderSemanaCorrente(root) {
+    const t = S.treino;
+    const sem = t.plano.semana;
+
+    const head = h('div', { class: 'card' }, [
+      h('div', { class: 'conta-linha' }, [
+        h('h3', {}, '📋 Semana ' + sem.numero),
+        h('span', { class: 'tr-bloco' }, sem.bloco + ' · sem. ' + sem.semanaDoBloco + ' de ' + sem.semanasNoBloco),
+      ]),
+      sem.foco ? h('p', { class: 'med-linha' }, h('strong', {}, sem.foco)) : null,
+      sem.orientacoes ? h('p', { class: 'note tr-aval-texto' }, sem.orientacoes) : null,
+      (sem.numero === 1 && t.plano.apresentacao)
+        ? h('p', { class: 'hint tr-aval-texto' }, t.plano.apresentacao) : null,
+    ]);
+    root.appendChild(head);
+
+    (sem.sessoes || []).forEach(s => root.appendChild(trCardSessao(s)));
+
+    // fechar a semana = o momento em que os registros viram nota e progressão
+    const out = h('div');
+    const fecharBtn = h('button', { class: 'btn primary' }, '✅ Fechar a semana com o coach');
+    fecharBtn.addEventListener('click', () => trFecharSemana(fecharBtn, out));
+    root.appendChild(h('div', { class: 'card' }, [
+      h('h3', {}, 'Fechou os treinos?'),
+      h('p', { class: 'note' }, 'Registre carga e minutos nos itens acima ao longo da semana. Ao fechar, o coach '
+        + 'avalia os números, dá uma nota por capacidade e já monta a semana ' + (sem.numero + 1) + '. '
+        + 'Capacidade sem registro fica sem nota — ele não chuta.'),
+      h('div', { class: 'btn-row' }, [fecharBtn]),
+      out,
+      h('div', { class: 'btn-row' }, [
+        h('button', {
+          class: 'link-btn', onclick: () => { renderTrPerfilModal(); },
+        }, '✏️ ajustar perfil'),
+        h('button', {
+          class: 'link-btn danger',
+          onclick: () => {
+            if (!confirm('Refazer o plano do zero?\n\nA semana atual (e o que foi registrado nela) é descartada. '
+              + 'As semanas já fechadas e as notas ficam guardadas.')) return;
+            S.treino.plano = null;
+            saveTreino();
+          },
+        }, '↻ refazer o plano'),
+      ]),
+    ]));
+  }
+
+  function renderTrPerfilModal() {
+    const form = trFormPerfil(S.treino.perfil || {});
+    const m = modal('Perfil de treino', form);
+    // no modal, salvar também fecha a janela
+    form.querySelector('.btn.primary').addEventListener('click', () => m.close());
+  }
+
+  function trCardSessao(sessao) {
+    const card = h('div', { class: 'card tr-sessao-card' });
+    card.appendChild(h('div', { class: 'tr-sessao-head' }, [
+      h('span', { class: 'tr-dia' }, TR_DIAS[sessao.dia] || sessao.dia),
+      h('strong', {}, sessao.titulo),
+      h('span', { class: 'tr-tipo tr-tipo-' + sessao.tipo }, TR_TIPOS[sessao.tipo] || sessao.tipo),
+      h('span', { class: 'hint' }, '~' + sessao.duracaoMin + ' min'),
+    ]));
+    (sessao.itens || []).forEach(it => card.appendChild(trItemRow(it)));
+    return card;
+  }
+
+  // Uma linha por exercício: alvo prescrito + campos de registro. Os inputs
+  // NÃO redesenham a tela ao digitar (perderia o foco no meio do número) —
+  // só gravam no estado e acendem a borda de "registrado".
+  function trItemRow(item) {
+    const row = h('div', { class: 'tr-item' + (item.feito ? ' tr-ok' : '') });
+    const alvo = item.registro === 'tempo'
+      ? (item.minutos != null ? item.minutos + ' min' : 'tempo livre')
+      : [item.series, item.reps].filter(x => x != null).join(' × ')
+        + (item.cargaSugerida ? ' · ' + item.cargaSugerida : '');
+    row.appendChild(h('div', {}, [
+      h('span', { class: 'tr-item-nome' }, h('strong', {}, item.nome)),
+      ' ',
+      h('span', { class: 'tr-alvo' }, alvo ? 'alvo: ' + alvo : ''),
+    ]));
+    if (item.detalhe) row.appendChild(h('p', { class: 'hint', style: 'margin:2px 0' }, item.detalhe));
+
+    const f = item.feito || {};
+    const num = (v) => {
+      if (v === '' || v == null) return null;
+      const n = Number(String(v).replace(',', '.'));
+      return Number.isFinite(n) ? n : null;
+    };
+    const grava = (campo) => (e) => {
+      const feito = item.feito || {};
+      feito[campo] = num(e.target.value);
+      // registro só existe se algum campo tem número — vazio de novo = apaga,
+      // e para o Worker "sem feito" é literalmente "não registrado"
+      const temAlgo = Object.keys(feito).some(k => feito[k] != null);
+      if (temAlgo) item.feito = feito; else delete item.feito;
+      row.classList.toggle('tr-ok', !!item.feito);
+      window.Store.save();
+      scheduleBackup();
+    };
+    // type=text + inputmode=decimal (e não type=number): o teclado pt-BR
+    // digita "42,5" e o input numérico do navegador descarta a vírgula em
+    // silêncio — o registro sumiria. num() aceita vírgula e ponto.
+    // oninput (e não onchange): change só dispara ao SAIR do campo, e quem
+    // digita o último número e fecha o app perderia justamente esse registro.
+    const inp = (campo, ph) => h('input', {
+      class: 'tr-in', type: 'text', inputmode: 'decimal', autocomplete: 'off',
+      value: f[campo] != null ? String(f[campo]).replace('.', ',') : '', placeholder: ph, oninput: grava(campo),
+    });
+    const rpeSel = h('select', { class: 'tr-in tr-in-rpe', onchange: grava('rpe') },
+      [h('option', { value: '' }, 'RPE')].concat([5, 6, 7, 8, 9, 10].map(n => h('option', { value: String(n) }, 'RPE ' + n))));
+    if (f.rpe != null) rpeSel.value = String(f.rpe);
+
+    const reg = h('div', { class: 'tr-reg' });
+    if (item.registro === 'tempo') {
+      reg.appendChild(h('span', { class: 'lblzin' }, 'fiz'));
+      reg.appendChild(inp('minutos', 'min'));
+      reg.appendChild(h('span', { class: 'lblzin' }, 'min ·'));
+    } else {
+      reg.appendChild(inp('carga', 'kg'));
+      reg.appendChild(h('span', { class: 'lblzin' }, 'kg ×'));
+      reg.appendChild(inp('series', 'sér.'));
+      reg.appendChild(h('span', { class: 'lblzin' }, '×'));
+      reg.appendChild(inp('reps', 'reps'));
+      reg.appendChild(h('span', { class: 'lblzin' }, '·'));
+    }
+    reg.appendChild(rpeSel);
+    row.appendChild(reg);
+    return row;
+  }
+
+  async function trFecharSemana(fecharBtn, out) {
+    if (!window.Auth.podeUsarProxy()) {
+      toast('Para usar o coach, entre na sua conta (toque em “entrar”, no topo).', 'error');
+      return;
+    }
+    const sem = S.treino.plano.semana;
+    const itens = (sem.sessoes || []).flatMap(s => s.itens || []);
+    const registrados = itens.filter(i => i.feito).length;
+    if (!confirm('Fechar a semana ' + sem.numero + '?\n\n'
+      + registrados + ' de ' + itens.length + ' itens com registro. '
+      + (registrados ? 'O que não foi registrado fica sem nota.' : 'Sem nenhum registro, o coach não tem como dar nota — dá para fechar assim mesmo, mas as notas virão vazias.'))) return;
+    fecharBtn.disabled = true;
+    fecharBtn.textContent = '⏳ avaliando a semana (até ~1 min)…';
+    clear(out);
+    try {
+      const data = await chamarTreino('fechar');
+      S.treino.semanasFechadas.push(Object.assign({}, sem, { fechadaEm: new Date().toISOString() }));
+      S.treino.avaliacoes.unshift({
+        id: uid('av'),
+        at: new Date().toISOString(),
+        semanaNumero: sem.numero,
+        notas: data.notas,
+        texto: data.avaliacao || '',
+        melhorias: data.melhorias || [],
+        modelo: data.modelo || '',
+      });
+      S.treino.plano.semana = adotarSemana(data.proximaSemana);
+      window.Store.save();
+      scheduleBackup();
+      toast('Semana ' + sem.numero + ' avaliada ✅ — notas na aba Evolução.', 'ok');
+      goTo('treino', 'trevolucao');
+      renderTreino();
+      return;
+    } catch (err) {
+      trErro(out, err, 'fechar a semana');
+    }
+    fecharBtn.disabled = false;
+    fecharBtn.textContent = '✅ Fechar a semana com o coach';
+  }
+
+  // ---- aba Evolução: notas por capacidade + plano de melhoria ----
+  function renderTrEvolucao() {
+    const root = $('#tab-trevolucao');
+    if (!root) return;
+    clear(root);
+    const avals = S.treino.avaliacoes || [];
+    if (!avals.length) {
+      root.appendChild(h('div', { class: 'card' }, [
+        h('h3', {}, '📈 Evolução'),
+        h('p', { class: 'note' }, S.treino.plano
+          ? 'As notas aparecem aqui quando você fechar a primeira semana (aba Semana). Cada fechamento avalia força, potência, equilíbrio, mobilidade e cardio pelos números que você registrou.'
+          : 'Monte seu plano na aba Semana. Depois de fechar a primeira semana, suas notas por capacidade aparecem aqui.'),
+      ]));
+      return;
+    }
+    root.appendChild(trCardAvaliacao(avals[0], true));
+    if (avals.length > 1) {
+      const antCard = h('div', { class: 'card' }, [h('h3', {}, '🗂 Semanas anteriores')]);
+      avals.slice(1).forEach(a => antCard.appendChild(trAvaliacaoResumo(a)));
+      root.appendChild(antCard);
+    }
+  }
+
+  function trCardAvaliacao(a, atual) {
+    const card = h('div', { class: 'card' }, [
+      h('h3', {}, (atual ? '📈 Notas da semana ' : 'Semana ') + a.semanaNumero),
+      h('p', { class: 'hint' }, 'Fechada em ' + new Date(a.at).toLocaleDateString('pt-BR')
+        + (a.modelo ? ' · avaliada por ' + a.modelo : '')),
+    ]);
+    TR_NOTAS.forEach(([k, rot]) => {
+      const v = a.notas ? a.notas[k] : null;
+      card.appendChild(h('div', { class: 'nota-row' }, [
+        h('span', { class: 'nota-nome' }, rot),
+        h('div', { class: 'nota-track' }, v != null
+          ? h('div', { class: 'nota-fill' + (v <= 5 ? ' baixa' : ''), style: 'width:' + (v * 10) + '%' }) : null),
+        v != null
+          ? h('span', { class: 'nota-val' }, String(v).replace('.', ','))
+          : h('span', { class: 'nota-val semdado' }, 'sem registro'),
+      ]));
+    });
+    if (a.texto) card.appendChild(h('p', { class: 'tr-aval-texto' }, a.texto));
+    if (a.melhorias && a.melhorias.length) {
+      card.appendChild(h('h3', { style: 'margin-top:12px' }, '🎯 Plano de melhoria'));
+      a.melhorias.forEach((mm, i) => card.appendChild(h('p', { class: 'tr-melhoria' }, (i + 1) + '. ' + mm)));
+    }
+    card.appendChild(h('p', { class: 'hint' }, 'Notas são relativas a VOCÊ e aos seus registros — não a atleta. Não é avaliação médica.'));
+    return card;
+  }
+
+  // resumo compacto de uma avaliação antiga; "Ler" abre o cartão completo
+  function trAvaliacaoResumo(a) {
+    const linha = TR_NOTAS
+      .map(([k, rot]) => (a.notas && a.notas[k] != null) ? rot.split(' ')[0] + ' ' + String(a.notas[k]).replace('.', ',') : null)
+      .filter(Boolean).join(' · ') || 'sem notas';
+    return h('div', { class: 'med-item' }, [
+      h('div', { class: 'med-head' }, [
+        h('strong', {}, 'Semana ' + a.semanaNumero),
+        h('span', { class: 'hint' }, new Date(a.at).toLocaleDateString('pt-BR')),
+      ]),
+      h('p', { class: 'med-linha' }, linha),
+      h('div', { class: 'btn-row' }, [
+        h('button', { class: 'link-btn', onclick: () => modal('Avaliação — semana ' + a.semanaNumero, trCardAvaliacao(a, false)) }, 'Ler'),
+      ]),
+    ]);
+  }
+
   // ================= ÁREA IA (conversa + análises guardadas) =================
   // A análise responde "como estou no geral?" de uma vez só. A conversa
   // responde "e sobre o colesterol?" — pontual, e emendando na resposta
@@ -3516,7 +3947,7 @@ window.App = (function () {
   return {
     init, addPhotoItems, compressPhoto, analyzePhoto, computeRecipe, openRecipeForm,
     applyLabelToForm, pushBackup, restoreBackup,
-    buildAnalysisPayload, reminderDue, goTo, renderMeds,
+    buildAnalysisPayload, buildTreinoPayload, reminderDue, goTo, renderMeds,
     atualizarStatusConta, abrirLogin, sincronizarAoEntrar,
   };
 })();

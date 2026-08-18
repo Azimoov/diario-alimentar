@@ -187,4 +187,108 @@ USO DA BASE DE REFERÊNCIA:
 - Você NÃO tem acesso à internet nesta conversa: não afirme ter consultado
   nada online e não invente links, números de estudo ou citações.`;
 
-export { CONHECIMENTO, INSTRUCAO_CONHECIMENTO };
+export { CONHECIMENTO, INSTRUCAO_CONHECIMENTO, CONHECIMENTO_TREINO };
+
+// ---------------------------------------------------------------------------
+// BASE DE TREINO — viaja SÓ nas chamadas da área Treino (/treino), nunca na
+// conversa nem na análise: quem pergunta sobre colesterol não paga pelos
+// protocolos de agachamento. Fontes: série de 6 episódios do Andy Galpin no
+// Huberman Lab (2023) + episódios avulsos do Huberman Lab; procedência item a
+// item em docs/REFERENCIAS.md. Mesmas etiquetas de evidência da base principal.
+const CONHECIMENTO_TREINO = `BASE DE TREINO (Galpin / Huberman Lab)
+
+Peso de evidência: [FORTE] = bem estabelecido na fisiologia do exercício ·
+[ESCOLA] = prática recomendada por esses educadores, base razoável ·
+[SECUNDÁRIO] = número citado em podcast/divulgação, sem fonte primária conferida.
+
+## Capacidades treinadas (adaptações são específicas do estímulo) [FORTE]
+Força máxima, hipertrofia, potência (fibras rápidas/tipo II), equilíbrio,
+mobilidade, base aeróbica (Zona 2) e potência aeróbica (Zona 5/VO2máx) são
+adaptações DIFERENTES: cada uma responde ao seu estímulo, e não dá para
+maximizar todas ao mesmo tempo — daí treinar em blocos com uma ênfase por vez,
+mantendo o resto em dose de manutenção. [ESCOLA quanto ao arranjo em blocos]
+
+## Bateria de avaliação (Galpin) — referências MÍNIMAS, não metas de atleta
+- Salto horizontal ≈ a própria altura é aceitável (mulheres ~15% menos) —
+  mede potência. [SECUNDÁRIO]
+- Preensão manual ≥ 40 kg homens / ≥ 35 kg mulheres, diferença < 10% entre as
+  mãos. [SECUNDÁRIO]
+- Pendurar na barra (dead hang) ≥ 30 s; 50–60 s é bom. [SECUNDÁRIO]
+- VO2máx: mínimo ~35 mL/kg/min homens / ~30 mulheres; ideal > 55 / > 50.
+  O número do relógio é ESTIMATIVA de sensor. [FORTE quanto ao VO2máx como
+  preditor; SECUNDÁRIO quanto aos cortes]
+- Equilíbrio: apoio unipodal cronometrado (progredir de olhos abertos para
+  fechados). [FORTE como instrumento simples]
+- Ordem de testes num mesmo dia: não fatigantes primeiro (medidas, equilíbrio,
+  potência), força depois, fôlego por último. [ESCOLA]
+
+## Força máxima — regra do 3-a-5 (Galpin) [ESCOLA]
+3–5 exercícios COMPOSTOS por sessão · 3–5 repetições · 3–5 séries ·
+3–5 minutos de descanso completo. Cargas altas (≥ ~85% de 1RM) recrutam as
+fibras rápidas; menos de 3 reps também vale (singles/doubles), mais de 5 vira
+outra coisa. 1RM estimado por fórmula (Epley: carga × (1 + reps/30)) é
+ESTIMATIVA — nunca testar 1RM real sem experiência. [FORTE quanto ao
+recrutamento por carga alta]
+
+## Hipertrofia [FORTE nos princípios]
+10–20 séries de trabalho por grupo muscular POR SEMANA; 4–30 reps por série
+funcionam se chegarem perto da falha (parar ~2 reps antes); a faixa 8–15 é o
+melhor custo-benefício; descanso ~2 min. Progressão dupla: subir reps dentro
+da faixa, depois subir carga.
+
+## Potência e fibras rápidas — a prioridade que envelhece primeiro
+- Com a idade se perde VELOCIDADE antes de força, e força antes de tamanho; a
+  atrofia é desproporcional nas fibras rápidas (tipo II). [FORTE]
+- Fibra rápida só é recrutada com carga alta OU intenção de velocidade máxima:
+  saltos, arremessos, subidas explosivas, sprints curtos, levantamentos com
+  intenção rápida. Poucas reps (3–5), longe da falha, com o corpo DESCANSADO —
+  potência vem logo depois do aquecimento, nunca no fim do treino. [FORTE]
+- É o que preserva a capacidade de "botar o pé na frente" numa queda: potência
+  + força excêntrica de frear. [FORTE]
+
+## Cardio Zona 2 [FORTE nos efeitos; ESCOLA na dose]
+Ritmo em que dá para conversar com esforço perceptível (teste da fala). Meta
+da escola: somar ≥ 180–200 min/semana; sessões contínuas de 40–75 min são as
+mais eficientes, mas caminhada rápida acumulada conta. Base mitocondrial e
+flexibilidade metabólica.
+
+## Cardio Zona 5 / VO2máx [FORTE]
+1–2 sessões por semana bastam. Formatos: intervalos longos ~4 min forte + ~4
+min leve (3–5 voltas) ou sprints de 8–30 s com recuperação generosa. Esforço
+que NÃO deixa conversar. Exige liberação médica em quem tem doença
+cardiovascular conhecida — na dúvida, orientar a conversar com o médico antes.
+
+## Equilíbrio [FORTE como capacidade treinável]
+Progressão: apoio unipodal olhos abertos → fechados → superfície instável;
+exercícios unilaterais de força (afundo, subida no banco) treinam equilíbrio
+junto. Poucos minutos, várias vezes por semana, valem mais que uma sessão
+longa rara. [ESCOLA na dosagem]
+
+## Mobilidade / flexibilidade [ESCOLA]
+Alongamento ESTÁTICO de 30 s por posição, 2–4 séries, ≥ 5 dias/semana,
+somando ~5 min por grupo muscular na semana; sempre aquecido. Alongar forte
+demais ANTES de treino de força/potência pode reduzir o desempenho imediato —
+mobilidade pesada fica para depois do treino ou em sessão própria.
+
+## Progressão semana a semana [ESCOLA]
+- Cumpriu tudo com RPE confortável (≤ 7–8): subir ~2–5% a carga OU +1–2 reps,
+  OU +5–10% o tempo de Z2. Não subir tudo de uma vez.
+- Não cumpriu, RPE alto ou dor: repetir ou reduzir. Progresso não é linear.
+- DELOAD a cada 4–6 semanas: ~metade do volume, intensidade leve, uma semana.
+- Bloco novo (trocar a ênfase) quando: a ênfase atual estagnou por 2+ semanas,
+  a nota de outra capacidade está muito atrás, ou o bloco completou 4–6
+  semanas. Avisar o porquê da troca.
+- Sem registro não há progressão honesta: pedir os números em vez de assumir.
+
+## Contexto clínico que muda o treino [FORTE]
+- Betabloqueador SEGURA a frequência cardíaca: zonas por FC não valem — usar o
+  teste da fala e RPE (esforço percebido 0–10) no lugar.
+- Estatina: dor muscular NOVA e incomum não é normal de treino — anotar e
+  levar ao médico (sem diagnosticar, sem alarmar).
+- Dor no peito, falta de ar desproporcional, tontura ou desmaio durante
+  exercício: PARAR e procurar atendimento — não é assunto de coach.
+- Dor ARTICULAR aguda não é dor muscular boa: trocar o exercício, não
+  "empurrar". Dor muscular tardia (24–72 h) é esperada no começo.
+- Hipertensão descontrolada, cardiopatia ou cirurgia recente: liberação
+  médica antes de intensidade alta.`;
+
