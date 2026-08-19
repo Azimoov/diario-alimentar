@@ -12,6 +12,7 @@ const CHAVE_RUIM = "sk-ant-api03-CHAVE-DE-TESTE-REVOGADA-000000";
 // --- mock da API /v1/messages ---------------------------------------------
 let ultimoSystem = "";   // guarda o system prompt recebido, p/ inspeção nos testes
 let ultimoSystemBruto = null;   // o mesmo, sem achatar: preserva os blocos e as marcas de cache
+let ultimoPrompt = "";   // a mensagem do usuário (o pedido montado pelo Worker)
 const mock = createServer((req, res) => {
   // validação de chave (GET /v1/models): aceita só a chave "boa" do teste
   if (req.method === "GET" && req.url.startsWith("/v1/models")) {
@@ -32,6 +33,7 @@ const mock = createServer((req, res) => {
       : String(body.system || "");
     ultimoSystem = sys;
     ultimoSystemBruto = body.system;
+    ultimoPrompt = JSON.stringify(body.messages || []);
     const isRotulo = sys.includes("tabelas nutricionais");
     const isAnalise = sys.includes("dados de saúde PESSOAIS");
     const isChat = sys.includes("responde perguntas de UMA pessoa");
@@ -788,6 +790,24 @@ mock.listen(MOCK_PORT, async () => {
           if (!Array.isArray(body.melhorias) || !body.melhorias.length) return "sem plano de melhoria";
           return true;
         });
+      // A NUMERAÇÃO É DO APP, NÃO DO MODELO. `numero` é a identidade da semana
+      // no histórico (o merge entre aparelhos casa por ele): um "semana 1"
+      // repetido depois de refazer o plano faz o outro aparelho ser descartado
+      // em silêncio. O mock devolve SEMPRE numero 1 no plano e n+1 no fechar —
+      // então basta pedir outro número e ver se a resposta obedece ao app.
+      await check("refazer o plano continua a contagem (não volta para a semana 1)", worker.fetch(treinoReq({
+        acao: "plano", dados: { perfil: {} }, perfilTreino: perfilT, proximaNumero: 7,
+        historicoNotas: [{ semana: 6, notas: { forca: 6 } }],
+      }), ENV), 200,
+        (res, body) => (body.semana && body.semana.numero === 7)
+          || "numero: " + JSON.stringify(body.semana && body.semana.numero));
+      await check("o coach sabe que é continuação, e não plano do zero",
+        Promise.resolve(new Response(null, { status: 200 })), 200,
+        () => /JÁ TREINOU com o coach/.test(ultimoPrompt) || "prompt não avisou que é continuação");
+      await check("proximaNumero inválido cai na semana 1", worker.fetch(treinoReq({
+        acao: "plano", dados: { perfil: {} }, perfilTreino: perfilT, proximaNumero: "abc",
+      }), ENV), 200,
+        (res, body) => (body.semana && body.semana.numero === 1) || "numero: " + JSON.stringify(body.semana && body.semana.numero));
       // deixa como encontrou: sem chave (o invariante que o bloco anterior criou)
       await worker.fetch(keyReq({ method: "DELETE" }), ENV);
     }

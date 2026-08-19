@@ -967,7 +967,7 @@ window.App = (function () {
     const mt = eg.mt;
 
     const wrap = h('div', { class: 'card dash' });
-    wrap.appendChild(h('h3', {}, 'Resumo do dia'));
+    wrap.appendChild(h('h3', {}, '📊 Resumo do dia'));
 
     const grid = h('div', { class: 'dash-grid' });
     // anel
@@ -2499,9 +2499,27 @@ window.App = (function () {
   }
 
   // A semana chega do Worker com id:null nos itens; o app dá identidade aqui.
-  // O id fica estável pela vida do item — é o que liga o input ao registro.
-  function adotarSemana(semana) {
-    (semana.sessoes || []).forEach(s => (s.itens || []).forEach(it => { if (!it.id) it.id = uid('ti'); }));
+  // O id não é usado para ligar o input ao registro (isso é closure sobre o
+  // próprio objeto): serve para o item continuar reconhecível depois de virar
+  // histórico — e por isso precisa ser único de verdade. `uid()` sozinho
+  // repetiria dentro de um mesmo laço (mesmo milissegundo, 1296 sufixos), daí
+  // o contador.
+  //
+  // `numero` é conferido AQUI também, e não só no Worker: o app (GitHub Pages)
+  // e o Worker sobem separados, então um app novo pode conversar com um Worker
+  // antigo. E numero é a IDENTIDADE da semana — o merge entre aparelhos casa
+  // por ele, e um "semana 1" repetido faria o outro aparelho ser descartado em
+  // silêncio. Por isso a contagem é sempre "maior semana já fechada + 1".
+  function proximoNumeroDeSemana() {
+    const fechadas = (S.treino.semanasFechadas || []).map(x => (x && x.numero) || 0);
+    return (fechadas.length ? Math.max.apply(null, fechadas) : 0) + 1;
+  }
+  let seqItemTreino = 0;
+  function adotarSemana(semana, numeroEsperado) {
+    (semana.sessoes || []).forEach(s => (s.itens || []).forEach(it => {
+      if (!it.id) it.id = uid('ti') + (++seqItemTreino).toString(36);
+    }));
+    if (numeroEsperado != null) semana.numero = numeroEsperado;
     return semana;
   }
 
@@ -2509,10 +2527,17 @@ window.App = (function () {
   function buildTreinoPayload(acao) {
     const t = S.treino;
     const body = { acao, perfilTreino: t.perfil, dados: buildAnalysisPayload() };
+    const historico = (t.avaliacoes || []).slice(0, 8)
+      .map(a => ({ semana: a.semanaNumero, notas: a.notas }));
     if (acao === 'fechar') {
       body.semanaFechada = t.plano.semana;
-      body.historicoNotas = (t.avaliacoes || []).slice(0, 8)
-        .map(a => ({ semana: a.semanaNumero, notas: a.notas }));
+      body.historicoNotas = historico;
+    } else {
+      // refazer o plano depois de semanas fechadas é CONTINUAR, não recomeçar:
+      // vai o número em que a contagem segue e o que já foi avaliado, senão o
+      // coach devolveria "semana 1" de novo e o histórico ganharia duas.
+      body.proximaNumero = proximoNumeroDeSemana();
+      if (historico.length) body.historicoNotas = historico;
     }
     return body;
   }
@@ -2653,15 +2678,16 @@ window.App = (function () {
     goBtn.textContent = '⏳ montando o plano (até ~1 min)…';
     clear(out);
     try {
+      const numero = proximoNumeroDeSemana();
       const data = await chamarTreino('plano');
       S.treino.plano = {
         criadoEm: new Date().toISOString(),
         apresentacao: data.apresentacao || '',
         modelo: data.modelo || '',
-        semana: adotarSemana(data.semana),
+        semana: adotarSemana(data.semana, numero),
       };
       saveTreino();
-      toast('Plano montado ✅ — semana 1 na tela.', 'ok');
+      toast('Plano montado ✅ — semana ' + numero + ' na tela.', 'ok');
       return;
     } catch (err) {
       trErro(out, err, 'montar o plano');
@@ -2693,7 +2719,7 @@ window.App = (function () {
     const fecharBtn = h('button', { class: 'btn primary' }, '✅ Fechar a semana com o coach');
     fecharBtn.addEventListener('click', () => trFecharSemana(fecharBtn, out));
     root.appendChild(h('div', { class: 'card' }, [
-      h('h3', {}, 'Fechou os treinos?'),
+      h('h3', {}, '🏁 Fechou os treinos?'),
       h('p', { class: 'note' }, 'Registre carga e minutos nos itens acima ao longo da semana. Ao fechar, o coach '
         + 'avalia os números, dá uma nota por capacidade e já monta a semana ' + (sem.numero + 1) + '. '
         + 'Capacidade sem registro fica sem nota — ele não chuta.'),
@@ -2740,10 +2766,12 @@ window.App = (function () {
   // só gravam no estado e acendem a borda de "registrado".
   function trItemRow(item) {
     const row = h('div', { class: 'tr-item' + (item.feito ? ' tr-ok' : '') });
+    // partes montadas só com o que existe: séries sem reps (ou nenhuma das
+    // duas, que o schema permite) deixava " · 20 kg" com separador órfão
     const alvo = item.registro === 'tempo'
       ? (item.minutos != null ? item.minutos + ' min' : 'tempo livre')
-      : [item.series, item.reps].filter(x => x != null).join(' × ')
-        + (item.cargaSugerida ? ' · ' + item.cargaSugerida : '');
+      : [[item.series, item.reps].filter(x => x != null).join(' × '), item.cargaSugerida]
+        .filter(Boolean).join(' · ');
     row.appendChild(h('div', {}, [
       h('span', { class: 'tr-item-nome' }, h('strong', {}, item.nome)),
       ' ',
@@ -2781,18 +2809,19 @@ window.App = (function () {
       [h('option', { value: '' }, 'RPE')].concat([5, 6, 7, 8, 9, 10].map(n => h('option', { value: String(n) }, 'RPE ' + n))));
     if (f.rpe != null) rpeSel.value = String(f.rpe);
 
+    // sem separador ANTES do RPE: a linha quebra no celular e o "·" ficava
+    // órfão no fim da linha, parecendo erro de digitação
     const reg = h('div', { class: 'tr-reg' });
     if (item.registro === 'tempo') {
       reg.appendChild(h('span', { class: 'lblzin' }, 'fiz'));
       reg.appendChild(inp('minutos', 'min'));
-      reg.appendChild(h('span', { class: 'lblzin' }, 'min ·'));
+      reg.appendChild(h('span', { class: 'lblzin' }, 'min'));
     } else {
       reg.appendChild(inp('carga', 'kg'));
       reg.appendChild(h('span', { class: 'lblzin' }, 'kg ×'));
       reg.appendChild(inp('series', 'sér.'));
       reg.appendChild(h('span', { class: 'lblzin' }, '×'));
       reg.appendChild(inp('reps', 'reps'));
-      reg.appendChild(h('span', { class: 'lblzin' }, '·'));
     }
     reg.appendChild(rpeSel);
     row.appendChild(reg);
@@ -2815,6 +2844,14 @@ window.App = (function () {
     clear(out);
     try {
       const data = await chamarTreino('fechar');
+      // O usuário pode ter refeito o plano durante o ~1 min da chamada. Gravar
+      // agora criaria uma avaliação de um plano que ele já descartou (e a
+      // atribuição da próxima semana estouraria num plano nulo).
+      if (!S.treino.plano || S.treino.plano.semana !== sem) {
+        toast('O plano mudou enquanto o coach avaliava — a avaliação desta semana foi descartada.', 'error');
+        renderTreino();
+        return;
+      }
       S.treino.semanasFechadas.push(Object.assign({}, sem, { fechadaEm: new Date().toISOString() }));
       S.treino.avaliacoes.unshift({
         id: uid('av'),
@@ -2825,7 +2862,7 @@ window.App = (function () {
         melhorias: data.melhorias || [],
         modelo: data.modelo || '',
       });
-      S.treino.plano.semana = adotarSemana(data.proximaSemana);
+      S.treino.plano.semana = adotarSemana(data.proximaSemana, proximoNumeroDeSemana());
       window.Store.save();
       scheduleBackup();
       toast('Semana ' + sem.numero + ' avaliada ✅ — notas na aba Evolução.', 'ok');
@@ -2889,9 +2926,12 @@ window.App = (function () {
   }
 
   // resumo compacto de uma avaliação antiga; "Ler" abre o cartão completo
+  // abreviação própria: cortar no espaço transformava "Cardio Z2" e "Cardio Z5"
+  // nos dois em "Cardio", e a linha ficava com duas notas sem dizer de quê
+  const TR_ABREV = { forca: 'Força', potencia: 'Potência', equilibrio: 'Equilíbrio', mobilidade: 'Mobilidade', cardioZ2: 'Z2', cardioZ5: 'Z5' };
   function trAvaliacaoResumo(a) {
     const linha = TR_NOTAS
-      .map(([k, rot]) => (a.notas && a.notas[k] != null) ? rot.split(' ')[0] + ' ' + String(a.notas[k]).replace('.', ',') : null)
+      .map(([k]) => (a.notas && a.notas[k] != null) ? TR_ABREV[k] + ' ' + String(a.notas[k]).replace('.', ',') : null)
       .filter(Boolean).join(' · ') || 'sem notas';
     return h('div', { class: 'med-item' }, [
       h('div', { class: 'med-head' }, [

@@ -6,7 +6,7 @@ histórico e memória das decisões._
 ## O que é
 
 Hub pessoal de saúde, estático (HTML/CSS/JS puros, sem build), publicado no
-GitHub Pages e usável como app no iPhone. **Cinco áreas** na barra de cima:
+GitHub Pages e usável como app no iPhone. **Seis áreas** na barra de cima:
 
 | Área | O que faz |
 |---|---|
@@ -14,6 +14,7 @@ GitHub Pages e usável como app no iPhone. **Cinco áreas** na barra de cima:
 | 🧪 Exames | laboratoriais (analito por linha, com a faixa do SEU laudo) e de imagem; lembretes de repetição; leitura de laudo por **foto ou PDF** |
 | ❤️ Métricas | peso e composição corporal; import do export do app Saúde do iPhone (passos, energia, sono, FC, VO₂máx) e saldo energético |
 | 💊 Remédios | o que a pessoa toma e o que já tomou; encerrar guarda como histórico, não apaga |
+| 🏋️ Treino | coach semanal (Huberman/Galpin): monta a semana, a pessoa registra carga/minutos, ele dá nota por capacidade e evolui o plano |
 | 💬 IA | conversa com memória sobre os próprios dados + histórico de análises |
 
 A conversa e a análise consultam uma **base de referência de longevidade**
@@ -29,7 +30,10 @@ envio opcional de contexto para o **Open Brain**, desligado por padrão.
   carga/minutos, notas 0–10 por capacidade ao fechar a semana e progressão em
   blocos. Rota `/treino` no Worker (BYOK + `TRAINING_DAILY_LIMIT` 10/dia),
   base própria `CONHECIMENTO_TREINO` que só viaja nessa rota, área com abas
-  Semana/Evolução no app. **Assets em `?v=6`.**
+  Semana/Evolução no app. Passou por revisão independente (achados aplicados,
+  o principal: a contagem de semanas agora é imposta pelo app/Worker, porque
+  `numero` é a identidade da semana no histórico) e por uma passada de design
+  no app inteiro. **Assets em `?v=7`.**
 - **Suíte: 14 conjuntos, todos passando**, e rodando duas vezes seguidas sem
   sujar estado. Um comando: `node test/todos.mjs` (ele mesmo sobe e derruba os
   dois servidores locais).
@@ -221,6 +225,22 @@ pt-BR digita "42,5" e o input numérico descartaria a vírgula) gravando em
 `oninput` (change só dispara ao sair do campo — o último registro se perderia
 ao fechar o app). Suíte `test/treino.mjs` cobre o ciclo inteiro contra os
 fixtures do dev-server. Fontes em `docs/REFERENCIAS.md` §16–18.
+
+Depois da entrega, dois agentes passaram por cima: um revisor independente e
+um de design. Do revisor saiu um defeito **grave** que os testes não pegavam —
+"refazer o plano" recomeçava a contagem na semana 1, e como `numero` é a
+identidade da semana no histórico, o merge entre dois aparelhos descartava uma
+delas em silêncio. Agora o app manda `proximaNumero` (maior fechada + 1) e o
+Worker REESCREVE `semana.numero` na resposta em vez de confiar no modelo — nos
+dois lados, porque Pages e Worker sobem separados. Junto foram: a corrida entre
+"fechar semana" em voo e "refazer o plano" (gravava avaliação de plano
+descartado), `importJSON('replace')` sem normalizar `treino` (dava alerta
+mentiroso de "arquivo ilegível"), "Cardio Z2"/"Cardio Z5" que apareciam ambos
+como "Cardio" no resumo, separador órfão no alvo do exercício e ids de item que
+colidiam dentro do mesmo laço. Do design saiu o restyle da barra de áreas
+(pílula ativa), contraste do tema escuro (`--on-accent`: texto branco sobre
+verde claro era ilegível), foco visível nos campos, e o polimento da semana e
+das barras de nota.
 
 ## 2026-08-16 — Base de referência de longevidade e envio ao Open Brain
 - Chegaram por patch (commits 4 e 5 de uma frente paralela) e foram ampliados

@@ -524,16 +524,32 @@ async function handleTreino(request, env, json, uid) {
     "PERFIL DE TREINO (do formulário):\n" + JSON.stringify(perfil),
     "DADOS DA PESSOA (JSON do app):\n" + JSON.stringify(dados),
   ];
+  // A NUMERAÇÃO DA SEMANA É DO APP, não do modelo. Ele recebe o número certo
+  // no pedido e a resposta é reescrita com ele mais abaixo: numero é a
+  // IDENTIDADE da semana no histórico (o merge entre aparelhos casa por ele),
+  // e um "semana 1" repetido depois de refazer o plano descartaria dados.
+  let numeroDaSemana = 1;
   if (acao === "fechar") {
     const n = parseInt(body.semanaFechada.numero, 10) || 0;
+    numeroDaSemana = n + 1;
     partes.push("SEMANA FECHADA (número " + n + ") — o plano e o que foi REGISTRADO em cada item (campo feito; ausente = não registrado):\n"
       + JSON.stringify(body.semanaFechada));
     if (Array.isArray(body.historicoNotas) && body.historicoNotas.length) {
       partes.push("HISTÓRICO DE NOTAS (mais recente primeiro):\n" + JSON.stringify(body.historicoNotas.slice(0, 8)));
     }
-    partes.push("Avalie a semana fechada, dê as notas por capacidade (null onde não houver registro), o plano de melhoria e a PRÓXIMA semana (número " + (n + 1) + "), aplicando as regras de progressão.");
+    partes.push("Avalie a semana fechada, dê as notas por capacidade (null onde não houver registro), o plano de melhoria e a PRÓXIMA semana (número " + numeroDaSemana + "), aplicando as regras de progressão.");
   } else {
-    partes.push("Monte a apresentação do plano e a SEMANA 1, respeitando dias por semana, equipamento e limitações do perfil. Sem histórico de cargas, sugira começar leve e anotar.");
+    // refazer o plano NÃO apaga o histórico: o app manda em que número a
+    // contagem continua, e as notas do que já foi feito vão junto
+    const prox = parseInt(body.proximaNumero, 10);
+    numeroDaSemana = Number.isInteger(prox) && prox >= 1 && prox <= 999 ? prox : 1;
+    if (Array.isArray(body.historicoNotas) && body.historicoNotas.length) {
+      partes.push("HISTÓRICO DE NOTAS de semanas já treinadas (mais recente primeiro):\n" + JSON.stringify(body.historicoNotas.slice(0, 8)));
+    }
+    partes.push(numeroDaSemana > 1
+      ? "Esta pessoa JÁ TREINOU com o coach e está refazendo o plano. Monte a apresentação do novo plano e a SEMANA "
+        + numeroDaSemana + ", continuando de onde ela parou: use o histórico de notas acima para escolher a ênfase do bloco novo."
+      : "Monte a apresentação do plano e a SEMANA 1, respeitando dias por semana, equipamento e limitações do perfil. Sem histórico de cargas, sugira começar leve e anotar.");
   }
   const texto = partes.join("\n\n");
   if (texto.length > 250_000) return json({ error: "data_too_large", detail: "Pedido grande demais (~250 KB máx)." }, 413);
@@ -636,12 +652,14 @@ async function handleTreino(request, env, json, uid) {
   if (acao === "plano") {
     const semana = validarSemana(parsed.semana);
     if (!semana) return json({ error: "bad_model_output", detail: "O coach devolveu uma semana vazia — tente de novo." }, 502);
+    semana.numero = numeroDaSemana;   // o app manda, o modelo não escolhe
     return json({ apresentacao: txt(parsed.apresentacao, 1500), semana, modelo: msg.model });
   }
   // acao === "fechar"
   const nota = (v) => (typeof v === "number" && isFinite(v) ? Math.max(0, Math.min(10, Math.round(v * 10) / 10)) : null);
   const semana = validarSemana(parsed.proximaSemana);
   if (!semana) return json({ error: "bad_model_output", detail: "O coach não devolveu a próxima semana — tente de novo." }, 502);
+  semana.numero = numeroDaSemana;   // sempre a fechada + 1, aconteça o que acontecer
   const n0 = parsed.notas || {};
   return json({
     notas: {

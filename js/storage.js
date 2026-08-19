@@ -69,6 +69,22 @@ window.Store = (function () {
 
   let state = null;
 
+  // Chamada no load() E no import: um arquivo de fora pode trazer `treino`
+  // ausente, nulo ou pela metade (backup antigo, arquivo editado à mão), e a
+  // tela de treino lê `perfil`/`semanasFechadas` direto. Sem isto, importar
+  // um desses quebrava a renderização DEPOIS de o import já ter dado certo —
+  // e o app dizia "não consegui ler o arquivo", que era mentira.
+  function normalizarTreino() {
+    const d = defaults();
+    const t = (state.treino && typeof state.treino === 'object') ? state.treino : {};
+    state.treino = Object.assign({}, d.treino, t);
+    if (!Array.isArray(state.treino.semanasFechadas)) state.treino.semanasFechadas = [];
+    if (!Array.isArray(state.treino.avaliacoes)) state.treino.avaliacoes = [];
+    const pl = state.treino.plano;
+    if (!pl || typeof pl !== 'object' || !pl.semana || !Array.isArray(pl.semana.sessoes)) state.treino.plano = null;
+    if (state.treino.perfil && typeof state.treino.perfil !== 'object') state.treino.perfil = null;
+  }
+
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
@@ -88,9 +104,7 @@ window.Store = (function () {
     state.imgExams = state.imgExams || [];
     state.examReminders = state.examReminders || [];
     state.meds = state.meds || [];
-    state.treino = Object.assign({}, d.treino, state.treino || {});
-    state.treino.semanasFechadas = state.treino.semanasFechadas || [];
-    state.treino.avaliacoes = state.treino.avaliacoes || [];
+    normalizarTreino();
     state.health = Object.assign({}, d.health, state.health || {});
     state.health.daily = state.health.daily || {};
     state.customFoods = state.customFoods || [];
@@ -289,6 +303,7 @@ window.Store = (function () {
     }
     state.settings = Object.assign({}, defaults().settings, state.settings || {});
     state.settings.account = contaLocal || defaults().settings.account;
+    normalizarTreino();
     save();
     return state;
   }

@@ -148,6 +148,30 @@ check('merge de um export antigo mantém a semana mais avançada', await page.ev
   return window.Store.get().treino.plano.semana.numero === 2;
 }));
 
+// ---- refazer o plano CONTINUA a contagem (não recomeça na semana 1) ----
+// numero é a identidade da semana no histórico: duas "semana 1" fariam o merge
+// entre aparelhos descartar uma delas em silêncio. Como o mock sempre devolve
+// numero 1, chegar em 2 aqui prova que app e Worker impõem a contagem.
+await page.click('nav.tabs[data-app="treino"] .tab-btn[data-tab="trsemana"]');
+// (o confirm é aceito pelo handler global de paginaLogada)
+await page.locator('#tab-trsemana button', { hasText: 'refazer o plano' }).click();
+await page.locator('#tab-trsemana').getByRole('button', { name: /Montar meu plano/ }).click();
+await page.waitForSelector('.tr-sessao-card', { timeout: 20000 });
+check('refazer o plano segue de onde parou (semana 2, não semana 1)',
+  (await page.locator('#tab-trsemana .card').first().textContent()).includes('Semana 2'));
+check('nenhum número de semana repetido no histórico', await page.evaluate(() => {
+  const nums = window.Store.get().treino.semanasFechadas.map(x => x.numero);
+  return new Set(nums).size === nums.length;
+}));
+check('o coach recebe onde a contagem continua', await page.evaluate(() =>
+  window.App.buildTreinoPayload('plano').proximaNumero === 2));
+// ids de item têm que ser únicos DENTRO da semana: são gerados num laço só,
+// no mesmo milissegundo (uid sozinho repetiria)
+check('cada item da semana tem id próprio', await page.evaluate(() => {
+  const ids = window.Store.get().treino.plano.semana.sessoes.flatMap(s => s.itens).map(i => i.id);
+  return ids.length >= 5 && ids.every(Boolean) && new Set(ids).size === ids.length;
+}));
+
 // ---- estado de antes desta área não quebra ----
 // (checado via Store.load() direto: um reload traria os dados de volta da
 // nuvem — o que é o comportamento certo do app, mas esconderia a migração)
