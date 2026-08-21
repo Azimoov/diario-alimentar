@@ -1,6 +1,6 @@
 # PONTO DE RETOMADA — Highlander
 
-_Atualizado em 2026-08-17. Quem chega agora lê só até "O que falta"; o resto é
+_Atualizado em 2026-08-21. Quem chega agora lê só até "O que falta"; o resto é
 histórico e memória das decisões._
 
 ## O que é
@@ -14,7 +14,7 @@ GitHub Pages e usável como app no iPhone. **Seis áreas** na barra de cima:
 | 🧪 Exames | laboratoriais (analito por linha, com a faixa do SEU laudo) e de imagem; lembretes de repetição; leitura de laudo por **foto ou PDF** |
 | ❤️ Métricas | peso e composição corporal; import do export do app Saúde do iPhone (passos, energia, sono, FC, VO₂máx) e saldo energético |
 | 💊 Remédios | o que a pessoa toma e o que já tomou; encerrar guarda como histórico, não apaga |
-| 🏋️ Treino | coach semanal (Huberman/Galpin): monta a semana, a pessoa registra carga/minutos, ele dá nota por capacidade e evolui o plano |
+| 🏋️ Treino | coach semanal (Huberman/Galpin/Nippard): monta a semana, a pessoa registra carga/minutos, ele dá nota por capacidade e evolui o plano |
 | 💬 IA | conversa com memória sobre os próprios dados + histórico de análises |
 
 A conversa e a análise consultam uma **base de referência de longevidade**
@@ -22,61 +22,52 @@ A conversa e a análise consultam uma **base de referência de longevidade**
 evidência item a item e procedência em `docs/REFERENCIAS.md`. Há ainda um
 envio opcional de contexto para o **Open Brain**, desligado por padrão.
 
-## Estado atual (18/08/2026)
+## Estado atual (21/08/2026)
 
-- **Tudo o que foi pedido está implementado e no `main`.** Última rodada: a
-  área **🏋️ Treino** — coach semanal nos protocolos Huberman/Galpin (força,
-  potência/fibras rápidas, equilíbrio, mobilidade, Z2, Z5), com registro de
-  carga/minutos, notas 0–10 por capacidade ao fechar a semana e progressão em
-  blocos. Rota `/treino` no Worker (BYOK + `TRAINING_DAILY_LIMIT` 10/dia),
-  base própria `CONHECIMENTO_TREINO` que só viaja nessa rota, área com abas
-  Semana/Evolução no app. Passou por revisão independente (achados aplicados,
-  o principal: a contagem de semanas agora é imposta pelo app/Worker, porque
-  `numero` é a identidade da semana no histórico) e por uma passada de design
-  no app inteiro. **Assets em `?v=7`.**
+- **Tudo o que foi pedido está implementado, publicado e testado pelo Daniel
+  de verdade** (não só em ambiente local). Última rodada: acrescentado **Jeff
+  Nippard** (canal do YouTube, só os episódios de treino da série Fundamentals
+  — dieta ficou de fora por pedido dele) como terceira fonte do coach, junto
+  de Huberman/Galpin. Entrou em `CONHECIMENTO_TREINO`: frequência 2x/semana
+  por grupo muscular, RIR como régua de esforço (2–3 RIR ≈ ir à falha, com
+  menos fadiga) e seleção de exercício pela relação estímulo/fadiga (SFR —
+  conceito de Mike Israetel, a base credita a origem certa). Procedência em
+  `docs/REFERENCIAS.md` §19.
+- **Deploy do Worker em produção, feito pelo Daniel** (`npx wrangler deploy` +
+  os segredos, incluindo `OPENBRAIN_KEY`). Confirmado funcionando: login,
+  coach de treino (montou plano de verdade) e envio ao Open Brain, todos
+  testados por ele no app publicado, não só nos servidores locais de teste.
+  **Não há mais nenhum passo pendente de configuração.**
 - **Suíte: 14 conjuntos, todos passando**, e rodando duas vezes seguidas sem
   sujar estado. Um comando: `node test/todos.mjs` (ele mesmo sobe e derruba os
   dois servidores locais).
 - **Site:** <https://azimoov.github.io/diario-alimentar/> — republica sozinho
   a cada `git push` na `main` (~1 min).
 - **Proxy:** <https://diario-alimentar-proxy.azimoov.workers.dev> (Cloudflare
-  Worker, pasta `fase2-proxy/`).
+  Worker, pasta `fase2-proxy/`) — em produção, com as rotas de conta e o
+  Open Brain ativos.
 
-## O que falta — 1 passo, e é do Daniel
+## O que falta
 
-O app inteiro está **atrás de login** (o "portão"). O Worker publicado ainda é
-a versão anterior, sem as rotas de conta: enquanto os segredos não forem
-cadastrados e o deploy não for feito, **ninguém consegue entrar** — nem no
-celular do Daniel. Na pasta `fase2-proxy/`, no computador dele:
-
-```
-npx wrangler secret put DATA_KEY        # texto longo e aleatório — GUARDE-O
-npx wrangler secret put INVITE_CODE     # código de convite (quem cria conta usa)
-npx wrangler secret put RESEND_API_KEY  # chave do Resend (recuperação de senha)
-npx wrangler deploy
-```
-
-Opcional, só se for usar o envio para o Open Brain:
-`npx wrangler secret put OPENBRAIN_KEY`. **Confira também `OPENBRAIN_CONTAS`
-no `wrangler.jsonc`**: é a lista de e-mails autorizados a sincronizar. A chave
-do Open Brain é uma só, do Worker — sem essa lista, os dados de saúde de
-qualquer usuário que ligasse a opção cairiam no seu brain. Lista vazia =
-ninguém sincroniza, nem você.
+Nada bloqueando. Duas notas de manutenção, sem pressa:
 
 - **`DATA_KEY` é insubstituível**: é ela que cifra os dados das contas em
   repouso. Perdida ou trocada, as contas continuam existindo e os dados
-  guardados na nuvem viram lixo ilegível. Guarde fora do computador.
+  guardados na nuvem viram lixo ilegível. Confirme que está guardada fora do
+  computador (o Daniel já foi avisado ao cadastrar).
 - `MAIL_TO_OVERRIDE` está apontado para `serruyadaniel@gmail.com` porque o
   Resend, sem domínio verificado, só entrega para o dono da conta. **Efeito
   colateral aceito e explicado:** todo e-mail de recuperação, de qualquer
   usuário, cai nessa caixa — e quem recebe o link entra naquela conta. Para
   tirar isso, verifique um domínio no Resend e remova a variável.
-- No Windows use `npx.cmd`. O wrangler já está logado na conta
-  `serruyadaniel@gmail.com`.
-
-Depois do deploy: abrir o site, criar a conta com o convite, e cadastrar a
-chave da Anthropic em **Diário → Dados → Sua chave** (cada pessoa paga a
-própria IA — BYOK).
+- Reparo de processo, não de produto: o computador do Daniel não tinha
+  `wrangler login` feito e a pasta local do projeto estava remontada de
+  pedaços (parte de outro PC, parte do notebook, parte do GitHub) — o que
+  causou uma sessão inteira de diagnóstico por erros de pasta/autenticação em
+  vez do problema real. Resolvido com um `git clone` limpo numa pasta nova
+  (`diario-alimentar-novo`) e `wrangler login`. Se for mexer de novo no
+  Worker a partir do computador dele, confirme que é essa pasta clonada
+  (com `fase2-proxy/wrangler.jsonc` dentro) — não uma pasta antiga misturada.
 
 ## Como retomar em 5 minutos
 
@@ -205,6 +196,34 @@ está o motivo original:
 ---
 
 # Histórico (mais recente primeiro)
+
+## 2026-08-21 — Deploy em produção pelo Daniel + Jeff Nippard como 3ª fonte do coach
+
+Duas coisas nesta rodada, uma de conteúdo e uma de processo.
+
+**Conteúdo:** a pedido do Daniel, Jeff Nippard entrou como referência do
+coach — só os episódios de TREINO da série Fundamentals no canal dele (ele
+pediu explicitamente pra ignorar dieta e outros assuntos). Três acréscimos em
+`CONHECIMENTO_TREINO`, sem duplicar o que Huberman/Galpin já cobriam:
+frequência de treino (bater cada grupo 2x/semana supera 1x/semana no mesmo
+volume), RIR como régua de esforço pra maioria das séries (2–3 RIR ≈ falha,
+com menos fadiga — falha vira ferramenta ocasional, não regra), e seleção de
+exercício pela relação estímulo/fadiga (SFR — conceito de Mike Israetel,
+ensinado por Nippard; a base credita a origem certa, não quem popularizou).
+Fontes em `docs/REFERENCIAS.md` §19, com os dois vídeos específicos usados.
+
+**Processo:** o Daniel fez o deploy de produção pela primeira vez nesta
+sessão — segredos + `wrangler deploy` + depois `OPENBRAIN_KEY`. Duas travas
+não óbvias custaram tempo: (1) o computador dele nunca tinha rodado `wrangler
+login`, e os primeiros erros (pasta errada, depois "Worker name missing")
+mascararam isso; (2) a pasta local do projeto era uma colcha de retalhos de
+mais de uma máquina, então resolvemos com `git clone` limpo numa pasta nova
+em vez de tentar consertar a antiga. Também: ao colar uma chave de API, "só o
+que vem depois do `=`" não é óbvio pra quem não mexe com isso no dia a dia —
+colar `key=abc123` inteiro (em vez de só `abc123`) rendeu um "chave inválida"
+que parecia bug e não era. Depois de resolvido: login funcionando, coach
+montando plano de verdade, Open Brain recebendo — tudo confirmado pelo
+próprio Daniel no app publicado.
 
 ## 2026-08-18 — Área 🏋️ Treino: coach semanal (Huberman/Galpin)
 

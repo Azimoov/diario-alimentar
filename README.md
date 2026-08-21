@@ -16,7 +16,7 @@ Hub pessoal de saúde com **seis áreas** na barra de cima:
   (saldo energético).
 - **💊 Remédios** — o que você toma (e o que já tomou), para a análise ler seus
   exames sabendo disso.
-- **🏋️ Treino** — coach semanal (protocolos Huberman/Galpin): força,
+- **🏋️ Treino** — coach semanal (protocolos Huberman/Galpin/Nippard): força,
   potência/fibras rápidas, equilíbrio, mobilidade, cardio Z2 e Z5. Você
   registra carga e minutos; ele dá notas por capacidade e evolui a semana.
 - **💬 IA** — conversa com memória sobre os seus próprios dados e o histórico
@@ -360,8 +360,8 @@ com honestidade num app local sem base farmacológica.
 
 Área **🏋️ Treino**: um coach que monta **uma semana por vez** e evolui o plano
 pelos **números que você registra** — carga, séries, repetições, minutos, RPE.
-A base do que ele prescreve vem dos protocolos públicos de **Andrew Huberman e
-Andy Galpin** (fontes em `docs/REFERENCIAS.md`), resumidos em
+A base do que ele prescreve vem dos protocolos públicos de **Andrew Huberman,
+Andy Galpin e Jeff Nippard** (fontes em `docs/REFERENCIAS.md`), resumidos em
 `fase2-proxy/src/conhecimento.js` (`CONHECIMENTO_TREINO`) e enviados junto de
 cada chamada.
 

@@ -193,9 +193,11 @@ export { CONHECIMENTO, INSTRUCAO_CONHECIMENTO, CONHECIMENTO_TREINO };
 // BASE DE TREINO — viaja SÓ nas chamadas da área Treino (/treino), nunca na
 // conversa nem na análise: quem pergunta sobre colesterol não paga pelos
 // protocolos de agachamento. Fontes: série de 6 episódios do Andy Galpin no
-// Huberman Lab (2023) + episódios avulsos do Huberman Lab; procedência item a
-// item em docs/REFERENCIAS.md. Mesmas etiquetas de evidência da base principal.
-const CONHECIMENTO_TREINO = `BASE DE TREINO (Galpin / Huberman Lab)
+// Huberman Lab (2023) + episódios avulsos do Huberman Lab + série Fundamentals
+// (SÓ os episódios de treino — dieta ficou de fora por pedido do Daniel) do
+// canal de Jeff Nippard; procedência item a item em docs/REFERENCIAS.md.
+// Mesmas etiquetas de evidência da base principal.
+const CONHECIMENTO_TREINO = `BASE DE TREINO (Galpin / Huberman Lab / Nippard)
 
 Peso de evidência: [FORTE] = bem estabelecido na fisiologia do exercício ·
 [ESCOLA] = prática recomendada por esses educadores, base razoável ·
@@ -234,7 +236,21 @@ recrutamento por carga alta]
 10–20 séries de trabalho por grupo muscular POR SEMANA; 4–30 reps por série
 funcionam se chegarem perto da falha (parar ~2 reps antes); a faixa 8–15 é o
 melhor custo-benefício; descanso ~2 min. Progressão dupla: subir reps dentro
-da faixa, depois subir carga.
+da faixa, depois subir carga. Frequência: bater cada grupo muscular pelo
+menos 2x/semana supera 1x/semana no MESMO volume total — distribuir as
+séries em 2+ sessões por grupo em vez de empilhar tudo numa sessão só.
+(Nippard, série Fundamentals) [FORTE]
+
+## Seleção de exercícios — relação estímulo/fadiga (SFR) [ESCOLA]
+Exercícios diferem em quanto estímulo de crescimento dão por quanto fadiga
+cobram. Agachamento estimula bem o quadríceps mas cobra fadiga sistêmica
+alta; leg press estimula parecido com fadiga bem menor — variar/trocar
+conforme a meta (fadiga sobrando → preferir opções de fadiga menor; força
+específica → o multiarticular continua sendo o exercício certo, fadiga à
+parte). Útil sobretudo para adaptar quando há dor articular ou limitação
+declarada no perfil: trocar por uma opção de fadiga/impacto menor no MESMO
+grupo muscular, não só reduzir carga. (Conceito de Mike Israetel, ensinado
+e aplicado por Nippard, série Fundamentals)
 
 ## Potência e fibras rápidas — a prioridade que envelhece primeiro
 - Com a idade se perde VELOCIDADE antes de força, e força antes de tamanho; a
@@ -273,6 +289,11 @@ mobilidade pesada fica para depois do treino ou em sessão própria.
 ## Progressão semana a semana [ESCOLA]
 - Cumpriu tudo com RPE confortável (≤ 7–8): subir ~2–5% a carga OU +1–2 reps,
   OU +5–10% o tempo de Z2. Não subir tudo de uma vez.
+- RIR (repetições de reserva; RPE 7–8 ≈ 2–3 RIR) é a régua da maioria das
+  séries: treinar a 2–3 RIR rende hipertrofia parecida com ir até a falha
+  total, com bem menos fadiga acumulada. Falha é ferramenta ocasional (ex.:
+  última série de um exercício), não regra de toda série. (Nippard, série
+  Fundamentals) [FORTE]
 - Não cumpriu, RPE alto ou dor: repetir ou reduzir. Progresso não é linear.
 - DELOAD a cada 4–6 semanas: ~metade do volume, intensidade leve, uma semana.
 - Bloco novo (trocar a ênfase) quando: a ênfase atual estagnou por 2+ semanas,

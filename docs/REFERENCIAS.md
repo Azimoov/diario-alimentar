@@ -140,6 +140,26 @@ instruído a tratar como orientação de treino, nunca como conduta clínica.
     > medicamentos (betabloqueador → RPE/fala; estatina → dor muscular nova ao
     > médico) são regras de SEGURANÇA no prompt do coach, não prescrição.
 
+19. **Jeff Nippard — canal do YouTube, série Fundamentals (só os episódios de
+    treino)** `[verificado — direção confirmada em resumos independentes das
+    fontes primárias abaixo; não é transcrição integral dos vídeos]`
+    <https://www.youtube.com/@JeffNippard>
+    *Episódios usados* (pedido explícito do Daniel: só treino, dieta ficou de
+    fora):
+    - "Rep Ranges and Training Intensity | The Fundamentals Series: Chapter 3"
+      <https://www.youtube.com/watch?v=3JOEZb46-dM>
+    - "What Are The Best Exercises for Muscle and Strength? | Fundamentals
+      Series Ep. 4" <https://www.youtube.com/watch?v=vyiQw-qiv80>
+    *Na base:* frequência de treino (bater cada grupo muscular 2x/semana supera
+    1x/semana no mesmo volume total), RIR (repetições de reserva) como régua de
+    esforço para a maioria das séries — treinar a 2–3 RIR rende hipertrofia
+    parecida com ir à falha, com menos fadiga acumulada — e seleção de
+    exercício pela relação estímulo/fadiga (SFR), útil para trocar um exercício
+    quando há dor articular ou limitação, sem só reduzir carga.
+    > O conceito de SFR é de **Mike Israetel** (Renaissance Periodization) —
+    > Nippard ensina e aplica, não é originalmente dele. A base credita a
+    > origem certa, não quem popularizou.
+
 ## O que esta base ainda não cobre
 
 Sono, rastreio oncológico e saúde mental aparecem citados de passagem, mas sem
