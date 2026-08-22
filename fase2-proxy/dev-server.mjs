@@ -54,6 +54,9 @@ createServer((req, res) => {
         { dia: "qua", titulo: "Zona 2", tipo: "z2", duracaoMin: 40, itens: [
           { nome: "Caminhada rápida ou bike", registro: "tempo", series: null, reps: null, cargaSugerida: null, minutos: 40, detalhe: "ritmo de conversa" },
         ] },
+        { dia: "ter", titulo: "Pico do dia", tipo: "picoFc", duracaoMin: 10, itens: [
+          { nome: "Subida de escada forte", registro: "fc", series: 2, reps: "30 s", cargaSugerida: "esforço máximo", minutos: null, detalhe: "anote o pico do relógio" },
+        ] },
         { dia: "sex", titulo: "Potência e equilíbrio", tipo: "potencia", duracaoMin: 30, itens: [
           { nome: "Salto horizontal", registro: "carga", series: 3, reps: "3", cargaSugerida: "peso do corpo", minutos: null, detalhe: "intenção máxima, descansado" },
           { nome: "Apoio unipodal olhos fechados", registro: "tempo", series: null, reps: null, cargaSugerida: null, minutos: 2, detalhe: "anote os segundos por perna" },

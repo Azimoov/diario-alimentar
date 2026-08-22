@@ -14,7 +14,7 @@ GitHub Pages e usável como app no iPhone. **Seis áreas** na barra de cima:
 | 🧪 Exames | laboratoriais (analito por linha, com a faixa do SEU laudo) e de imagem; lembretes de repetição; leitura de laudo por **foto ou PDF** |
 | ❤️ Métricas | peso e composição corporal; import do export do app Saúde do iPhone (passos, energia, sono, FC, VO₂máx) e saldo energético |
 | 💊 Remédios | o que a pessoa toma e o que já tomou; encerrar guarda como histórico, não apaga |
-| 🏋️ Treino | coach semanal (Huberman/Galpin/Nippard): monta a semana, a pessoa registra carga/minutos, ele dá nota por capacidade e evolui o plano |
+| 🏋️ Treino | coach semanal (Huberman/Galpin/Nippard): monta a semana com força, potência, equilíbrio, mobilidade, Z2, Z5 e pico diário de FC; a pessoa registra carga/minutos/bpm, ele dá nota por capacidade e evolui o plano |
 | 💬 IA | conversa com memória sobre os próprios dados + histórico de análises |
 
 A conversa e a análise consultam uma **base de referência de longevidade**
@@ -196,6 +196,39 @@ está o motivo original:
 ---
 
 # Histórico (mais recente primeiro)
+
+## 2026-08-21 (2) — Pico diário de FC + a ligação nutrição/exames -> treino
+
+Duas lacunas que o Daniel apontou perguntando "já estão todos esses
+alinhados?", e não estavam.
+
+**1. Os dados chegavam, mas o coach não sabia o que fazer com eles.** O
+payload já levava dieta, exames, remédios e métricas do relógio, e a única
+instrução era "use tudo como contexto" — genérico demais para virar decisão.
+Agora `CONHECIMENTO_TREINO` tem duas seções com as ligações CONCRETAS:
+proteína < ~1,6 g/kg limita hipertrofia (dizer, sem virar nutricionista),
+déficit agressivo -> priorizar força, ferritina/hemoglobina abaixo da faixa DO
+LAUDO limitam fôlego/Z5, glicemia alterada reforça a dose de Z2, FC de repouso
+subindo ou sono curto antecipam o deload, VO2máx de relógio é tendência e não
+nota. `SYSTEM_TREINO` manda usar e DIZER a conexão em uma linha. As regras de
+honestidade continuam valendo: só a faixa do laudo da própria pessoa, sem
+diagnosticar, sem prescrever suplemento.
+
+**2. Pico diário de FC** (pedido explícito dele): novo tipo de sessão
+`picoFc` e novo registro `fc` (bpm de pico), do schema do Worker até o campo
+na tela. NÃO é Z5 diária — a sessão estruturada continua 1-2x/semana; o pico é
+20-60 s, 1-3 tiros, no FIM do treino em dia de força/potência, e em dia com
+sprints o próprio trabalho de potência JÁ é o pico (não soma). A tensão está
+escrita na base: pico todo dia compete com recuperação, então se FC de repouso
+subir, sono cair ou força travar, o coach reduz para dias alternados e explica
+— preferência do dono não sobrepõe sinal de excesso de treino. Betabloqueador
+troca o alvo de bpm por RPE 9-10; cardiopatia/hipertensão pedem liberação
+médica antes.
+
+Cuidado de implementação que vale lembrar: `validarSemana` tem whitelist de
+tipos e de registro — tipo novo que não entre nela vira "forca"/"carga"
+silenciosamente e o pico sumiria sem erro nenhum. O smoke test agora prova que
+`picoFc` e `registro: "fc"` ATRAVESSAM a validação. Assets em ?v=8.
 
 ## 2026-08-21 — Deploy em produção pelo Daniel + Jeff Nippard como 3ª fonte do coach
 

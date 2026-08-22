@@ -417,7 +417,7 @@ const SCHEMA_TREINO_SEMANA = {
         properties: {
           dia: { type: "string", enum: ["seg", "ter", "qua", "qui", "sex", "sab", "dom"], description: "Dia sugerido (a pessoa pode trocar)" },
           titulo: { type: "string", description: "Nome da sessão (ex.: 'Força A — inferiores')" },
-          tipo: { type: "string", enum: ["forca", "hipertrofia", "potencia", "equilibrio", "mobilidade", "z2", "z5"], description: "Capacidade principal da sessão" },
+          tipo: { type: "string", enum: ["forca", "hipertrofia", "potencia", "equilibrio", "mobilidade", "z2", "z5", "picoFc"], description: "Capacidade principal da sessão. picoFc = o pico curto de frequência cardíaca do dia" },
           duracaoMin: { type: "integer", description: "Duração estimada em minutos" },
           itens: {
             type: "array",
@@ -425,7 +425,7 @@ const SCHEMA_TREINO_SEMANA = {
               type: "object",
               properties: {
                 nome: { type: "string", description: "Exercício ou tarefa" },
-                registro: { type: "string", enum: ["carga", "tempo"], description: "O que a pessoa registra: 'carga' = kg × séries × reps; 'tempo' = minutos" },
+                registro: { type: "string", enum: ["carga", "tempo", "fc"], description: "O que a pessoa registra: 'carga' = kg × séries × reps; 'tempo' = minutos; 'fc' = frequência cardíaca de pico em bpm (use nos picos diários de FC)" },
                 series: { type: ["integer", "null"], description: "Séries alvo (null quando registro = tempo)" },
                 reps: { type: ["string", "null"], description: "Repetições alvo, como texto ('5', '6-8'). null quando registro = tempo" },
                 cargaSugerida: { type: ["string", "null"], description: "Sugestão de carga ('20 kg', 'peso do corpo'). Se não houver histórico, sugira 'comece leve e anote' em vez de inventar número" },
@@ -479,9 +479,13 @@ const SCHEMA_TREINO_FECHAR = {
 
 const SYSTEM_TREINO = `Você é o coach de treino físico de um app pessoal de saúde ("coach de treino" do Highlander). Monta UMA semana de treino por vez e evolui o plano pelos NÚMEROS que a pessoa registrou — carga, séries, repetições, minutos, RPE.
 
-O que você recebe junto do pedido: o perfil de treino (objetivo, dias por semana, onde treina, experiência, limitações declaradas) e os dados do app — dieta média, peso e composição corporal, exames laboratoriais anotados, MEDICAMENTOS em uso, métricas do relógio (passos, sono, FC de repouso, VO2máx estimado). Use tudo como contexto.
+O que você recebe junto do pedido: o perfil de treino (objetivo, dias por semana, onde treina, experiência, limitações declaradas) e os dados do app — dieta média, peso e composição corporal, exames laboratoriais anotados, MEDICAMENTOS em uso, métricas do relógio (passos, sono, FC de repouso, VO2máx estimado).
 
-Capacidades que você treina e equilibra: força máxima, hipertrofia, potência (fibras rápidas/tipo II), equilíbrio, mobilidade, cardio Zona 2 e cardio Zona 5/VO2máx. Trabalhe em BLOCOS de 4-6 semanas com uma ênfase, mantendo o resto em dose de manutenção; troque o bloco quando a ênfase estagnar, quando outra capacidade ficar muito atrás, ou ao fim do prazo — e diga o porquê da troca nas orientações. Programe deload (1 semana leve) a cada 4-6 semanas.
+USE ESSES DADOS DE VERDADE, não como enfeite. A base anexa tem duas seções — "O que a NUTRIÇÃO registrada muda no treino" e "O que os EXAMES e as MÉTRICAS mudam no treino" — com as ligações concretas que você deve aplicar: proteína insuficiente limita hipertrofia, déficit agressivo pede priorizar força, ferritina/hemoglobina baixas do laudo limitam fôlego, glicemia alterada reforça a dose de Zona 2, FC de repouso subindo ou sono curto pedem menos volume ou deload antecipado. Quando um desses dados explicar uma escolha sua, DIGA a conexão em uma linha (nas orientações da semana ou na avaliação). Se um dado faltar ou o registro for ralo, diga que não dá para concluir — não invente leitura.
+
+Capacidades que você treina e equilibra: força máxima, hipertrofia, potência (fibras rápidas/tipo II), equilíbrio, mobilidade, cardio Zona 2, cardio Zona 5/VO2máx e o PICO DIÁRIO DE FREQUÊNCIA CARDÍACA.
+
+PICO DIÁRIO DE FC (preferência declarada do dono do app, prescreva sempre): todo dia leva um pico curto de frequência cardíaca — 20-60 segundos de esforço muito forte, 1 a 3 tiros, tipo "picoFc", com os itens em registro "fc" (a pessoa anota o bpm de pico do relógio). Não confunda com Zona 5: a sessão estruturada de intervalos continua sendo 1-2x por semana. Em dia de força ou potência, o pico vai no FIM da sessão; em dia de potência com sprints ou saltos, o próprio trabalho de potência já É o pico do dia e você NÃO soma outro. Se aparecer sinal de excesso (FC de repouso subindo, sono caindo, força travando), reduza para dias alternados e explique — a preferência do dono não sobrepõe sinal de excesso de treino. Trabalhe em BLOCOS de 4-6 semanas com uma ênfase, mantendo o resto em dose de manutenção; troque o bloco quando a ênfase estagnar, quando outra capacidade ficar muito atrás, ou ao fim do prazo — e diga o porquê da troca nas orientações. Programe deload (1 semana leve) a cada 4-6 semanas.
 
 Regras de progressão (siga a base de treino anexa):
 - Semana cumprida com RPE confortável → subir ~2-5% a carga OU 1-2 reps OU 5-10% o tempo de Z2. Nunca tudo de uma vez.
@@ -618,7 +622,7 @@ async function handleTreino(request, env, json, uid) {
   const validarSemana = (s) => {
     if (!s || typeof s !== "object" || !Array.isArray(s.sessoes) || !s.sessoes.length) return null;
     const DIAS = ["seg", "ter", "qua", "qui", "sex", "sab", "dom"];
-    const TIPOS = ["forca", "hipertrofia", "potencia", "equilibrio", "mobilidade", "z2", "z5"];
+    const TIPOS = ["forca", "hipertrofia", "potencia", "equilibrio", "mobilidade", "z2", "z5", "picoFc"];
     const sessoes = s.sessoes.slice(0, 7).map((x) => ({
       dia: DIAS.includes(x.dia) ? x.dia : "seg",
       titulo: txt(x.titulo, 80) || "Sessão",
@@ -629,7 +633,7 @@ async function handleTreino(request, env, json, uid) {
         .map((it) => ({
           id: null,   // o app preenche
           nome: txt(it.nome, 100),
-          registro: it.registro === "tempo" ? "tempo" : "carga",
+          registro: (it.registro === "tempo" || it.registro === "fc") ? it.registro : "carga",
           series: intOk(it.series, 1, 12, null),
           reps: txt(it.reps, 20) || null,
           cargaSugerida: txt(it.cargaSugerida, 40) || null,

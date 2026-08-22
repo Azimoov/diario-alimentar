@@ -45,11 +45,12 @@ await page.waitForSelector('.tr-sessao-card', { timeout: 20000 });
 
 check('cabeçalho mostra Semana 1', (await page.locator('#tab-trsemana .card').first().textContent()).includes('Semana 1'));
 check('bloco e posição no bloco visíveis', (await page.locator('.tr-bloco').textContent()).includes('Base geral'));
-check('3 sessões na semana do mock', await page.locator('.tr-sessao-card').count() === 3);
-check('sessões carregam o tipo (força, zona 2, potência)',
+check('4 sessões na semana do mock', await page.locator('.tr-sessao-card').count() === 4);
+check('sessões carregam o tipo (força, zona 2, potência, pico de FC)',
   await page.locator('.tr-tipo', { hasText: 'força' }).count() === 1
   && await page.locator('.tr-tipo', { hasText: 'zona 2' }).count() === 1
-  && await page.locator('.tr-tipo', { hasText: 'potência' }).count() === 1);
+  && await page.locator('.tr-tipo', { hasText: 'potência' }).count() === 1
+  && await page.locator('.tr-tipo', { hasText: 'pico de FC' }).count() === 1);
 const agacho = page.locator('.tr-item', { hasText: 'Agachamento' });
 check('item de carga mostra o alvo', (await agacho.textContent()).includes('3 × 5') && (await agacho.textContent()).includes('40 kg'));
 const z2item = page.locator('.tr-item', { hasText: 'Caminhada rápida' });
@@ -64,13 +65,24 @@ await agacho.getByPlaceholder('kg').fill('42,5');
 await agacho.getByPlaceholder('sér.').fill('3');
 await agacho.getByPlaceholder('reps').fill('5');
 await z2item.getByPlaceholder('min').fill('40');
+// pico diário de FC: o que se anota é o bpm do relógio, não carga nem minutos
+const picoItem = page.locator('.tr-item', { hasText: 'Subida de escada' });
+check('item de pico de FC pede bpm (não kg nem minutos)',
+  await picoItem.getByPlaceholder('bpm').count() === 1
+  && await picoItem.getByPlaceholder('kg').count() === 0
+  && await picoItem.getByPlaceholder('min').count() === 0);
+await picoItem.getByPlaceholder('bpm').fill('168');
+check('bpm de pico grava no estado', await page.evaluate(() => {
+  const itens = window.Store.get().treino.plano.semana.sessoes.flatMap(s => s.itens);
+  return (itens.find(i => i.nome.includes('escada')) || {}).feito.fcPico === 168;
+}));
 check('registro grava no estado (com vírgula decimal)', await page.evaluate(() => {
   const itens = window.Store.get().treino.plano.semana.sessoes.flatMap(s => s.itens);
   const ag = itens.find(i => i.nome === 'Agachamento');
   const z2 = itens.find(i => i.nome.includes('Caminhada'));
   return ag.feito.carga === 42.5 && ag.feito.series === 3 && ag.feito.reps === 5 && z2.feito.minutos === 40;
 }));
-check('item registrado acende (tr-ok)', await page.locator('.tr-item.tr-ok').count() === 2);
+check('item registrado acende (tr-ok)', await page.locator('.tr-item.tr-ok').count() === 3);
 // apagar o número apaga o registro — para o coach, vazio = "não registrado"
 await z2item.getByPlaceholder('min').fill('');
 check('apagar o campo remove o feito', await page.evaluate(() => {

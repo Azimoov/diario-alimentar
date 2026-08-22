@@ -17,8 +17,9 @@ Hub pessoal de saúde com **seis áreas** na barra de cima:
 - **💊 Remédios** — o que você toma (e o que já tomou), para a análise ler seus
   exames sabendo disso.
 - **🏋️ Treino** — coach semanal (protocolos Huberman/Galpin/Nippard): força,
-  potência/fibras rápidas, equilíbrio, mobilidade, cardio Z2 e Z5. Você
-  registra carga e minutos; ele dá notas por capacidade e evolui a semana.
+  potência/fibras rápidas, equilíbrio, mobilidade, cardio Z2 e Z5, e um pico
+  curto de FC todo dia. Você registra carga, minutos e bpm; ele dá notas por
+  capacidade, cruza com dieta/exames/relógio e evolui a semana.
 - **💬 IA** — conversa com memória sobre os seus próprios dados e o histórico
   de análises já geradas (nenhuma é sobrescrita).
 
@@ -376,6 +377,11 @@ O que ele cobre, e por quê:
 - **Cardio Zona 2** — volume na base (~180+ min/semana como alvo de longo
   prazo, teste da fala).
 - **Cardio Zona 5/VO₂máx** — 1–2×/semana, intervalos curtos.
+- **Pico diário de frequência cardíaca** — todo dia um esforço curto (20–60 s,
+  1–3 tiros) que leve a FC perto do máximo, registrado em bpm. **Não** é uma
+  sessão de Z5 diária: em dia de força/potência ele vai no fim, e em dia com
+  sprints o próprio trabalho de potência já é o pico. Se FC de repouso subir,
+  sono cair ou a força travar, o coach reduz para dias alternados e diz por quê.
 
 Como funciona o ciclo:
 
@@ -384,11 +390,17 @@ Como funciona o ciclo:
 2. **Plano**: o coach monta a semana 1 em **blocos de 4–6 semanas** com uma
    ênfase por bloco (e deload programado), respeitando seus dias e equipamento.
    Ele recebe também o resumo do app — dieta, peso/composição, exames,
-   **remédios** e métricas do relógio — e considera isso (ex.: betabloqueador →
-   zonas por RPE/fala em vez de frequência cardíaca).
-3. **Registrar**: cada item tem campos de **kg × séries × reps** (ou minutos)
-   e RPE. Aceita vírgula ("42,5"). O que ficou vazio conta como "não
-   registrado" — de propósito.
+   **remédios** e métricas do relógio — e **usa isso com regras explícitas**,
+   não como enfeite: proteína média abaixo de ~1,6 g/kg limita o retorno da
+   hipertrofia (e ele diz isso, sem virar nutricionista); déficit agressivo faz
+   priorizar força; ferritina/hemoglobina abaixo da faixa **do seu laudo**
+   limitam fôlego e Z5; glicemia alterada reforça a dose de Z2; FC de repouso
+   subindo, VFC caindo ou sono curto antecipam o deload; betabloqueador troca
+   zonas de FC por RPE/teste da fala. Quando um desses dados explica uma
+   escolha, ele diz a conexão em uma linha.
+3. **Registrar**: cada item tem campos de **kg × séries × reps**, **minutos**
+   ou **bpm de pico** (conforme o tipo do item), mais RPE. Aceita vírgula
+   ("42,5"). O que ficou vazio conta como "não registrado" — de propósito.
 4. **Fechar a semana**: o coach devolve **nota 0–10 por capacidade** (força,
    potência, equilíbrio, mobilidade, Z2, Z5), a leitura da semana, um **plano
    de melhoria** priorizado no que está pior, e já monta a semana seguinte com

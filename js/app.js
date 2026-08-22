@@ -2486,6 +2486,7 @@ window.App = (function () {
   const TR_TIPOS = {
     forca: 'força', hipertrofia: 'hipertrofia', potencia: 'potência',
     equilibrio: 'equilíbrio', mobilidade: 'mobilidade', z2: 'zona 2', z5: 'zona 5',
+    picoFc: 'pico de FC',
   };
   const TR_NOTAS = [
     ['forca', 'Força'], ['potencia', 'Potência'], ['equilibrio', 'Equilíbrio'],
@@ -2634,8 +2635,9 @@ window.App = (function () {
       h('h3', {}, existente ? '✏️ Ajustar perfil de treino' : '🏋️ Coach de treino'),
       existente ? h('p', { class: 'note' }, 'Vale a partir da próxima semana que o coach montar.')
         : h('p', { class: 'note' }, 'Um plano semanal que cobre força, potência (fibras rápidas), equilíbrio, '
-          + 'mobilidade e cardio em zona 2 e zona 5 — nas doses dos protocolos de Huberman e Andy Galpin. '
-          + 'Você registra carga e minutos; o coach dá nota por capacidade e evolui a semana seguinte pelos seus números.'),
+          + 'mobilidade, cardio em zona 2 e zona 5, e um pico curto de frequência cardíaca todo dia — '
+          + 'nas doses dos protocolos de Huberman, Andy Galpin e Jeff Nippard. '
+          + 'Você registra carga, minutos e bpm; o coach dá nota por capacidade e evolui a semana seguinte pelos seus números.'),
       h('div', { class: 'exam-form-grid' }, [
         h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Objetivo principal'), objetivoIn]),
         h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Dias por semana'), diasIn]),
@@ -2646,8 +2648,9 @@ window.App = (function () {
         h('div', { class: 'span2' }, goBtn),
       ]),
       existente ? null : h('p', { class: 'hint' }, 'O coach lê também o que você já tem no app — dieta, peso, exames, '
-        + 'remédios e métricas do relógio — e monta o treino considerando isso. Não é prescrição médica: com dor no '
-        + 'peito, tontura ou lesão, pare e procure seu médico.'),
+        + 'remédios e métricas do relógio — e usa isso de verdade: proteína baixa limita ganho de força, '
+        + 'exame alterado muda a expectativa, FC de repouso subindo antecipa o deload. Não é prescrição médica: '
+        + 'com dor no peito, tontura ou lesão, pare e procure seu médico.'),
       out,
     ]);
   }
@@ -2768,10 +2771,15 @@ window.App = (function () {
     const row = h('div', { class: 'tr-item' + (item.feito ? ' tr-ok' : '') });
     // partes montadas só com o que existe: séries sem reps (ou nenhuma das
     // duas, que o schema permite) deixava " · 20 kg" com separador órfão
-    const alvo = item.registro === 'tempo'
-      ? (item.minutos != null ? item.minutos + ' min' : 'tempo livre')
-      : [[item.series, item.reps].filter(x => x != null).join(' × '), item.cargaSugerida]
-        .filter(Boolean).join(' · ');
+    // 'fc' = pico diário de frequência cardíaca: o alvo é o esforço/duração,
+    // e o que a pessoa anota depois é o bpm que o relógio marcou
+    const alvo = item.registro === 'fc'
+      ? [[item.series, item.reps].filter(x => x != null).join(' × '), item.cargaSugerida]
+        .filter(Boolean).join(' · ')
+      : item.registro === 'tempo'
+        ? (item.minutos != null ? item.minutos + ' min' : 'tempo livre')
+        : [[item.series, item.reps].filter(x => x != null).join(' × '), item.cargaSugerida]
+          .filter(Boolean).join(' · ');
     row.appendChild(h('div', {}, [
       h('span', { class: 'tr-item-nome' }, h('strong', {}, item.nome)),
       ' ',
@@ -2812,7 +2820,13 @@ window.App = (function () {
     // sem separador ANTES do RPE: a linha quebra no celular e o "·" ficava
     // órfão no fim da linha, parecendo erro de digitação
     const reg = h('div', { class: 'tr-reg' });
-    if (item.registro === 'tempo') {
+    if (item.registro === 'fc') {
+      // o pico do dia se mede pelo que o relógio marcou; sem relógio, o RPE
+      // ao lado é o registro possível (a base manda usar RPE 9-10 no lugar)
+      reg.appendChild(h('span', { class: 'lblzin' }, 'pico'));
+      reg.appendChild(inp('fcPico', 'bpm'));
+      reg.appendChild(h('span', { class: 'lblzin' }, 'bpm'));
+    } else if (item.registro === 'tempo') {
       reg.appendChild(h('span', { class: 'lblzin' }, 'fiz'));
       reg.appendChild(inp('minutos', 'min'));
       reg.appendChild(h('span', { class: 'lblzin' }, 'min'));

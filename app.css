@@ -548,6 +548,8 @@ textarea:focus, input:focus, select:focus {
 .tr-tipo-forca, .tr-tipo-hipertrofia { background: color-mix(in srgb, var(--p) 16%, transparent); color: var(--p); }
 .tr-tipo-potencia { background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--c); }
 .tr-tipo-z2, .tr-tipo-z5 { background: var(--accent-weak); color: var(--accent); }
+/* pico diário de FC: vermelho do alerta, porque é o esforço máximo do dia */
+.tr-tipo-picoFc { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); }
 .tr-tipo-equilibrio, .tr-tipo-mobilidade { background: color-mix(in srgb, var(--g) 16%, transparent); color: var(--g); }
 .tr-item {
   position: relative; margin: 12px 0 0; padding: 2px 22px 2px 12px;

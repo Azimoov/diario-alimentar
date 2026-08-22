@@ -58,6 +58,9 @@ const mock = createServer((req, res) => {
         { dia: "qua", titulo: "Zona 2", tipo: "z2", duracaoMin: 40, itens: [
           { nome: "Caminhada rápida ou bike", registro: "tempo", series: null, reps: null, cargaSugerida: null, minutos: 40, detalhe: "ritmo de conversa" },
         ] },
+        { dia: "ter", titulo: "Pico do dia", tipo: "picoFc", duracaoMin: 10, itens: [
+          { nome: "Subida de escada forte", registro: "fc", series: 2, reps: "30 s", cargaSugerida: "esforço máximo", minutos: null, detalhe: "anote o pico do relógio" },
+        ] },
         { dia: "sex", titulo: "Potência e equilíbrio", tipo: "potencia", duracaoMin: 30, itens: [
           { nome: "Salto horizontal", registro: "carga", series: 3, reps: "3", cargaSugerida: "peso do corpo", minutos: null, detalhe: "intenção máxima, descansado" },
           { nome: "Apoio unipodal olhos fechados", registro: "tempo", series: null, reps: null, cargaSugerida: null, minutos: 2, detalhe: "anote os segundos por perna" },
@@ -768,9 +771,15 @@ mock.listen(MOCK_PORT, async () => {
       await check("plano devolve a semana 1 válida", worker.fetch(treinoReq({ acao: "plano", dados: { perfil: {} }, perfilTreino: perfilT }), ENV), 200,
         (res, body) => {
           if (!body.semana || body.semana.numero !== 1) return "semana errada: " + JSON.stringify(body.semana && body.semana.numero);
-          if (!Array.isArray(body.semana.sessoes) || body.semana.sessoes.length !== 3) return "sessões: " + (body.semana.sessoes || []).length;
+          if (!Array.isArray(body.semana.sessoes) || body.semana.sessoes.length !== 4) return "sessões: " + (body.semana.sessoes || []).length;
           const tipos = body.semana.sessoes.map((x) => x.tipo).join(",");
           if (!/forca/.test(tipos) || !/z2/.test(tipos)) return "tipos: " + tipos;
+          // pico diário de FC: tipo e registro novos precisam ATRAVESSAR a
+          // validação defensiva — se caírem no padrão, viram "forca"/"carga"
+          // e o pico do dia some sem ninguém perceber
+          const pico = body.semana.sessoes.find((x) => x.tipo === "picoFc");
+          if (!pico) return "sessão de pico de FC não sobreviveu: " + tipos;
+          if (pico.itens[0].registro !== "fc") return "registro do pico virou: " + pico.itens[0].registro;
           if (!body.apresentacao) return "sem apresentação";
           return true;
         });
@@ -778,6 +787,17 @@ mock.listen(MOCK_PORT, async () => {
         Promise.resolve(new Response(null, { status: 200 })), 200,
         () => (/BASE DE TREINO/.test(ultimoSystem) && /Galpin/.test(ultimoSystem)
           && /Betabloqueador/.test(ultimoSystem)) || "base de treino não viajou");
+      // a ligação dieta/exames -> treino e o pico diário são pedidos explícitos
+      // do dono: se sumirem do prompt, o coach volta a ignorar os dados
+      await check("o prompt liga nutrição e exames ao treino",
+        Promise.resolve(new Response(null, { status: 200 })), 200,
+        () => (/NUTRIÇÃO registrada muda no treino/.test(ultimoSystem)
+          && /EXAMES e as MÉTRICAS mudam no treino/.test(ultimoSystem)
+          && /1,6–2,2 g/.test(ultimoSystem)) || "ligação nutrição/exames não viajou");
+      await check("o prompt manda prescrever o pico diário de FC",
+        Promise.resolve(new Response(null, { status: 200 })), 200,
+        () => (/PICO DIÁRIO DE FC/.test(ultimoSystem)
+          && /Pico diário de frequência cardíaca/.test(ultimoSystem)) || "pico diário não viajou");
       await check("fechar devolve notas e a PRÓXIMA semana", worker.fetch(treinoReq({
         acao: "fechar", dados: { perfil: {} }, perfilTreino: perfilT,
         semanaFechada: { numero: 3, sessoes: [{ titulo: "Força A", itens: [{ nome: "Agachamento", feito: { carga: 42.5, series: 3, reps: 5 } }] }] },
