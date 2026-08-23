@@ -61,6 +61,8 @@ window.Store = (function () {
         proxyUrl: '', proxyToken: '', autoBackup: false, lastBackupAt: null, mealsFechados: [],
         // até quando o aviso de peso parado fica escondido ('YYYY-MM-DD')
         platoAdiadoAte: null,
+        // última versão cujas novidades a pessoa já viu (string do ?v=N)
+        versaoVista: null,
         // espelho do envio ao Open Brain (a verdade fica no servidor)
         openBrain: false,
         account: { email: null, session: null, lastSyncAt: null },

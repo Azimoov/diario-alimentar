@@ -485,6 +485,8 @@ USE ESSES DADOS DE VERDADE, não como enfeite. A base anexa tem duas seções �
 
 Capacidades que você treina e equilibra: força máxima, hipertrofia, potência (fibras rápidas/tipo II), equilíbrio, mobilidade, cardio Zona 2, cardio Zona 5/VO2máx e o PICO DIÁRIO DE FREQUÊNCIA CARDÍACA.
 
+FECHAR DÉFICIT COM TREINO: se o pedido trouxer GASTO EXTRA NECESSÁRIO, a meta calórica da pessoa já bateu no piso de segurança e o déficit que falta tem que sair de gasto. Suba o volume de Zona 2 (é o que soma gasto sem estourar a recuperação), no máximo ~10-15% de minutos por semana, e espalhe movimento no dia. NÃO mande comer menos nem procurar nutricionista nessa situação — esse caminho já acabou; o trabalho é seu. Se fechar o buraco inteiro exigir mais de ~60-90 min de cardio por dia, diga que isso não cabe numa rotina normal, prescreva o que cabe e explique que o resto sai de um ritmo de emagrecimento mais lento.
+
 PICO DIÁRIO DE FC (preferência declarada do dono do app, prescreva sempre): todo dia leva um pico curto de frequência cardíaca — 20-60 segundos de esforço muito forte, 1 a 3 tiros, tipo "picoFc", com os itens em registro "fc" (a pessoa anota o bpm de pico do relógio). Não confunda com Zona 5: a sessão estruturada de intervalos continua sendo 1-2x por semana. Em dia de força ou potência, o pico vai no FIM da sessão; em dia de potência com sprints ou saltos, o próprio trabalho de potência já É o pico do dia e você NÃO soma outro. Se aparecer sinal de excesso (FC de repouso subindo, sono caindo, força travando), reduza para dias alternados e explique — a preferência do dono não sobrepõe sinal de excesso de treino. Trabalhe em BLOCOS de 4-6 semanas com uma ênfase, mantendo o resto em dose de manutenção; troque o bloco quando a ênfase estagnar, quando outra capacidade ficar muito atrás, ou ao fim do prazo — e diga o porquê da troca nas orientações. Programe deload (1 semana leve) a cada 4-6 semanas.
 
 Regras de progressão (siga a base de treino anexa):
@@ -530,6 +532,13 @@ async function handleTreino(request, env, json, uid) {
     "PERFIL DE TREINO (do formulário):\n" + JSON.stringify(perfil),
     "DADOS DA PESSOA (JSON do app):\n" + JSON.stringify(dados),
   ];
+  // A meta calórica bateu no piso de segurança: o resto do déficit tem que
+  // sair de GASTO, não de prato. É a hora em que o treino assume.
+  const gastoExtra = parseInt(body.gastoExtraAlvo, 10);
+  if (Number.isInteger(gastoExtra) && gastoExtra > 0 && gastoExtra <= 3000) {
+    partes.push("GASTO EXTRA NECESSÁRIO: a meta calórica desta pessoa já chegou no piso de segurança — não dá para cortar mais comida. Faltam cerca de "
+      + gastoExtra + " kcal POR DIA de déficit, e elas têm que vir de gasto. Suba o volume de cardio conforme a regra 'Fechar déficit com treino' da base.");
+  }
   // A NUMERAÇÃO DA SEMANA É DO APP, não do modelo. Ele recebe o número certo
   // no pedido e a resposta é reescrita com ele mais abaixo: numero é a
   // IDENTIDADE da semana no histórico (o merge entre aparelhos casa por ele),

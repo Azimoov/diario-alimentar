@@ -64,6 +64,19 @@ originais) e os scripts `data/*.mjs` **não são necessários** para o site
 funcionar — servem para reproduzir/atualizar a base. Pode mantê-los no repo
 para transparência ou removê-los do deploy, à sua escolha.
 
+### Novidades por versão
+
+`js/changelog.js` guarda o que mudou em cada versão, escrito para quem **usa**
+o app (não para quem programa). Ele aparece em dois lugares: em **Diário →
+Dados → ✨ Novidades**, com o histórico completo, e num popup que abre **uma
+vez** depois de cada atualização, mostrando só a versão nova. Quem acabou de
+criar a conta não recebe o popup — não perdeu atualização nenhuma.
+
+**A versão do topo do changelog tem que ser a mesma do `?v=N` abaixo.** É esse
+número que o app usa para saber se há novidade a mostrar; se os dois saírem de
+sincronia, a pessoa vê novidades que não correspondem ao código que está
+rodando. `test/novidades.mjs` falha se divergirem.
+
 ### Versão dos assets — suba o número a cada publicação
 
 No `index.html`, o CSS e os nove scripts locais são carregados com uma marca de
@@ -148,8 +161,11 @@ em `data/source*` e rode `node data/build-db.mjs`. Não edite `js/db.js` à mão
   pelo gasto medido, em um toque; se você está **comendo acima** da própria
   meta, ele diz isso em vez de mandar cortar mais. Nunca sugere meta abaixo do
   seu gasto basal nem do piso de segurança (1.500 kcal homens / 1.200
-  mulheres) — abaixo disso o recado é procurar nutricionista, e o caminho
-  melhor costuma ser gastar mais. "Depois eu vejo" silencia por 14 dias; ao
+  mulheres). **Chegando nesse piso, quem entra em ação é o treino**: o app
+  calcula quantas kcal por dia ainda faltam de déficit, manda esse número para
+  o coach e ele aumenta o volume de Zona 2 — que é o que soma gasto sem
+  estourar a recuperação. O caminho deixa de ser "coma menos" e passa a ser
+  "gaste mais". "Depois eu vejo" silencia por 14 dias; ao
   aceitar a nova meta ele também espera 14 dias antes de reavaliar, porque a
   média dos últimos 28 dias ainda é a de antes.
 - **Composição corporal (opcional)** — junto do peso, no topo da aba
@@ -692,7 +708,7 @@ novo** — o iOS guarda o antigo em cache.
 Nada aqui precisa de conta na Cloudflare, chave de API ou internet.
 
 ```
-node test/todos.mjs             # RODA TUDO (15 suítes) — sobe os dois
+node test/todos.mjs             # RODA TUDO (16 suítes) — sobe os dois
                                 # servidores locais sozinho e derruba no fim
 ```
 
@@ -736,6 +752,7 @@ node test/marca-e-pwa.mjs         # marca, manifest, ícones, as 6 áreas
 node test/remedios.mjs            # área Remédios: anotar, encerrar, chegar na IA
 node test/treino.mjs              # área Treino: plano, registro, notas, evolução
 node test/plato.mjs               # aviso de peso parado e ajuste da meta
+node test/novidades.mjs           # histórico de versões e popup de atualização
 node test/recortar-icone.mjs      # ferramenta de recorte do ícone
 ```
 

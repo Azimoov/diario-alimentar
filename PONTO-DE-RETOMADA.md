@@ -38,7 +38,7 @@ envio opcional de contexto para o **Open Brain**, desligado por padrão.
   coach de treino (montou plano de verdade) e envio ao Open Brain, todos
   testados por ele no app publicado, não só nos servidores locais de teste.
   **Não há mais nenhum passo pendente de configuração.**
-- **Suíte: 15 conjuntos, todos passando**, e rodando duas vezes seguidas sem
+- **Suíte: 16 conjuntos, todos passando**, e rodando duas vezes seguidas sem
   sujar estado. Um comando: `node test/todos.mjs` (ele mesmo sobe e derruba os
   dois servidores locais).
 - **Site:** <https://azimoov.github.io/diario-alimentar/> — republica sozinho
@@ -196,6 +196,38 @@ está o motivo original:
 ---
 
 # Histórico (mais recente primeiro)
+
+## 2026-08-21 (4) — No piso, quem age é o treino + novidades por versão
+
+**"Coma menos" tem fim; gasto não.** O Daniel foi explícito: ao chegar perto do
+limite de calorias, NÃO quer ouvir "procure um nutricionista" — quer que o
+treino entre em ação e aumente o cardio. Faz sentido e foi implementado assim:
+`analisarPlato()` passou a calcular `faltaPorTreino` (o pedaço do déficit que
+não cabe no prato depois do piso), o cartão troca o texto de encaminhamento por
+um botão que leva ao treino, e `buildTreinoPayload` manda `gastoExtraAlvo` ao
+Worker. A base ganhou a seção "Fechar déficit com treino": o carro-chefe é
+ZONA 2 (soma gasto com custo baixo de recuperação — encher de Z5 aumentaria
+fadiga sem somar tanto), subir no máximo ~10-15% de minutos por semana, e
+espalhar NEAT. Duas travas que continuam: o PISO em si não se mexe (nunca
+sugerir comer abaixo do basal), e o coach é obrigado a ser honesto sobre
+tamanho — se fechar o buraco exigir mais de 60-90 min de cardio por dia, dizer
+que não cabe numa rotina normal e que o resto sai de um ritmo mais lento.
+Prometer o impossível faz desistir de tudo.
+
+**Novidades por versão.** `js/changelog.js` (novo) lista o que mudou em cada
+versão em português de gente. Aparece em Diário → Dados → ✨ Novidades (lista
+completa) e num popup que abre UMA vez por atualização (só a versão nova).
+Conta recém-criada não recebe popup — não perdeu atualização nenhuma.
+
+Armadilha que o teste pegou: a heurística de "conta nova" olhava
+`Object.keys(S.days).length`, mas a própria aba Hoje CRIA um dia vazio ao
+abrir — então toda conta nova parecia antiga e levava popup. Passou a contar
+dia com ITENS.
+
+Guarda novo que vale preservar: `test/novidades.mjs` falha se a versão do topo
+do changelog divergir do `?v=N` do index.html. São dois números que precisam
+andar juntos e que ninguém lembraria de sincronizar à mão. Assets em ?v=10;
+16 suítes.
 
 ## 2026-08-21 (3) — Rotina no perfil de treino + o app finalmente AVISA do platô
 

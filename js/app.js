@@ -164,6 +164,9 @@ window.App = (function () {
     renderAll();
     atualizarStatusConta();
     syncSharedFoods(); // base comum: atualiza em segundo plano (cache p/ offline)
+    // "o que mudou" só depois do portão liberar: por cima da tela de login
+    // seria um popup antes mesmo de a pessoa entrar. Uma vez por versão.
+    checarNovidades();
   }
 
   function mostrarPortao() {
@@ -321,6 +324,73 @@ window.App = (function () {
     if (dot) dot.hidden = !n;
   }
 
+  // ---- novidades da versão ----
+  // A lista mora em js/changelog.js. A versão do topo é a versão do app; o
+  // que a pessoa já viu fica em settings.versaoVista.
+  function versoes() { return Array.isArray(window.CHANGELOG) ? window.CHANGELOG : []; }
+  function versaoAtual() { return (versoes()[0] || {}).versao || null; }
+
+  // Quem acabou de criar a conta não "perdeu" atualização nenhuma: mostrar
+  // "o que mudou" para quem nunca usou a versão anterior é ruído. Por isso
+  // conta-se como estreante quem ainda não tem dado nenhum — nesse caso a
+  // versão é marcada como vista em silêncio.
+  function contaTemDados() {
+    // dia com ITENS, não dia existente: a própria aba Hoje cria um dia vazio
+    // ao abrir, e contá-lo faria toda conta nova parecer conta antiga.
+    const comeu = Object.keys(S.days || {}).some(d => ((S.days[d] || {}).items || []).length);
+    return !!(comeu || Object.keys(S.weights || {}).length
+      || (S.labExams || []).length || (S.meds || []).length
+      || (S.treino && S.treino.plano));
+  }
+
+  function checarNovidades() {
+    const atual = versaoAtual();
+    if (!atual) return;
+    if (S.settings.versaoVista === atual) return;      // já viu esta
+    const estreante = !S.settings.versaoVista && !contaTemDados();
+    S.settings.versaoVista = atual;
+    window.Store.save();
+    if (estreante) return;                             // conta nova: sem popup
+    abrirNovidades(true);
+  }
+
+  function abrirNovidades(sóAUltima) {
+    const lista = sóAUltima ? versoes().slice(0, 1) : versoes();
+    if (!lista.length) return;
+    const corpo = h('div', {}, lista.map(v => h('div', { class: 'versao-bloco' }, [
+      h('div', { class: 'versao-head' }, [
+        h('strong', {}, v.titulo),
+        h('span', { class: 'versao-tag' }, 'versão ' + v.versao),
+      ]),
+      h('p', { class: 'hint' }, fmtBR(v.data)),
+      h('ul', { class: 'versao-lista' }, (v.mudancas || []).map(m => h('li', {}, m))),
+    ])));
+    if (sóAUltima) {
+      corpo.appendChild(h('div', { class: 'btn-row' }, [
+        h('button', {
+          class: 'link-btn',
+          onclick: () => { mod.close(); goTo('diario', 'dados'); renderAll(); },
+        }, 'ver todas as versões'),
+      ]));
+    }
+    const mod = modal(sóAUltima ? '✨ O que mudou nesta atualização' : '📋 Novidades por versão', corpo);
+    return mod;
+  }
+
+  function renderNovidadesCard() {
+    const atual = versaoAtual();
+    const ultima = versoes()[0];
+    return h('div', { class: 'card' }, [
+      h('h3', {}, '✨ Novidades'),
+      h('p', { class: 'note' }, ultima
+        ? 'Você está na versão ' + atual + ' — ' + ultima.titulo + ' (' + fmtBR(ultima.data) + ').'
+        : 'Sem histórico de versões.'),
+      h('div', { class: 'btn-row' }, [
+        h('button', { class: 'btn', onclick: () => abrirNovidades(false) }, '📋 Ver o que mudou em cada versão'),
+      ]),
+    ]);
+  }
+
   // ---- platô de peso: o app tem que AVISAR, não esperar ser procurado ----
   // O TDEE real observado já era calculado, mas ficava parado num cartão da
   // aba Perfil esperando a pessoa ir lá e marcar uma caixinha. Quem registra
@@ -360,11 +430,14 @@ window.App = (function () {
       Math.round(N.bmr(S.profile) || 0),            // nunca abaixo do basal
       N.floorKcal(S.profile.sex),                   // nem do piso de segurança
     );
+    const puro = Math.round(ad.tdee - deficitAlvo);   // o que a conta pediria
     return Object.assign(base, {
       causa: 'meta_alta',
       sugerida,
       corte: eg.goalK - sugerida,
-      noPiso: sugerida > Math.round(ad.tdee - deficitAlvo),
+      noPiso: sugerida > puro,
+      // o pedaço do déficit que NÃO cabe no prato: tem que vir de gasto
+      faltaPorTreino: Math.max(0, sugerida - puro),
     });
   }
 
@@ -412,10 +485,25 @@ window.App = (function () {
       + kg(p.alvoKgSem) + ' kg por semana, a meta precisa ser ' + p.sugerida + ' kcal — '
       + (p.corte > 0 ? p.corte + ' kcal a menos do que hoje.' : 'o que já é o mínimo seguro.')));
     if (p.noPiso) {
-      box.appendChild(h('p', { class: 'hint' },
-        '⚠ A conta pediria menos que isso, mas o app não sugere meta abaixo do seu gasto basal '
-        + 'nem do piso de segurança. Cortar mais do que isto é assunto para nutricionista — '
-        + 'e o caminho melhor costuma ser gastar mais, não comer menos.'));
+      // Chegou no piso: daqui pra baixo não se corta comida. O que falta do
+      // déficit passa a ser trabalho do coach — mais cardio, não menos prato.
+      box.appendChild(h('p', { class: 'note' },
+        '🏋️ Daqui pra baixo não dá para cortar comida: a conta pediria menos que o seu gasto basal. '
+        + 'O que falta do déficit — cerca de ' + p.faltaPorTreino + ' kcal por dia — sai do outro lado, '
+        + 'gastando mais. O coach de treino já recebe esse número e aumenta o cardio de Zona 2, '
+        + 'que é o que soma gasto sem estourar a recuperação.'));
+      box.appendChild(h('div', { class: 'btn-row' }, [
+        h('button', {
+          class: 'btn primary',
+          onclick: () => {
+            S.settings.platoAdiadoAte = shiftDate(isoLocal(new Date()), 14);
+            window.Store.save();
+            goTo('treino', 'trsemana');
+            renderAll();
+            toast('O coach vai usar esse número na próxima semana que montar.', 'ok');
+          },
+        }, '🏋️ Ir para o treino'),
+      ]));
     }
     box.appendChild(h('p', { class: 'hint' },
       'A outra leitura possível: se sobraram refeições sem registrar, o número real ingerido é maior '
@@ -1470,6 +1558,7 @@ window.App = (function () {
     // conta primeiro: é o caminho recomendado para não perder dados
     root.appendChild(renderContaCard());
     root.appendChild(renderChaveCard());
+    root.appendChild(renderNovidadesCard());
 
     // export/import + backup automático na nuvem
     const st0 = S.settings;
@@ -2658,6 +2747,13 @@ window.App = (function () {
   function buildTreinoPayload(acao) {
     const t = S.treino;
     const body = { acao, perfilTreino: t.perfil, dados: buildAnalysisPayload() };
+    // Quando a meta calórica bateu no piso, o resto do déficit é trabalho do
+    // treino: o coach recebe o número e sobe o cardio em vez de a pessoa
+    // receber "coma menos" que ela já não pode cumprir.
+    const p = analisarPlato();
+    if (p && p.causa === 'meta_alta' && p.faltaPorTreino > 0) {
+      body.gastoExtraAlvo = p.faltaPorTreino;
+    }
     const historico = (t.avaliacoes || []).slice(0, 8)
       .map(a => ({ semana: a.semanaNumero, notas: a.notas }));
     if (acao === 'fechar') {
@@ -4160,7 +4256,7 @@ window.App = (function () {
     init, addPhotoItems, compressPhoto, analyzePhoto, computeRecipe, openRecipeForm,
     applyLabelToForm, pushBackup, restoreBackup,
     buildAnalysisPayload, buildTreinoPayload, reminderDue, goTo, renderMeds,
-    analisarPlato, renderAll,
+    analisarPlato, renderAll, versaoAtual, abrirNovidades,
     atualizarStatusConta, abrirLogin, sincronizarAoEntrar,
   };
 })();

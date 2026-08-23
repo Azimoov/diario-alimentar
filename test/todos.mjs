@@ -3,7 +3,7 @@
 //     node test/todos.mjs
 //
 // Ele mesmo sobe os dois servidores locais (app na 8123, Worker de
-// desenvolvimento na 8124), roda as quinze suítes em ordem, imprime um resumo
+// desenvolvimento na 8124), roda as dezesseis suítes em ordem, imprime um resumo
 // e derruba o que subiu. Se os servidores já estiverem no ar, reaproveita.
 //
 // Nada aqui usa internet, chave de API ou conta na Cloudflare: o dev-server
@@ -29,6 +29,7 @@ const SUITES = [
   ['remedios', 'test/remedios.mjs', RAIZ, 'área Remédios: anotar, encerrar, chegar na IA'],
   ['treino', 'test/treino.mjs', RAIZ, 'área Treino: plano semanal, registro, notas, evolução'],
   ['plato', 'test/plato.mjs', RAIZ, 'aviso de peso parado e ajuste da meta'],
+  ['novidades', 'test/novidades.mjs', RAIZ, 'histórico de versões e popup de atualização'],
   ['exames-e-metricas', 'test/exames-e-metricas.mjs', RAIZ, 'áreas Exames e Métricas + análise'],
   ['conta-e-login', 'fase2-proxy/test/conta-e-login.mjs', join(RAIZ, 'fase2-proxy'), 'portão, sync, recuperação, chave'],
   ['isolamento-contas', 'fase2-proxy/test/isolamento-contas.mjs', join(RAIZ, 'fase2-proxy'), 'compartilhado × individual'],

@@ -95,6 +95,17 @@ check('cenário do piso é de meta alta (não de aderência)',
 check('meta sugerida nunca fica abaixo do gasto basal',
   piso && piso.sugerida >= 2000, piso && piso.sugerida);
 check('e o app avisa que travou no piso', piso && piso.noPiso === true, piso && piso.noPiso);
+// No piso, quem entra em ação é o TREINO — nada de "coma menos" nem de
+// mandar procurar profissional: o déficit que falta vira gasto.
+check('calcula quanto do déficit tem que virar gasto',
+  piso && piso.faltaPorTreino > 0, piso && piso.faltaPorTreino);
+check('esse número viaja para o coach de treino', await page.evaluate(() => {
+  const s = window.Store.get();
+  s.treino.perfil = { objetivo: 'saude', diasSemana: 3, local: 'academia', experiencia: 'retomando', limitacoes: '', rotina: '', diasAcademia: [] };
+  window.Store.save();
+  return window.App.buildTreinoPayload('plano').gastoExtraAlvo > 0;
+}));
+await page.evaluate(() => { window.Store.get().treino.perfil = null; window.Store.save(); });
 
 // ---- meta na mão é escolha da pessoa: o app não intervém ----
 await page.evaluate(() => {
