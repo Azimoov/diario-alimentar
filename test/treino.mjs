@@ -39,7 +39,14 @@ await form.locator('select').nth(0).selectOption('saude');
 await form.locator('select').nth(1).selectOption('3');
 await form.locator('select').nth(3).selectOption('academia');
 await form.locator('select').nth(4).selectOption('retomando');
-await form.locator('textarea').fill('dor no joelho direito');
+await form.locator('textarea').nth(0).fill('dor no joelho direito');
+// rotina + dias de academia: é o que faz o coach botar força no dia certo
+await form.locator('textarea').nth(1).fill('Trabalho das 8h às 18h. Academia só de manhã cedo. Sábado é o dia livre.');
+await form.locator('.dia-check', { hasText: 'Seg' }).locator('input').check();
+await form.locator('.dia-check', { hasText: 'Qua' }).locator('input').check();
+check('perfil pede a rotina e os dias de academia',
+  await form.locator('.dia-check').count() === 7
+  && (await form.textContent()).includes('Como é a sua rotina'));
 await form.getByRole('button', { name: /Montar meu plano/ }).click();
 await page.waitForSelector('.tr-sessao-card', { timeout: 20000 });
 
@@ -57,6 +64,15 @@ const z2item = page.locator('.tr-item', { hasText: 'Caminhada rápida' });
 check('item de tempo mostra minutos-alvo', (await z2item.textContent()).includes('40 min'));
 check('perfil ficou no estado', await page.evaluate(() =>
   window.Store.get().treino.perfil.diasSemana === 3 && window.Store.get().treino.perfil.limitacoes.includes('joelho')));
+check('rotina e dias de academia entram no perfil', await page.evaluate(() => {
+  const p = window.Store.get().treino.perfil;
+  return p.rotina.includes('Sábado é o dia livre')
+    && Array.isArray(p.diasAcademia) && p.diasAcademia.join(',') === 'seg,qua';
+}));
+check('rotina e dias de academia viajam para o coach', await page.evaluate(() => {
+  const perfil = window.App.buildTreinoPayload('plano').perfilTreino;
+  return perfil.diasAcademia.length === 2 && perfil.rotina.includes('Academia só de manhã');
+}));
 check('apresentação do plano aparece na semana 1',
   (await page.locator('#tab-trsemana').textContent()).includes('PLANO FIXO DO MOCK'));
 

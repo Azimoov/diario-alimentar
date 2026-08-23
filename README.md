@@ -140,6 +140,18 @@ em `data/source*` e rode `node data/build-db.mjs`. Não edite `js/db.js` à mão
   receita (pesados crus, correto) também não.
 - **Média móvel de 7 dias** no gráfico de peso: o peso diário oscila ±1 kg por
   água/glicogênio; a linha de tendência é o sinal que importa.
+- **Aviso de peso parado** — o TDEE real acima não fica esperando ser
+  procurado. Se o peso empacou (ou subiu) enquanto a meta era emagrecer, um
+  cartão aparece **na aba Hoje** com o diagnóstico e o número. Ele distingue as
+  duas causas, que pedem conselhos opostos: se você está **cumprindo** a meta e
+  mesmo assim não anda, a meta é que está alta — e ele oferece a meta corrigida
+  pelo gasto medido, em um toque; se você está **comendo acima** da própria
+  meta, ele diz isso em vez de mandar cortar mais. Nunca sugere meta abaixo do
+  seu gasto basal nem do piso de segurança (1.500 kcal homens / 1.200
+  mulheres) — abaixo disso o recado é procurar nutricionista, e o caminho
+  melhor costuma ser gastar mais. "Depois eu vejo" silencia por 14 dias; ao
+  aceitar a nova meta ele também espera 14 dias antes de reavaliar, porque a
+  média dos últimos 28 dias ainda é a de antes.
 - **Composição corporal (opcional)** — junto do peso, no topo da aba
   **❤️ Métricas**, dá para registrar **% de gordura** e **% de massa magra** (da
   balança de bioimpedância ou avaliação física). Com o peso do dia preenchido o
@@ -386,7 +398,11 @@ O que ele cobre, e por quê:
 Como funciona o ciclo:
 
 1. **Perfil** (uma vez): objetivo, dias por semana, tempo por sessão, onde
-   treina, experiência e limitações. Editável depois.
+   treina, experiência, limitações, **em quais dias você tem academia** e
+   **a sua rotina escrita com suas palavras** (horário de trabalho, dias
+   corridos, quando dá para treinar, o que atrapalha). Os dias de academia são
+   o que decide onde cabe treino de força — nos outros dias vai o que dá para
+   fazer sem equipamento. Editável depois em "ajustar perfil".
 2. **Plano**: o coach monta a semana 1 em **blocos de 4–6 semanas** com uma
    ênfase por bloco (e deload programado), respeitando seus dias e equipamento.
    Ele recebe também o resumo do app — dieta, peso/composição, exames,
@@ -676,7 +692,7 @@ novo** — o iOS guarda o antigo em cache.
 Nada aqui precisa de conta na Cloudflare, chave de API ou internet.
 
 ```
-node test/todos.mjs             # RODA TUDO (14 suítes) — sobe os dois
+node test/todos.mjs             # RODA TUDO (15 suítes) — sobe os dois
                                 # servidores locais sozinho e derruba no fim
 ```
 
@@ -719,6 +735,7 @@ node test/exames-e-metricas.mjs   # áreas Exames e Métricas + análise
 node test/marca-e-pwa.mjs         # marca, manifest, ícones, as 6 áreas
 node test/remedios.mjs            # área Remédios: anotar, encerrar, chegar na IA
 node test/treino.mjs              # área Treino: plano, registro, notas, evolução
+node test/plato.mjs               # aviso de peso parado e ajuste da meta
 node test/recortar-icone.mjs      # ferramenta de recorte do ícone
 ```
 

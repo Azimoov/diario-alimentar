@@ -523,6 +523,24 @@ textarea:focus, input:focus, select:focus {
 .med-off { opacity: 0.72; }
 .med-off .med-head strong { text-decoration: line-through; text-decoration-thickness: 1px; }
 
+/* dias com academia: sete caixinhas que precisam caber numa linha a 390px */
+.dias-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.dia-check {
+  display: inline-flex; align-items: center; gap: 3px; cursor: pointer;
+  padding: 6px 8px; border: 1px solid var(--border); border-radius: 9px;
+  font-size: 13px; font-weight: 600; color: var(--muted);
+  background: var(--bg); user-select: none;
+}
+.dia-check:has(input:checked) {
+  border-color: var(--accent); color: var(--accent); background: var(--accent-weak);
+}
+.dia-check input { margin: 0; accent-color: var(--accent); }
+
+/* aviso de peso parado: laranja de atenção, não vermelho de erro — é um
+   convite a ajustar a meta, não um alarme */
+.plato-card { border-left: 4px solid var(--warn); }
+.plato-card h3 { color: var(--warn); }
+
 /* ---- área Treino ---- */
 /* Cabeçalho da semana: bloco + foco viram contexto, não decoração. */
 .tr-bloco {

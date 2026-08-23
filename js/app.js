@@ -321,6 +321,132 @@ window.App = (function () {
     if (dot) dot.hidden = !n;
   }
 
+  // ---- platô de peso: o app tem que AVISAR, não esperar ser procurado ----
+  // O TDEE real observado já era calculado, mas ficava parado num cartão da
+  // aba Perfil esperando a pessoa ir lá e marcar uma caixinha. Quem registra
+  // todo dia e vê o peso empacado não recebia aviso nenhum — o dado existia e
+  // não virava ação. Isto aqui é a ponte.
+  //
+  // Devolve null quando não há o que dizer (dados insuficientes, meta na mão,
+  // não quer emagrecer, ou o peso está andando).
+  function analisarPlato() {
+    const eg = effectiveGoal();
+    const ad = eg.adaptive;
+    if (!ad.ok || ad.suspeito) return null;         // sem base p/ afirmar nada
+    const g = S.goal;
+    if (g.manualKcal != null && g.manualKcal !== '') return null;  // meta na mão é escolha dela
+    const N = window.Nutrition;
+    const deficitAlvo = g.deficit != null ? Number(g.deficit) : N.deficitFromPace(g.pace);
+    if (!(deficitAlvo > 0)) return null;            // não está tentando emagrecer
+    const alvoKgSem = deficitAlvo * 7 / N.KCAL_PER_KG;
+    const perdendoKgSem = -ad.slopeKgWeek;          // slope negativo = perdendo
+    // "andando" = pelo menos metade do ritmo pretendido. Abaixo disso é platô.
+    if (perdendoKgSem >= alvoKgSem * 0.5) return null;
+
+    const base = { ad, eg, alvoKgSem, perdendoKgSem, ganhando: ad.slopeKgWeek > 0.05 };
+    // Duas explicações possíveis, e elas pedem conselhos OPOSTOS — dizer
+    // "coma menos" para quem já está estourando a própria meta seria trocar o
+    // problema de lugar.
+    if (ad.meanIntake > eg.goalK + 100) {
+      return Object.assign(base, {
+        causa: 'aderencia',
+        excedente: Math.round(ad.meanIntake - eg.goalK),
+      });
+    }
+    // Meta cumprida e peso parado → o gasto real é menor do que a meta supõe.
+    // A meta honesta sai do gasto MEDIDO, não da fórmula.
+    const sugerida = Math.max(
+      Math.round(ad.tdee - deficitAlvo),
+      Math.round(N.bmr(S.profile) || 0),            // nunca abaixo do basal
+      N.floorKcal(S.profile.sex),                   // nem do piso de segurança
+    );
+    return Object.assign(base, {
+      causa: 'meta_alta',
+      sugerida,
+      corte: eg.goalK - sugerida,
+      noPiso: sugerida > Math.round(ad.tdee - deficitAlvo),
+    });
+  }
+
+  // "depois eu vejo": some por 14 dias. Sem isso o aviso vira paisagem — e um
+  // aviso que a pessoa aprendeu a ignorar não avisa mais nada.
+  function platoAdiado() {
+    const ate = S.settings.platoAdiadoAte;
+    return !!(ate && isoLocal(new Date()) < ate);
+  }
+
+  function renderPlatoCard(p) {
+    const ad = p.ad;
+    const kg = (v) => (Math.round(Math.abs(v) * 100) / 100).toString().replace('.', ',');
+    const box = h('div', { class: 'card plato-card' }, [
+      h('h3', {}, p.ganhando ? '⚖️ Seu peso está subindo' : '⚖️ Seu peso está parado'),
+    ]);
+
+    box.appendChild(h('p', { class: 'note' },
+      'Nos últimos ' + ad.windowDays + ' dias seu peso ' + (p.ganhando
+        ? 'subiu ' + kg(ad.slopeKgWeek) + ' kg por semana'
+        : (Math.abs(ad.slopeKgWeek) < 0.02 ? 'praticamente não mudou' : 'caiu só ' + kg(ad.slopeKgWeek) + ' kg por semana'))
+      + ', e a sua meta é perder ' + kg(p.alvoKgSem) + ' kg por semana. '
+      + 'Base: ' + ad.daysUsed + ' dias de registro e ' + ad.weighIns + ' pesagens.'));
+
+    if (p.causa === 'aderencia') {
+      // Não adianta baixar a meta de quem já não está cumprindo a atual.
+      box.appendChild(h('p', { class: 'note' },
+        'A explicação aqui não é a meta: você registrou em média ' + ad.meanIntake
+        + ' kcal por dia, ' + p.excedente + ' kcal acima da sua própria meta de '
+        + p.eg.goalK + ' kcal. Antes de cortar mais, vale mirar a meta que já existe — '
+        + 'ou, se ela for irreal para a sua rotina, subir a meta e aceitar um ritmo mais lento.'));
+      box.appendChild(h('div', { class: 'btn-row' }, [
+        h('button', { class: 'btn', onclick: () => goTo('diario', 'perfil') }, '⚙️ Rever minha meta'),
+        h('button', { class: 'link-btn', onclick: adiarPlato }, 'depois eu vejo'),
+      ]));
+      return box;
+    }
+
+    // causa === 'meta_alta'
+    box.appendChild(h('p', { class: 'note' },
+      'Você está cumprindo a meta (média de ' + ad.meanIntake + ' kcal contra os '
+      + p.eg.goalK + ' kcal previstos) e mesmo assim o peso não anda. Isso quer dizer que '
+      + 'seu gasto real é menor do que a fórmula supunha: medido pelos seus próprios '
+      + 'registros, ele é de ' + ad.tdee + ' kcal por dia. Para voltar a perder '
+      + kg(p.alvoKgSem) + ' kg por semana, a meta precisa ser ' + p.sugerida + ' kcal — '
+      + (p.corte > 0 ? p.corte + ' kcal a menos do que hoje.' : 'o que já é o mínimo seguro.')));
+    if (p.noPiso) {
+      box.appendChild(h('p', { class: 'hint' },
+        '⚠ A conta pediria menos que isso, mas o app não sugere meta abaixo do seu gasto basal '
+        + 'nem do piso de segurança. Cortar mais do que isto é assunto para nutricionista — '
+        + 'e o caminho melhor costuma ser gastar mais, não comer menos.'));
+    }
+    box.appendChild(h('p', { class: 'hint' },
+      'A outra leitura possível: se sobraram refeições sem registrar, o número real ingerido é maior '
+      + 'que o registrado. O gasto medido acima já absorve esse viés — desde que ele seja constante.'));
+    box.appendChild(h('div', { class: 'btn-row' }, [
+      h('button', {
+        class: 'btn primary',
+        onclick: () => {
+          S.goal.useAdaptive = true;
+          // A média dos últimos 28 dias ainda é a de ANTES da meta nova. Sem
+          // esta pausa o app diria, no segundo seguinte, "você está comendo
+          // acima da meta" — cobrando adesão a uma meta que começou agora.
+          S.settings.platoAdiadoAte = shiftDate(isoLocal(new Date()), 14);
+          window.Store.save();
+          scheduleBackup();
+          toast('Meta ajustada pelo seu gasto real ✅', 'ok');
+          renderAll();
+        },
+      }, '✅ Usar ' + p.sugerida + ' kcal'),
+      h('button', { class: 'btn', onclick: () => goTo('diario', 'perfil') }, '⚙️ Ver a conta'),
+      h('button', { class: 'link-btn', onclick: adiarPlato }, 'depois eu vejo'),
+    ]));
+    return box;
+  }
+
+  function adiarPlato() {
+    S.settings.platoAdiadoAte = shiftDate(isoLocal(new Date()), 14);
+    window.Store.save();
+    renderHoje();
+  }
+
   // ================= ABA HOJE =================
   function currentDay() {
     if (!S.days[currentDate]) S.days[currentDate] = { items: [] };
@@ -736,6 +862,10 @@ window.App = (function () {
         ? 'Está na hora de repetir: ' + vencidos[0].name + ' — toque para ver'
         : vencidos.length + ' exames para repetir — toque para ver')));
     }
+
+    // ----- peso empacado? o aviso vem até a pessoa -----
+    const plato = analisarPlato();
+    if (plato && !platoAdiado()) root.appendChild(renderPlatoCard(plato));
 
     // ----- entrada de texto -----
     // ----- boas-vindas no primeiro uso (multiusuário: cada aparelho é de
@@ -2611,6 +2741,22 @@ window.App = (function () {
       ['regular', 'Treino sem parar há mais de 1 ano'],
     ], p.experiencia);
     const limIn = h('textarea', { rows: '2', placeholder: 'opcional — ex.: dor no joelho direito; não posso correr' }, p.limitacoes || '');
+    const rotinaIn = h('textarea', {
+      rows: '4',
+      placeholder: 'Ex.: trabalho das 8h às 18h, plantão às quartas. Academia fica no caminho do trabalho, '
+        + 'só consigo ir de manhã cedo. Terça e quinta pego as crianças na escola e sobra pouco tempo. '
+        + 'Sábado de manhã é o dia mais livre. Domingo prefiro descansar.',
+    }, p.rotina || '');
+    // Dias com academia: é O QUE decide onde cabe treino de força. Sem isso o
+    // coach chuta, e chutar aqui é prescrever agachamento com barra no dia em
+    // que a pessoa só tem a sala de casa.
+    const DIAS_ORDEM = [['seg', 'Seg'], ['ter', 'Ter'], ['qua', 'Qua'], ['qui', 'Qui'], ['sex', 'Sex'], ['sab', 'Sáb'], ['dom', 'Dom']];
+    const jaMarcados = Array.isArray(p.diasAcademia) ? p.diasAcademia : [];
+    const diasChecks = DIAS_ORDEM.map(([id, rot]) => {
+      const inp = h('input', { type: 'checkbox', id: 'acad-' + id });
+      if (jaMarcados.includes(id)) inp.checked = true;
+      return { id, el: h('label', { class: 'dia-check' }, [inp, ' ' + rot]), inp };
+    });
 
     const lerPerfil = () => ({
       objetivo: objetivoIn.value,
@@ -2619,6 +2765,8 @@ window.App = (function () {
       local: localIn.value,
       experiencia: expIn.value,
       limitacoes: limIn.value.trim(),
+      rotina: rotinaIn.value.trim(),
+      diasAcademia: diasChecks.filter(d => d.inp.checked).map(d => d.id),
     });
 
     const out = h('div');
@@ -2645,6 +2793,16 @@ window.App = (function () {
         h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Onde treina'), localIn]),
         h('div', { class: 'field' }, [h('label', { class: 'lbl' }, 'Experiência'), expIn]),
         h('div', { class: 'field span2' }, [h('label', { class: 'lbl' }, 'Dores ou limitações'), limIn]),
+        h('div', { class: 'field span2' }, [
+          h('label', { class: 'lbl' }, 'Em quais dias você tem academia?'),
+          h('div', { class: 'dias-row' }, diasChecks.map(d => d.el)),
+          h('p', { class: 'hint' }, 'O treino de força vai nesses dias. Nos outros, o coach monta o que dá para fazer sem equipamento — cardio, mobilidade, equilíbrio.'),
+        ]),
+        h('div', { class: 'field span2' }, [
+          h('label', { class: 'lbl' }, 'Como é a sua rotina?'),
+          rotinaIn,
+          h('p', { class: 'hint' }, 'Escreva do seu jeito: horário de trabalho, que dias são corridos, quando dá para treinar, o que costuma atrapalhar. Quanto mais concreto, melhor o coach encaixa o treino na sua semana de verdade.'),
+        ]),
         h('div', { class: 'span2' }, goBtn),
       ]),
       existente ? null : h('p', { class: 'hint' }, 'O coach lê também o que você já tem no app — dieta, peso, exames, '
@@ -4002,6 +4160,7 @@ window.App = (function () {
     init, addPhotoItems, compressPhoto, analyzePhoto, computeRecipe, openRecipeForm,
     applyLabelToForm, pushBackup, restoreBackup,
     buildAnalysisPayload, buildTreinoPayload, reminderDue, goTo, renderMeds,
+    analisarPlato, renderAll,
     atualizarStatusConta, abrirLogin, sincronizarAoEntrar,
   };
 })();

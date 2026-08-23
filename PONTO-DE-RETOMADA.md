@@ -38,7 +38,7 @@ envio opcional de contexto para o **Open Brain**, desligado por padrão.
   coach de treino (montou plano de verdade) e envio ao Open Brain, todos
   testados por ele no app publicado, não só nos servidores locais de teste.
   **Não há mais nenhum passo pendente de configuração.**
-- **Suíte: 14 conjuntos, todos passando**, e rodando duas vezes seguidas sem
+- **Suíte: 15 conjuntos, todos passando**, e rodando duas vezes seguidas sem
   sujar estado. Um comando: `node test/todos.mjs` (ele mesmo sobe e derruba os
   dois servidores locais).
 - **Site:** <https://azimoov.github.io/diario-alimentar/> — republica sozinho
@@ -196,6 +196,49 @@ está o motivo original:
 ---
 
 # Histórico (mais recente primeiro)
+
+## 2026-08-21 (3) — Rotina no perfil de treino + o app finalmente AVISA do platô
+
+Dois pedidos do Daniel, e o segundo era uma falha de verdade.
+
+**Rotina no perfil de treino.** "Ajustar perfil" ganhou dois campos: um
+texto livre "Como é a sua rotina?" (horário de trabalho, dias corridos,
+quando dá para treinar, o que atrapalha) e sete caixinhas de **em que dias
+tem academia**. As caixinhas são o que resolve o problema prático: força e
+hipertrofia com equipamento vão SÓ nesses dias, e nos outros o coach monta o
+que dá para fazer sem nada. SYSTEM_TREINO manda ler os dois campos, obedecer
+(não botar sessão longa em dia que a pessoa disse ser corrido, usar o dia
+livre que ela apontou para o treino pesado) e dizer em uma linha quando a
+rotina determinou uma escolha.
+
+**O aviso de peso parado — o app tinha o dado e nunca falava.** Reclamação
+literal do Daniel: "meu peso tem se mantido e em momento algum o app sugeriu
+reduzir as calorias como deveria". Ele estava certo. O `adaptiveTDEE` já
+calculava o gasto real a partir dos registros dele desde sempre, mas o número
+ficava parado num cartão da aba Perfil, esperando ele ir lá procurar E marcar
+uma caixinha de opt-in. Dado que existe e não vira ação é o mesmo que não
+existir.
+
+Agora `analisarPlato()` roda e o cartão aparece na aba **Hoje**. O cuidado que
+vale preservar: ele DISTINGUE AS DUAS CAUSAS, que pedem conselhos opostos —
+cumprindo a meta e sem emagrecer = a meta está alta (oferece a corrigida pelo
+gasto medido, em um toque); comendo acima da própria meta = dizer isso, porque
+mandar cortar mais quem já não cumpre o que tem seria trocar o problema de
+lugar. Nunca sugere abaixo do basal nem do piso (1500/1200) — e quando trava
+no piso, diz que ali o assunto é nutricionista e que o caminho costuma ser
+gastar mais, não comer menos.
+
+Duas armadilhas resolvidas no caminho: (1) ao ACEITAR a nova meta, o aviso
+voltaria no segundo seguinte com causa "aderência", porque a média dos últimos
+28 dias ainda é a de antes — então aceitar também adia 14 dias; (2) trocar de
+aba não redesenha nada (`applyNav` só liga/desliga classes), o que quase fez o
+teste passar por engano. `renderAll` virou exposto para os testes.
+
+Suíte nova `test/plato.mjs` (15 suítes no total) cobre: as duas causas, peso
+subindo, quem está no ritmo (silêncio), o piso de segurança, meta na mão
+(não intervir), quem não quer emagrecer, o cartão aparecendo sozinho, o botão
+baixando a meta de verdade, e o adiar que volta depois de 14 dias. Assets em
+?v=9.
 
 ## 2026-08-21 (2) — Pico diário de FC + a ligação nutrição/exames -> treino
 
