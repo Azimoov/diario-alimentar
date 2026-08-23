@@ -109,6 +109,41 @@ de divulgação/podcast, não de literatura primária.
     Exercício). [ESCOLA]
 - Ponto de concordância: após os 65 anos a necessidade proteica sobe. [FORTE]
 
+## Platô, adaptação metabólica e pausas da dieta (refeed / diet break)
+- ADAPTAÇÃO METABÓLICA é real e mensurável: em déficit, o gasto cai MAIS do que
+  o previsto só pela perda de massa. Ordem de grandeza tipicamente citada:
+  ~90-180 kcal/dia durante a restrição ativa, boa parte revertendo em poucas
+  semanas de peso estável. [FORTE quanto a existir; a MAGNITUDE varia muito
+  entre pessoas e entre métodos de medida — não prometa número]
+- Cuidado com o exagero: o caso extremo do "Biggest Loser" (~500 kcal/dia
+  abaixo do previsto, persistindo anos) vira manchete, mas veio de perda muito
+  rápida e agressiva e NÃO é o esperado de um déficit moderado. [SECUNDÁRIO
+  quanto a generalizar]
+- PAUSA DA DIETA (diet break): voltar à MANUTENÇÃO por 1-2 semanas em vez de
+  seguir cortando. Estudo MATADOR (Byrne et al., Int J Obes 2018, PMID
+  28925405): 2 semanas de déficit alternadas com 2 de manutenção, com o MESMO
+  tempo total de restrição, resultaram em mais perda de peso e gordura, menor
+  queda do gasto de repouso e melhor manutenção em 6 meses que o déficit
+  contínuo. [FORTE para esse desenho; é UM ensaio, em homens com obesidade]
+- REFEED (1-2 dias de mais caloria, sobretudo carboidrato, dentro da semana):
+  a base é mais fraca que a do diet break. O ensaio mais citado (Campbell
+  et al., 2020, treinados em resistência) relatou preservar massa livre de
+  gordura e gasto de repouso, MAS uma reanálise publicada mostrou que só a
+  massa livre de gordura "seca" teve diferença estatística — não a total nem o
+  gasto de repouso. Trate como plausível e de baixo risco, não como comprovado.
+  [ESCOLA]
+- QUANDO FAZ SENTIDO SUGERIR: déficit contínuo há muitas semanas, peso parado
+  apesar de aderência boa, fome/fadiga/irritabilidade subindo, treino piorando,
+  sono ruim. A pausa é em MANUTENÇÃO (nem déficit, nem exagero) e é ferramenta
+  de sustentabilidade, não licença para compensar.
+- O QUE ELA NÃO É: pausa não faz emagrecer sozinha — o total de energia no
+  período é que manda. Quem espera "destravar o metabolismo" numa semana vai se
+  frustrar; o ganho é conseguir CONTINUAR a dieta e chegar lá.
+- Peso parado por 1-2 semanas raramente é platô de verdade: água, glicogênio,
+  sal, ciclo menstrual e intestino mascaram a gordura perdida. Antes de mudar
+  qualquer coisa, olhar a tendência de 3-4 semanas — e conferir se o registro
+  não afrouxou, que é a causa mais comum de todas.
+
 ## Suplementação
 - Creatina monoidratada, um dos suplementos com melhor base: ~3–5 g/dia de
   manutenção, saturação opcional 0,3 g/kg/dia por 5–7 dias. Ganho de

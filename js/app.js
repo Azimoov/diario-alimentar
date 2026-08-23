@@ -399,6 +399,23 @@ window.App = (function () {
   //
   // Devolve null quando não há o que dizer (dados insuficientes, meta na mão,
   // não quer emagrecer, ou o peso está andando).
+  // Há quantas semanas a pessoa está em déficit sem parar. Aproximação
+  // honesta: conta as semanas, a partir de hoje para trás, em que houve
+  // registro e o peso da semana ficou igual ou menor que o da anterior.
+  // Serve só para separar "faz três semanas" de "faz seis meses" — não é
+  // medida fina, e a interpretação disso vive na base (seção de platô).
+  function semanasEmDeficit() {
+    const datas = Object.keys(S.weights || {}).filter(d => S.weights[d] > 0).sort();
+    if (datas.length < 4) return 0;
+    const prim = datas[0];
+    const dias = Math.round((Date.parse(datas[datas.length - 1] + 'T12:00:00') - Date.parse(prim + 'T12:00:00')) / 86400000);
+    if (dias < 21) return 0;                       // pouco tempo p/ falar em dieta longa
+    // só conta como "em dieta" se o peso de fato caiu no período
+    const caiu = S.weights[datas[0]] - S.weights[datas[datas.length - 1]];
+    if (caiu <= 0.5) return 0;
+    return Math.floor(dias / 7);
+  }
+
   function analisarPlato() {
     const eg = effectiveGoal();
     const ad = eg.adaptive;
@@ -433,6 +450,7 @@ window.App = (function () {
     const puro = Math.round(ad.tdee - deficitAlvo);   // o que a conta pediria
     return Object.assign(base, {
       causa: 'meta_alta',
+      semanasDeDieta: semanasEmDeficit(),
       sugerida,
       corte: eg.goalK - sugerida,
       noPiso: sugerida > puro,
@@ -508,6 +526,31 @@ window.App = (function () {
     box.appendChild(h('p', { class: 'hint' },
       'A outra leitura possível: se sobraram refeições sem registrar, o número real ingerido é maior '
       + 'que o registrado. O gasto medido acima já absorve esse viés — desde que ele seja constante.'));
+    // Dieta longa: cortar mais NÃO é a única saída, e talvez nem a melhor. O
+    // gasto cai em resposta ao déficit prolongado (adaptação metabólica), e
+    // uma pausa em manutenção é a resposta com melhor base — ver a seção de
+    // platô em conhecimento.js.
+    if (p.semanasDeDieta >= 12) {
+      box.appendChild(h('p', { class: 'note' },
+        '⏸️ Você está em déficit há cerca de ' + p.semanasDeDieta + ' semanas. Depois de tanto tempo, '
+        + 'parte da queda do gasto é resposta do corpo ao próprio déficit — e cortar ainda mais tende a '
+        + 'render cada vez menos. Uma alternativa com boa base é uma PAUSA de 1 a 2 semanas comendo na '
+        + 'MANUTENÇÃO (nem déficit, nem exagero) e só depois retomar. Não é desistir: no estudo que testou '
+        + 'isso, quem alternou déficit e manutenção perdeu MAIS gordura no fim, e não menos. '
+        + 'Pergunte à IA sobre "pausa da dieta" se quiser entender antes de decidir.'));
+      box.appendChild(h('div', { class: 'btn-row' }, [
+        h('button', {
+          class: 'btn',
+          onclick: () => {
+            S.settings.platoAdiadoAte = shiftDate(isoLocal(new Date()), 14);
+            window.Store.save();
+            scheduleBackup();
+            renderAll();
+            toast('Combinado — volto a falar disso em 2 semanas.', 'ok');
+          },
+        }, '⏸️ Vou fazer uma pausa de 2 semanas'),
+      ]));
+    }
     box.appendChild(h('div', { class: 'btn-row' }, [
       h('button', {
         class: 'btn primary',

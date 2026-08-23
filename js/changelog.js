@@ -12,6 +12,15 @@
 // analisarPlato() em app.js".
 window.CHANGELOG = [
   {
+    versao: '11',
+    data: '2026-08-21',
+    titulo: 'Pausa da dieta em vez de cortar sempre',
+    mudancas: [
+      'Se você está em déficit há muitos meses e o peso travou, o app passou a oferecer uma pausa de 1 a 2 semanas comendo na manutenção — em vez de só mandar cortar mais. Parte da queda do gasto é resposta do corpo ao próprio déficit, e cortar mais rende cada vez menos.',
+      'A IA aprendeu sobre refeed, pausa da dieta e adaptação metabólica, com as fontes e também com as críticas a elas — dá para perguntar na aba IA.',
+    ],
+  },
+  {
     versao: '10',
     data: '2026-08-21',
     titulo: 'Cardio no lugar de "coma menos"',

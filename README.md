@@ -165,7 +165,12 @@ em `data/source*` e rode `node data/build-db.mjs`. Não edite `js/db.js` à mão
   calcula quantas kcal por dia ainda faltam de déficit, manda esse número para
   o coach e ele aumenta o volume de Zona 2 — que é o que soma gasto sem
   estourar a recuperação. O caminho deixa de ser "coma menos" e passa a ser
-  "gaste mais". "Depois eu vejo" silencia por 14 dias; ao
+  "gaste mais". **E se a dieta já dura muitos meses**, ele oferece uma terceira
+  saída em vez de cortar de novo: uma **pausa de 1–2 semanas comendo na
+  manutenção**. Depois de muito tempo em déficit, parte da queda do gasto é
+  resposta do corpo ao próprio déficit (adaptação metabólica), e no ensaio que
+  testou isso quem alternou déficit e manutenção perdeu MAIS gordura no fim.
+  "Depois eu vejo" silencia por 14 dias; ao
   aceitar a nova meta ele também espera 14 dias antes de reavaliar, porque a
   média dos últimos 28 dias ainda é a de antes.
 - **Composição corporal (opcional)** — junto do peso, no topo da aba

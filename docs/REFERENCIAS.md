@@ -160,6 +160,47 @@ instruído a tratar como orientação de treino, nunca como conduta clínica.
     > Nippard ensina e aplica, não é originalmente dele. A base credita a
     > origem certa, não quem popularizou.
 
+## Platô e pausas da dieta (refeed / diet break)
+
+Acrescentado depois que o Daniel perguntou se havia algo sobre refeed — não
+havia, e o tema é diretamente ligado ao aviso de peso parado do app.
+**Fonte primária, não divulgação** — e a base do Jeff Nippard foi
+deliberadamente deixada de fora aqui: ele pediu que só os vídeos de TREINO
+daquele canal entrassem, e refeed é assunto de dieta.
+
+20. **Intermittent energy restriction improves weight loss efficiency in obese
+    men: the MATADOR study** `[verificado]` — Byrne N.M. et al.,
+    *International Journal of Obesity* (2018). PMID 28925405.
+    <https://pubmed.ncbi.nlm.nih.gov/28925405/>
+    *Na base:* a pausa da dieta (2 semanas de déficit alternadas com 2 de
+    manutenção) rendeu mais perda de peso e gordura, menor queda do gasto de
+    repouso e melhor manutenção em 6 meses que o déficit contínuo de mesma
+    duração total.
+    > É **um** ensaio, em homens com obesidade — a base diz isso em vez de
+    > apresentar como lei geral.
+
+21. **Continuous versus Intermittent Dieting... (refeed de 2 dias)**
+    `[verificado, COM a crítica]` — Campbell B.I. et al. (2020), em treinados
+    em resistência.
+    *Na base:* relatou preservar massa livre de gordura e gasto de repouso com
+    2 dias semanais de carboidrato mais alto.
+    > **A reanálise publicada** (<https://pmc.ncbi.nlm.nih.gov/articles/PMC7739336/>)
+    > mostrou que só a massa livre de gordura *seca* teve diferença
+    > estatística — não a total, nem o gasto de repouso. A base registra o
+    > achado E a crítica, e marca refeed como [ESCOLA], não como comprovado.
+
+22. **Adaptação metabólica (termogênese adaptativa)** `[verificado quanto a
+    existir; magnitude disputada]` — revisão sistemática em *British Journal of
+    Nutrition* e a série de Rosenbaum & Leibel.
+    <https://www.cambridge.org/core/journals/british-journal-of-nutrition/article/does-adaptive-thermogenesis-occur-after-weight-loss-in-adults-a-systematic-review/726FC60518DA67349B9C3EC1D75A7156>
+    *Na base:* o gasto cai mais do que o previsto pela perda de massa, na ordem
+    de ~90–180 kcal/dia durante a restrição, revertendo em boa parte com peso
+    estável.
+    > O número de ~500 kcal/dia do "Biggest Loser" circula como se fosse a
+    > regra; veio de perda extremamente rápida e a base marca isso como
+    > [SECUNDÁRIO quanto a generalizar]. A magnitude varia muito entre pessoas
+    > e entre métodos de medida — por isso a base proíbe prometer número.
+
 ## O que esta base ainda não cobre
 
 Sono, rastreio oncológico e saúde mental aparecem citados de passagem, mas sem

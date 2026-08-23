@@ -197,6 +197,35 @@ está o motivo original:
 
 # Histórico (mais recente primeiro)
 
+## 2026-08-21 (5) — Refeed, pausa da dieta e adaptação metabólica
+
+O Daniel perguntou se as fontes tinham algo sobre refeed. **Não tinham nada** —
+nem refeed, nem diet break, nem adaptação metabólica, nem leptina. E o buraco
+batia exatamente no aviso de platô entregue horas antes, que só conhecia DUAS
+causas (meta alta / não cumprir a meta) e ignorava a terceira: o gasto cai em
+resposta ao déficit prolongado, e depois de meses cortar mais rende cada vez
+menos.
+
+Base ganhou a seção "Platô, adaptação metabólica e pausas da dieta", com a
+honestidade de sempre sobre o peso de cada evidência:
+- diet break tem o MATADOR (Byrne 2018, PMID 28925405) a favor — mas é UM
+  ensaio, em homens com obesidade, e a base diz isso;
+- refeed é mais fraco: o ensaio mais citado (Campbell 2020) foi REANALISADO e
+  só a massa livre de gordura "seca" sobreviveu à estatística — nem a total,
+  nem o gasto de repouso. Fica [ESCOLA], não comprovado;
+- adaptação metabólica existe (~90-180 kcal/dia), mas o número de ~500 do
+  "Biggest Loser" que circula como regra veio de perda extrema e está marcado
+  como [SECUNDÁRIO quanto a generalizar].
+
+Fontes em docs/REFERENCIAS.md §20-22. **Nippard ficou deliberadamente de fora
+aqui**: o pedido dele foi que só os vídeos de TREINO daquele canal entrassem, e
+refeed é dieta — então a seção veio de literatura primária.
+
+No app, `analisarPlato()` ganhou `semanasEmDeficit()` e o cartão passou a
+oferecer a PAUSA quando a dieta já passa de ~12 semanas, com botão que silencia
+o aviso por 2 semanas. Dieta curta NÃO recebe esse conselho (seria conselho
+errado) — e há teste para os dois lados. Assets em ?v=11; 16 suítes.
+
 ## 2026-08-21 (4) — No piso, quem age é o treino + novidades por versão
 
 **"Coma menos" tem fim; gasto não.** O Daniel foi explícito: ao chegar perto do

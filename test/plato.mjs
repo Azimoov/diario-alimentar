@@ -107,6 +107,47 @@ check('esse número viaja para o coach de treino', await page.evaluate(() => {
 }));
 await page.evaluate(() => { window.Store.get().treino.perfil = null; window.Store.save(); });
 
+// ---- dieta longa: cortar mais não é a única saída ----
+// 20 semanas de peso caindo devagar e agora parado. Depois de tanto tempo,
+// parte da queda do gasto é resposta ao próprio déficit — a resposta com
+// melhor base é uma PAUSA em manutenção, não mais um corte.
+await page.evaluate(() => {
+  const s = window.Store.get();
+  const iso = (d) => { const t = new Date(d); t.setMinutes(t.getMinutes() - t.getTimezoneOffset()); return t.toISOString().slice(0, 10); };
+  const hoje = new Date();
+  s.weights = {};
+  for (let i = 140; i >= 0; i -= 7) {              // 20 semanas de pesagens
+    const d = new Date(hoje); d.setDate(d.getDate() - i);
+    s.weights[iso(d)] = Math.round((90 - (140 - i) * 0.03) * 100) / 100;
+  }
+  // as últimas 4 semanas travadas, que é o que dispara o aviso
+  for (let i = 27; i >= 0; i--) {
+    const d = new Date(hoje); d.setDate(d.getDate() - i);
+    s.weights[iso(d)] = 85.8;
+  }
+  s.settings.platoAdiadoAte = null;
+  window.Store.save();
+  window.App.renderAll();
+});
+const longa = await page.evaluate(() => window.App.analisarPlato());
+check('reconhece que a dieta já é longa', longa && longa.semanasDeDieta >= 12, longa && longa.semanasDeDieta);
+const cartaoLongo = await page.locator('#tab-hoje .plato-card').textContent();
+check('oferece PAUSA em manutenção, não só cortar mais',
+  cartaoLongo.includes('PAUSA') && cartaoLongo.includes('MANUTENÇÃO'), cartaoLongo.slice(-260));
+check('e diz que a pausa não é desistir', /não é desistir/i.test(cartaoLongo));
+check('tem botão para aceitar a pausa',
+  await page.locator('#tab-hoje .plato-card button', { hasText: 'pausa de 2 semanas' }).count() === 1);
+await page.locator('#tab-hoje .plato-card button', { hasText: 'pausa de 2 semanas' }).click();
+check('aceitar a pausa silencia o aviso por 2 semanas',
+  await page.locator('#tab-hoje .plato-card').count() === 0);
+
+// dieta curta NÃO recebe conselho de pausa (seria conselho errado)
+const curta = await cenario({ kcalDia: 2200, pesoInicial: 85, pesoFinal: 85 });
+check('dieta curta não recebe conselho de pausa',
+  curta && curta.semanasDeDieta === 0, curta && curta.semanasDeDieta);
+check('e o cartão dela não fala em pausa',
+  !(await page.locator('#tab-hoje .plato-card').textContent()).includes('PAUSA'));
+
 // ---- meta na mão é escolha da pessoa: o app não intervém ----
 await page.evaluate(() => {
   const s = window.Store.get();
