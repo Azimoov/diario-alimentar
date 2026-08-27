@@ -645,7 +645,19 @@ async function handleTreino(request, env, json, uid) {
 
   // validação defensiva: o schema garante a forma, mas o app vai GUARDAR isto
   // e reapresentar por semanas — limites de tamanho e faixas valem revalidar
-  const txt = (v, max) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+  // Corta no fim de PALAVRA e marca com reticências. Cortar no caractere exato
+  // produzia frases mortas no meio ("...hemoglobina 14,8 e hematócri"), que na
+  // tela parecem bug de layout — e ninguém sabe que faltou texto. Os limites
+  // abaixo foram folgados depois que a apresentação real bateu no teto antigo
+  // de 1500 e a carga sugerida no de 40.
+  const txt = (v, max) => {
+    if (typeof v !== "string") return "";
+    const t = v.trim();
+    if (t.length <= max) return t;
+    const corte = t.slice(0, max);
+    const espaco = corte.lastIndexOf(" ");
+    return (espaco > max * 0.6 ? corte.slice(0, espaco) : corte).trimEnd() + "…";
+  };
   const intOk = (v, min, max, padrao) => (Number.isInteger(v) && v >= min && v <= max ? v : padrao);
   const validarSemana = (s) => {
     if (!s || typeof s !== "object" || !Array.isArray(s.sessoes) || !s.sessoes.length) return null;
@@ -653,30 +665,30 @@ async function handleTreino(request, env, json, uid) {
     const TIPOS = ["forca", "hipertrofia", "potencia", "equilibrio", "mobilidade", "z2", "z5", "picoFc"];
     const sessoes = s.sessoes.slice(0, 7).map((x) => ({
       dia: DIAS.includes(x.dia) ? x.dia : "seg",
-      titulo: txt(x.titulo, 80) || "Sessão",
+      titulo: txt(x.titulo, 120) || "Sessão",
       tipo: TIPOS.includes(x.tipo) ? x.tipo : "forca",
       duracaoMin: intOk(x.duracaoMin, 5, 240, 45),
       itens: (Array.isArray(x.itens) ? x.itens : []).slice(0, 12)
         .filter((it) => it && txt(it.nome, 100))
         .map((it) => ({
           id: null,   // o app preenche
-          nome: txt(it.nome, 100),
+          nome: txt(it.nome, 160),
           registro: (it.registro === "tempo" || it.registro === "fc") ? it.registro : "carga",
           series: intOk(it.series, 1, 12, null),
-          reps: txt(it.reps, 20) || null,
-          cargaSugerida: txt(it.cargaSugerida, 40) || null,
+          reps: txt(it.reps, 40) || null,
+          cargaSugerida: txt(it.cargaSugerida, 160) || null,
           minutos: intOk(it.minutos, 1, 240, null),
-          detalhe: txt(it.detalhe, 200),
+          detalhe: txt(it.detalhe, 500),
         })),
     })).filter((x) => x.itens.length);
     if (!sessoes.length) return null;
     return {
       numero: intOk(s.numero, 1, 999, 1),
-      bloco: txt(s.bloco, 60) || "Bloco",
+      bloco: txt(s.bloco, 90) || "Bloco",
       semanaDoBloco: intOk(s.semanaDoBloco, 1, 12, 1),
       semanasNoBloco: intOk(s.semanasNoBloco, 1, 12, 4),
-      foco: txt(s.foco, 100),
-      orientacoes: txt(s.orientacoes, 1200),
+      foco: txt(s.foco, 160),
+      orientacoes: txt(s.orientacoes, 3000),
       sessoes,
     };
   };
@@ -685,7 +697,7 @@ async function handleTreino(request, env, json, uid) {
     const semana = validarSemana(parsed.semana);
     if (!semana) return json({ error: "bad_model_output", detail: "O coach devolveu uma semana vazia — tente de novo." }, 502);
     semana.numero = numeroDaSemana;   // o app manda, o modelo não escolhe
-    return json({ apresentacao: txt(parsed.apresentacao, 1500), semana, modelo: msg.model });
+    return json({ apresentacao: txt(parsed.apresentacao, 6000), semana, modelo: msg.model });
   }
   // acao === "fechar"
   const nota = (v) => (typeof v === "number" && isFinite(v) ? Math.max(0, Math.min(10, Math.round(v * 10) / 10)) : null);
@@ -698,8 +710,8 @@ async function handleTreino(request, env, json, uid) {
       forca: nota(n0.forca), potencia: nota(n0.potencia), equilibrio: nota(n0.equilibrio),
       mobilidade: nota(n0.mobilidade), cardioZ2: nota(n0.cardioZ2), cardioZ5: nota(n0.cardioZ5),
     },
-    avaliacao: txt(parsed.avaliacao, 3000),
-    melhorias: (Array.isArray(parsed.melhorias) ? parsed.melhorias : []).slice(0, 5).map((m) => txt(m, 300)).filter(Boolean),
+    avaliacao: txt(parsed.avaliacao, 6000),
+    melhorias: (Array.isArray(parsed.melhorias) ? parsed.melhorias : []).slice(0, 5).map((m) => txt(m, 600)).filter(Boolean),
     proximaSemana: semana,
     modelo: msg.model,
   });
