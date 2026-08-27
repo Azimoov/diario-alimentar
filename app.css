@@ -535,12 +535,24 @@ textarea:focus, input:focus, select:focus {
 .versao-lista li { margin: 4px 0; }
 
 /* dias com academia: sete caixinhas que precisam caber numa linha a 390px */
+/* Caixas de seleção com tamanho FIXO. Sem isto cada navegador escolhe o seu:
+   o Safari do iPhone desenha bem maior que o Chrome, o que empurra o rótulo
+   para fora do chip e o texto some por baixo do chip seguinte — foi o que
+   aconteceu com os dias da semana ("Seg" virando "S"). */
+input[type=checkbox], input[type=radio] {
+  width: 16px; height: 16px; flex: none; margin: 0;
+}
+
 .dias-row { display: flex; gap: 4px; flex-wrap: wrap; }
 .dia-check {
   display: inline-flex; align-items: center; gap: 3px; cursor: pointer;
   padding: 6px 8px; border: 1px solid var(--border); border-radius: 9px;
   font-size: 13px; font-weight: 600; color: var(--muted);
   background: var(--bg); user-select: none;
+  /* não encolher abaixo do conteúdo: quebra linha em vez de cortar o rótulo.
+     O Safari encolhe item flex além do conteúdo com mais facilidade que o
+     Chrome, e aí o texto vaza e some sob o chip vizinho. */
+  flex: 0 0 auto; white-space: nowrap; min-width: max-content;
 }
 .dia-check:has(input:checked) {
   border-color: var(--accent); color: var(--accent); background: var(--accent-weak);
