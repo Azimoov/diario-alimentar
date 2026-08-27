@@ -77,10 +77,21 @@ const mock = createServer((req, res) => {
             melhorias: ["Priorizar potência: saltos no começo da sessão", "Registrar uma sessão de Zona 5 para ter nota"],
             proximaSemana: semanaTreino(parseInt(m[1], 10) + 1, "42"),
           }
-        : {
+        : (corpo.includes("TEXTO_LONGO")
+          // exercita o corte: apresentação e carga bem acima dos limites, com
+          // espaços, para conferir que o corte cai em PALAVRA inteira
+          ? {
+              apresentacao: ("palavra ".repeat(1200)).trim(),
+              semana: (() => { const sem = semanaTreino(1, "40");
+                sem.sessoes[0].itens[0].cargaSugerida = ("carga ".repeat(60)).trim();
+                sem.sessoes[0].itens[0].detalhe = ("detalhe ".repeat(120)).trim();
+                sem.orientacoes = ("orienta ".repeat(700)).trim();
+                return sem; })(),
+            }
+          : {
             apresentacao: "PLANO FIXO DO MOCK: blocos de 4 semanas, começando por base geral.",
             semana: semanaTreino(1, "40"),
-          };
+          });
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({
         id: "msg_treino", type: "message", role: "assistant", model: body.model || "dev", stop_reason: "end_turn",
@@ -767,6 +778,7 @@ mock.listen(MOCK_PORT, async () => {
         body: opts.method === "GET" ? undefined : JSON.stringify(body),
       });
       const perfilT = { objetivo: "saude", dias: 3, local: "academia", experiencia: "iniciante", limitacoes: "" };
+      const perfilLongo = { ...perfilT, limitacoes: "TEXTO_LONGO" };
 
       await check("treino sem login nem senha -> 401", worker.fetch(new Request("https://proxy.example/treino", {
         method: "POST", headers: { "Content-Type": "application/json", Origin: ORIGIN },
@@ -796,6 +808,34 @@ mock.listen(MOCK_PORT, async () => {
           if (!body.apresentacao) return "sem apresentação";
           return true;
         });
+      // CORTE DE TEXTO: o coach devolvia frases mortas no meio da palavra
+      // ("...e hematócri", "escolha algo que pa") porque o servidor cortava no
+      // caractere exato, com limites apertados. Na tela isso parece bug de
+      // layout e ninguém percebe que faltou texto.
+      await check("texto longo é cortado em palavra inteira, com reticências",
+        worker.fetch(treinoReq({ acao: "plano", dados: { perfil: {} }, perfilTreino: perfilLongo }), ENV), 200,
+        (res, body) => {
+          const it = body.semana.sessoes[0].itens[0];
+          const alvos = [["apresentacao", body.apresentacao], ["cargaSugerida", it.cargaSugerida],
+                         ["detalhe", it.detalhe], ["orientacoes", body.semana.orientacoes]];
+          for (const [nome, v] of alvos) {
+            if (!v) return nome + " veio vazio";
+            if (!v.endsWith("…")) return nome + " cortou sem reticências";
+            // sem meia-palavra no fim: o que vem antes das reticências é palavra inteira
+            if (/[A-Za-zÀ-ÿ]…$/.test(v) && !/\b(palavra|carga|detalhe|orienta)…$/.test(v)) {
+              return nome + " cortou no meio da palavra: ..." + v.slice(-25);
+            }
+          }
+          return true;
+        });
+      await check("limites folgados: apresentação cabe bem mais que os 1500 antigos",
+        worker.fetch(treinoReq({ acao: "plano", dados: { perfil: {} }, perfilTreino: perfilLongo }), ENV), 200,
+        (res, body) => body.apresentacao.length > 3000
+          || "apresentação ficou em " + body.apresentacao.length + " caracteres");
+      await check("texto curto passa intacto, sem reticências",
+        worker.fetch(treinoReq({ acao: "plano", dados: { perfil: {} }, perfilTreino: perfilT }), ENV), 200,
+        (res, body) => !body.apresentacao.endsWith("…") || "encurtou texto que cabia");
+
       // modelo PRÓPRIO do coach: com Fable 5 + effort alto a montagem estourava
       // o tempo do Safari no iPhone e a resposta nunca chegava ("Load failed")
       await check("coach usa o modelo dele, não o da análise", worker.fetch(treinoReq({ acao: "plano", dados: { perfil: {} }, perfilTreino: perfilT }), ENV), 200,
