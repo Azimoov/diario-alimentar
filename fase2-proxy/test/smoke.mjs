@@ -83,7 +83,7 @@ const mock = createServer((req, res) => {
           };
       res.writeHead(200, { "Content-Type": "application/json" });
       return res.end(JSON.stringify({
-        id: "msg_treino", type: "message", role: "assistant", model: "dev", stop_reason: "end_turn",
+        id: "msg_treino", type: "message", role: "assistant", model: body.model || "dev", stop_reason: "end_turn",
         content: [{ type: "text", text: JSON.stringify(conteudoTreino) }],
         usage: { input_tokens: 100, output_tokens: 50 },
       }));
@@ -163,6 +163,7 @@ const ENV = {
   CLAUDE_MODEL: "claude-opus-5",
   CLAUDE_MODEL_ANALISE: "claude-fable-5",
   CLAUDE_MODEL_CHAT: "claude-opus-5",
+  CLAUDE_MODEL_TREINO: "claude-opus-5",
   TIMEZONE: "America/Sao_Paulo",
   PHOTO_DAILY_LIMIT: "60",
   // contas
@@ -390,7 +391,19 @@ mock.listen(MOCK_PORT, async () => {
       body: JSON.stringify({ dados: DADOS_CHAT, mensagens: [{ role: "user", text: "x".repeat(200_001) }] }),
     }), ENV), 413);
     await check("conversa GET bloqueado", worker.fetch(chatReq({ method: "GET" }), ENV), 405);
-    // ---- base de conhecimento (referências de longevidade) ----
+
+    // ---- contexto completo + modelo do coach ----
+    {
+      const ok = (nome, cond) => { console.log(`${cond ? "PASS" : "FAIL"}  ${nome}`); if (!cond) failed++; };
+      await worker.fetch(chatReq(), ENV);
+      const sys = ultimoSystem;
+      ok("prompt manda comparar com a META da pessoa", /compare com a META DELA/.test(sys));
+      ok("prompt usa o diário item a item", /diarioRecente14Dias/.test(sys));
+      ok("prompt conhece os medicamentos", /medicamentos:/.test(sys));
+      ok("prompt conhece o plano de treino", /treino: o plano que o coach montou/.test(sys));
+      ok("prompt proíbe sugerir treino por cima do plano", /NÃO sugira um treino por cima/.test(sys));
+      ok("prompt mantém coerência com análises anteriores", /Mantenha coerência/.test(sys));
+    }    // ---- base de conhecimento (referências de longevidade) ----
     // O mock devolve temDados=true só quando o system traz os dados da pessoa;
     // aqui conferimos que a BASE também viaja, e com as travas de uso.
     {
@@ -783,6 +796,13 @@ mock.listen(MOCK_PORT, async () => {
           if (!body.apresentacao) return "sem apresentação";
           return true;
         });
+      // modelo PRÓPRIO do coach: com Fable 5 + effort alto a montagem estourava
+      // o tempo do Safari no iPhone e a resposta nunca chegava ("Load failed")
+      await check("coach usa o modelo dele, não o da análise", worker.fetch(treinoReq({ acao: "plano", dados: { perfil: {} }, perfilTreino: perfilT }), ENV), 200,
+        (res, body) => body.modelo === "claude-opus-5" || "modelo do coach: " + body.modelo);
+      await check("coach cai no padrão sem a variável",
+        worker.fetch(treinoReq({ acao: "plano", dados: { perfil: {} }, perfilTreino: perfilT }), { ...ENV, CLAUDE_MODEL_TREINO: undefined }), 200,
+        (res, body) => body.modelo === "claude-opus-5" || "padrão do coach mudou: " + body.modelo);
       await check("o prompt do coach leva a base de treino junto",
         Promise.resolve(new Response(null, { status: 200 })), 200,
         () => (/BASE DE TREINO/.test(ultimoSystem) && /Galpin/.test(ultimoSystem)
