@@ -2463,6 +2463,108 @@ window.App = (function () {
     };
   }
 
+
+  // Contexto COMPLETO para a conversa. A análise recebe um resumo enxuto de
+  // propósito (é um relatório de uma vez só); a conversa precisa saber o que a
+  // pessoa CONFIGUROU e o que ela vem fazendo, senão responde no vácuo:
+  // "sua proteína está baixa" sem saber qual meta ELA definiu não ajuda, e
+  // sugerir treino sem saber que o coach já montou a semana é pior ainda.
+  // Custa mais tokens por pergunta — é a troca consciente por respostas úteis.
+  function buildChatPayload() {
+    const base = buildAnalysisPayload();
+    const hoje = isoLocal(new Date());
+    const eg = effectiveGoal();
+
+    // ---- as DECISÕES da pessoa (o que ela configurou no app) ----
+    const metas = {
+      metaKcalDia: eg.goalK || null,
+      origemDaMeta: S.goal.manualKcal ? 'meta manual digitada'
+        : (eg.useAdapt ? 'TDEE real observado (adaptativo)' : 'fórmula Mifflin-St Jeor + fator de atividade'),
+      ritmoPerdaKgSemana: S.goal.pace,
+      deficitKcalDia: S.goal.deficit,
+      proteinaAlvoGPorKg: S.goal.proteinPerKg,
+      gorduraAlvoPctDasKcal: S.goal.fatPct,
+      usaTdeeAdaptativo: !!S.goal.useAdaptive,
+      macrosAlvoGDia: eg.mt ? { proteina: eg.mt.prot, carboidrato: eg.mt.carb, gordura: eg.mt.fat } : null,
+      tdeeRealObservado: (eg.adaptive && eg.adaptive.ok) ? eg.adaptive.tdee : null,
+    };
+
+    // ---- o que ela vem comendo (últimos 14 dias, item a item) ----
+    const de14 = shiftDate(hoje, -14);
+    const diarioRecente = Object.keys(S.days).filter(d => d >= de14).sort().reverse().map(d => {
+      const itens = (S.days[d].items || []).map(it => {
+        const n = itemNutrients(it);
+        return { alimento: it.foodText || it.raw, g: it.grams, refeicao: it.meal || undefined,
+          kcal: n.hasKcal ? Math.round(n.kcal) : null };
+      });
+      if (!itens.length) return null;
+      const tot = window.Nutrition.sumNutrients((S.days[d].items || []).map(itemNutrients).filter(n => n.hasKcal));
+      return { data: d, totalKcal: Math.round(tot.kcal), totalProt: Math.round(tot.prot), itens: itens.slice(0, 15) };
+    }).filter(Boolean).slice(0, 14);
+
+    // ---- séries, não só o primeiro e o último ponto ----
+    const historicoPeso = Object.keys(S.weights || {}).sort().slice(-40).map(d => ({ data: d, kg: S.weights[d] }));
+    const historicoComposicao = Object.keys(S.bodyComp || {}).sort().slice(-30).map(d => ({
+      data: d, gorduraPct: S.bodyComp[d].fat, massaMagraPct: S.bodyComp[d].lean }));
+    const hDates = Object.keys((S.health || {}).daily || {}).sort();
+    const metricasDiarias = hDates.slice(-14).map(d => Object.assign({ data: d }, S.health.daily[d]));
+
+    const meusAlimentos = (S.customFoods || []).slice(0, 40).map(f => ({
+      nome: f.name, kcal100g: f.kcal, prot100g: f.prot, ehReceita: !!f.recipe }));
+
+    const lembretes = (S.examReminders || []).map(r => {
+      const d = reminderDue(r);
+      return { exame: r.name, tipo: r.kind === 'img' ? 'imagem' : 'laboratorial', aCadaMeses: r.months,
+        proximo: d.due, situacao: d.days <= 0 ? 'VENCIDO' : 'em dia (faltam ' + d.days + ' dias)' };
+    });
+
+    // ---- TREINO: o que o coach montou e como a pessoa vem respondendo ----
+    // Sem isto o assistente sugere treino por cima do plano que já existe, e
+    // ignora as notas que o próprio coach deu.
+    const t = S.treino || {};
+    const plano = t.plano && t.plano.semana ? {
+      criadoEm: t.plano.criadoEm, apresentacao: (t.plano.apresentacao || '').slice(0, 1200),
+      semanaAtual: t.plano.semana.numero, bloco: t.plano.semana.bloco,
+      sessoes: (t.plano.semana.sessoes || []).map(s => ({
+        dia: s.dia, foco: s.foco,
+        itens: (s.itens || []).slice(0, 12).map(i => ({ nome: i.nome, series: i.series, reps: i.reps, feito: !!i.feito })),
+      })),
+    } : null;
+    const treino = {
+      perfil: t.perfil || null,
+      planoAtual: plano,
+      semanasJaFechadas: (t.semanasFechadas || []).length,
+      ultimasAvaliacoes: (t.avaliacoes || []).slice(0, 2).map(a => ({
+        data: (a.at || '').slice(0, 10), semana: a.semanaNumero, notas: a.notas,
+        trecho: (a.texto || '').slice(0, 900) })),
+    };
+
+    // ---- as conclusões anteriores da própria IA (continuidade) ----
+    // Trecho, não a análise inteira: o objetivo é COERÊNCIA com o que já foi
+    // dito, não reler o relatório.
+    const analisesAnteriores = (S.analyses || []).slice(0, 2).map(a => ({
+      data: a.at.slice(0, 10), trecho: (a.text || '').slice(0, 1800),
+      textoCompletoEm: 'aba Análises do app' }));
+
+    return Object.assign({}, base, {
+      metasEConfiguracoes: metas,
+      diarioRecente14Dias: diarioRecente,
+      historicoPeso,
+      historicoComposicao,
+      metricasDiarias14Dias: metricasDiarias,
+      meusAlimentosEReceitas: meusAlimentos,
+      lembretesDeExame: lembretes,
+      treino,
+      analisesAnteriores,
+      estadoDoApp: {
+        totalAnalisesGuardadas: (S.analyses || []).length,
+        ultimaImportacaoAppSaude: (S.health || {}).lastImportAt || null,
+        enviandoParaOpenBrain: !!S.settings.openBrain,
+        diasDeDiarioNoTotal: Object.keys(S.days || {}).filter(d => (S.days[d].items || []).length).length,
+      },
+    });
+  }
+
   function renderAnalysisInto(box, a) {
     clear(box);
     box.appendChild(h('div', { class: 'analysis-text' }, a.text));
@@ -3465,7 +3567,7 @@ window.App = (function () {
           method: 'POST',
           headers: window.Auth.cabecalhosProxy({ 'Content-Type': 'application/json' }),
           body: JSON.stringify({
-            dados: buildAnalysisPayload(),
+            dados: buildChatPayload(),
             mensagens: S.chat.mensagens.map(m => ({ role: m.role, text: m.text })),
           }),
         });
@@ -4298,7 +4400,7 @@ window.App = (function () {
   return {
     init, addPhotoItems, compressPhoto, analyzePhoto, computeRecipe, openRecipeForm,
     applyLabelToForm, pushBackup, restoreBackup,
-    buildAnalysisPayload, buildTreinoPayload, reminderDue, goTo, renderMeds,
+    buildAnalysisPayload, buildChatPayload, buildTreinoPayload, reminderDue, goTo, renderMeds,
     analisarPlato, renderAll, versaoAtual, abrirNovidades,
     atualizarStatusConta, abrirLogin, sincronizarAoEntrar,
   };
