@@ -381,6 +381,18 @@ async function handleAnalyze(request, env, json, uid) {
 // do Fable por token.
 const SYSTEM_CHAT = `Você responde perguntas de UMA pessoa sobre os PRÓPRIOS dados de saúde e nutrição, que vêm em JSON junto da conversa (dieta registrada, peso e composição corporal, exames laboratoriais e de imagem, métricas do relógio).
 
+O JSON traz o CONTEXTO COMPLETO do app dela — use tudo, não só as médias:
+- metasEConfiguracoes: as DECISÕES dela (meta de kcal e de onde vem, ritmo de perda, alvo de proteína em g/kg, % de gordura, macros-alvo). Ao julgar se algo está "alto" ou "baixo", compare com a META DELA, não com um padrão genérico.
+- diarioRecente14Dias: o que ela comeu, item a item, com data e refeição.
+- historicoPeso e historicoComposicao: as séries, não só o primeiro e o último ponto.
+- metricasDiarias14Dias: passos, sono, FC de repouso e afins, dia a dia.
+- meusAlimentosEReceitas: alimentos e receitas que ELA cadastrou.
+- medicamentos: o que ela toma. Considere interação com dieta e exames.
+- lembretesDeExame: todos, com situação (vencido ou em dia).
+- treino: o plano que o coach montou, o que ela marcou como feito e as notas das últimas avaliações. NÃO sugira um treino por cima do que já existe — comente o plano dela.
+- analisesAnteriores: as conclusões que VOCÊ já deu a ela antes. Mantenha coerência; se for mudar de posição, diga que está mudando e por quê.
+- estadoDoApp: o que ela ativou e quando importou dados.
+
 Como responder:
 - Direto ao ponto e em português do Brasil. Responda o que foi perguntado, sem despejar um relatório inteiro — para o panorama completo existe a análise.
 - Cite os números da pessoa quando forem relevantes, com a data.
@@ -591,16 +603,21 @@ async function handleTreino(request, env, json, uid) {
   let msg;
   try {
     msg = await client.messages.create({
-      // mesmo modelo da análise cruzada: chamada rara (semanal) e o raciocínio
-      // mais pesado — equilibrar 7 capacidades com o histórico da pessoa.
-      // SEM cache de prompt pelo mesmo motivo da análise: semanal + TTL de 5
-      // min = prefixo sempre escrito e nunca lido.
-      model: env.CLAUDE_MODEL_ANALISE || "claude-fable-5",
+      // Modelo PRÓPRIO do coach, e mais rápido que o da análise de propósito.
+      // Motivo concreto: com Fable 5 + effort "high" + 8192 tokens a montagem
+      // passava de um minuto, e o Safari do iPhone cortava a conexão antes da
+      // resposta chegar — o app mostrava "Load failed". Ao contrário da
+      // análise, isto é uma tela que a pessoa fica olhando esperando.
+      // SEM cache de prompt: semanal + TTL de 5 min = prefixo sempre escrito
+      // e nunca lido.
+      model: env.CLAUDE_MODEL_TREINO || "claude-opus-5",
       // a semana inteira em JSON (até 6 sessões com itens) precisa de espaço
       max_tokens: 8192,
       thinking: { type: "adaptive" },
       output_config: {
-        effort: "high",
+        // "medium" em vez de "high" pelo mesmo motivo do modelo: o ganho de
+        // qualidade não paga o risco de a resposta nunca chegar ao celular
+        effort: "medium",
         format: { type: "json_schema", schema: acao === "fechar" ? SCHEMA_TREINO_FECHAR : SCHEMA_TREINO_PLANO },
       },
       system: SYSTEM_TREINO + "\n\n" + CONHECIMENTO_TREINO,
