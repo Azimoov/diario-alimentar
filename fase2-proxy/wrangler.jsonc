@@ -41,6 +41,10 @@
     // Muito mais frequente que a análise completa — aqui o volume é que manda,
     // e o Opus custa metade do Fable por token.
     "CLAUDE_MODEL_CHAT": "claude-opus-5",
+    // modelo do COACH DE TREINO (/treino). Separado da análise porque aqui a
+    // pessoa espera olhando a tela: Fable 5 com esforço alto estourava o
+    // tempo do Safari no iPhone ("Load failed").
+    "CLAUDE_MODEL_TREINO": "claude-opus-5",
     // fuso p/ contar o dia do limite de fotos
     "TIMEZONE": "America/Sao_Paulo",
     // máx. de fotos analisadas por dia, somando todos os usuários
