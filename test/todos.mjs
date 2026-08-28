@@ -3,7 +3,7 @@
 //     node test/todos.mjs
 //
 // Ele mesmo sobe os dois servidores locais (app na 8123, Worker de
-// desenvolvimento na 8124), roda as dezesseis suítes em ordem, imprime um resumo
+// desenvolvimento na 8124), roda as dezessete suítes em ordem, imprime um resumo
 // e derruba o que subiu. Se os servidores já estiverem no ar, reaproveita.
 //
 // Nada aqui usa internet, chave de API ou conta na Cloudflare: o dev-server
@@ -24,6 +24,7 @@ const SUITES = [
   ['smoke', 'fase2-proxy/test/smoke.mjs', join(RAIZ, 'fase2-proxy'), 'Worker: rotas, contas, limites, CORS, base de referência'],
   ['openbrain', 'fase2-proxy/test/openbrain.mjs', join(RAIZ, 'fase2-proxy'), 'envio de contexto p/ o Open Brain'],
   ['recortar-icone', 'test/recortar-icone.mjs', RAIZ, 'ferramenta de recorte do ícone'],
+  ['parser-unidades', 'test/parser-unidades.mjs', RAIZ, 'peso por unidade: "1 morango", plural, dente de alho'],
   ['peso-composicao', 'test/peso-composicao.mjs', RAIZ, 'peso, % gordura e massa magra'],
   ['marca-e-pwa', 'test/marca-e-pwa.mjs', RAIZ, 'marca, manifest, ícones, as 6 áreas'],
   ['remedios', 'test/remedios.mjs', RAIZ, 'área Remédios: anotar, encerrar, chegar na IA'],
