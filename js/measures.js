@@ -40,17 +40,110 @@ window.MEASURES = {
     'punhado', 'punhados', 'pote', 'potes', 'lata', 'latas', 'saco', 'sacos',
     'ponta de faca', 'a gosto', 'q b'],
 
-  // Peso por UNIDADE de alimentos contáveis ("1 ovo", "2 bananas").
-  // GRAMAS por 1 unidade (média, estimativa). Chaves normalizadas.
+  // Peso por UNIDADE de alimentos contáveis ("1 ovo", "2 bananas", "1 morango").
+  // GRAMAS por 1 unidade, considerando a PARTE COMESTÍVEL (sem casca, caroço,
+  // osso). São MÉDIAS APROXIMADAS de tamanho médio, não valores de tabela
+  // oficial — unidade de fruta/legume varia muito. O app sempre marca como
+  // [estimativa] e deixa você corrigir na mão. Se você pesa, pese.
+  //
+  // Só precisa da forma SINGULAR: a busca já tenta singularizar o plural
+  // ("morangos" -> "morango"). Chaves de até 3 palavras funcionam.
   unitWeights: {
-    ovo: 50, ovos: 50,
-    'pao frances': 50, 'paes franceses': 50, paozinho: 50, paozinhos: 50,
-    banana: 100, bananas: 100,
-    maca: 130, macas: 130,
-    laranja: 180, laranjas: 180,
-    tangerina: 130, mexerica: 130, bergamota: 130,
-    pao: 50, // pão francês por padrão
-    coxinha: 50, coxinhas: 50, // porção média segundo a TBCA (unidade M)
+    // --- ovos e derivados ---
+    ovo: 50,
+    'ovo de codorna': 10,
+
+    // --- pães e padaria ---
+    'pao frances': 50, paozinho: 50,
+    pao: 50,                      // pão francês por padrão
+    'pao de forma': 25,           // 1 fatia
+    'pao de queijo': 30,
+    'pao de hot dog': 55, 'pao de hamburguer': 60,
+    torrada: 8,
+    biscoito: 8, bolacha: 8,
+    'biscoito recheado': 12, 'bolacha recheada': 12,
+    'cream cracker': 7,
+    croissant: 60,
+    rosquinha: 12,
+
+    // --- frutas ---
+    morango: 12,
+    uva: 6,
+    banana: 100,
+    maca: 130,
+    laranja: 180,
+    tangerina: 130, mexerica: 130, bergamota: 130, ponkan: 130,
+    limao: 60,
+    pera: 130,
+    pessego: 100,
+    ameixa: 50,
+    kiwi: 70,
+    manga: 200,
+    goiaba: 130,
+    caqui: 130,
+    figo: 50,
+    acerola: 8,
+    jabuticaba: 8,
+    cereja: 6,
+    'damasco seco': 8,
+    'uva passa': 0.5,
+    carambola: 90,
+    caju: 60,
+    maracuja: 30,                 // polpa de 1 fruta
+    abacate: 200,                 // polpa (abacate brasileiro é grande)
+    'tomate cereja': 15,
+
+    // --- legumes e verduras ---
+    tomate: 110,
+    cenoura: 80,
+    batata: 100,
+    'batata doce': 150,
+    cebola: 100,
+    'dente de alho': 3,
+    pepino: 130,
+    abobrinha: 200,
+    berinjela: 250,
+    pimentao: 130,
+    chuchu: 200,
+    'espiga de milho': 100,
+    azeitona: 4,
+
+    // --- oleaginosas ---
+    'castanha de caju': 2,
+    'castanha do para': 4,
+    amendoa: 1.2,
+    noz: 5,
+    avela: 1.2,
+
+    // --- carnes e pescados ---
+    bife: 120,
+    'file de frango': 150, 'peito de frango': 150,
+    'coxa de frango': 100, sobrecoxa: 120,
+    'asa de frango': 40,
+    salsicha: 50,
+    linguica: 80,
+    hamburguer: 80,
+    'almondega': 25,
+    sardinha: 30,
+    camarao: 10,
+
+    // --- salgados e preparados ---
+    coxinha: 50,                  // porção média segundo a TBCA (unidade M)
+    pastel: 70,
+    esfiha: 80, esfirra: 80,
+    empada: 60,
+    'bolinho de': 40,
+    panqueca: 80,
+    tapioca: 80,
+    crepioca: 100,
+    'misto quente': 90,
+
+    // --- doces ---
+    brigadeiro: 20,
+    bombom: 15,
+    bala: 5,
+    'barra de cereal': 25, barrinha: 25,
+    'quadradinho de chocolate': 5,
   },
 };
 
@@ -153,6 +246,33 @@ window.SYNONYMS = {
   'cream cheese': 'u173418',
   'leite de soja': 'u172456',
   'leite de amendoas': 'u174832',
+  // frutas e itens contáveis que caíam em alimento errado ou "não encontrado"
+  // (ids conferidos contra a base gerada — ver comentário de cada linha)
+  'morango': 239,                 // Morango, cru (TACO)
+  'uva': 256,                     // Uva, Itália, crua
+  'pera': 242,                    // Pêra, Park, crua
+  'pessego': 244,                 // Pêssego, Aurora, cru
+  'kiwi': 207,                    // Kiwi, cru
+  'ameixa': 172,                  // Ameixa, crua
+  'figo': 194,                    // Figo, cru
+  'abacate': 163,                 // Abacate, cru
+  'cereja': 'C0182C',             // Cereja, in natura (TBCA)
+  'tangerina': 251,               // Tangerina, Poncã, crua — "mexerica"/"bergamota"
+  'mexerica': 251, 'bergamota': 251, 'poncan': 251, 'ponkan': 251,
+  'tomate cereja': 157,           // mesma composição do tomate cru; muda só o peso
+  'castanha do para': 589,        // na TACO o nome é "Castanha-do-Brasil, crua"
+  'castanha do brasil': 589,
+  'espiga de milho': 44,          // Milho, verde, cru (antes casava com "Glicose, milho")
+  'milho verde': 44,
+  'bolacha': 8,                   // Biscoito, doce, maisena (a base não usa "bolacha")
+  'biscoito': 8,
+  'barra de cereal': 'C0064N',    // Barra de cereal (TBCA)
+  'barrinha': 'C0064N',
+  'pepino': 142,                  // Pepino, cru
+  'berinjela': 96,                // Berinjela, crua
+  'abobrinha': 71,                // Abobrinha, italiana, crua
+  'chuchu': 113,                  // Chuchu, cru
+  'alho': 82,                     // Alho, cru
 };
 
 // Palavras que viram número (normalizadas, sem acento) — inclui as formas

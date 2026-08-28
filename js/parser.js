@@ -189,15 +189,26 @@ window.Parser = (function () {
     return s.replace(/^(de|da|do|dos|das)\s+/, '').trim();
   }
 
+  // Procura o peso por unidade do alimento na tabela. Tenta janelas de 3, 2 e 1
+  // palavra (nessa ordem, p/ "dente de alho" ganhar de "alho") e, em cada uma,
+  // tenta também a forma singular — assim a tabela só precisa do singular e
+  // "2 morangos" acha "morango". Antes eram só janelas de 2 e 1 palavra SEM
+  // singularizar, o que obrigava a cadastrar "ovo" e "ovos" na mão e fazia
+  // "1 morango" cair no "não sei o peso por unidade".
   function unitWeightFor(foodNorm) {
     const uw = window.MEASURES.unitWeights;
     const words = foodNorm.split(' ').filter(Boolean);
-    // tenta chave de 2 palavras ("pao frances") depois 1 palavra
-    for (let i = 0; i < words.length; i++) {
-      const two = words.slice(i, i + 2).join(' ');
-      if (uw[two] != null) return uw[two];
+    const achar = (chave) => {
+      if (uw[chave] != null) return uw[chave];
+      const s = chave.split(' ').map(sing).join(' ');
+      return uw[s] != null ? uw[s] : null;
+    };
+    for (let n = 3; n >= 1; n--) {
+      for (let i = 0; i + n <= words.length; i++) {
+        const g = achar(words.slice(i, i + n).join(' '));
+        if (g != null) return g;
+      }
     }
-    for (const w of words) if (uw[w] != null) return uw[w];
     return null;
   }
 

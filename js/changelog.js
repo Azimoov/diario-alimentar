@@ -12,6 +12,36 @@
 // analisarPlato() em app.js".
 window.CHANGELOG = [
   {
+    versao: '14',
+    data: '2026-08-28',
+    titulo: 'O app já sabe quanto pesa 1 morango',
+    mudancas: [
+      'Anotar "1 morango", "10 uvas" ou "2 dentes de alho" agora estima o peso sozinho. Antes o app só conhecia o peso de 7 alimentos (ovo, pão, banana, maçã, laranja, tangerina e coxinha) e pedia as gramas para todo o resto — o que na prática era desistir. A tabela cresceu para cerca de 80 itens: frutas, legumes, oleaginosas, carnes, salgados e doces.',
+      'Plural passou a funcionar sem cadastro duplo: "3 morangos" acha o mesmo item que "1 morango".',
+      'Como antes, peso por unidade é ESTIMATIVA e vem marcado como tal na tela — é média de tamanho médio, não pesagem. Se você pesa, corrija o número; o app aceita.',
+      'Frutas e itens que caíam no alimento errado foram acertados: castanha-do-pará vinha como chocolate com castanha, espiga de milho vinha como glicose de milho, e bergamota/bolacha não achavam nada.',
+      'Os textos do treino não são mais cortados no meio da palavra. A apresentação e as orientações do coach batiam num limite de caracteres e paravam no meio de uma frase ("...hemoglobina 14,8 e hematócri"), o que parecia defeito de tela. O limite subiu bastante e, quando ainda assim precisar cortar, o corte é no fim da palavra e marcado com reticências.',
+    ],
+  },
+  {
+    versao: '13',
+    data: '2026-08-27',
+    titulo: 'Caixinhas dos dias não encolhem mais',
+    mudancas: [
+      'Nos seletores de dia da semana, as caixinhas de marcar e os rótulos deixaram de espremer em telas estreitas.',
+    ],
+  },
+  {
+    versao: '12',
+    data: '2026-08-26',
+    titulo: 'A conversa da IA enxerga o app inteiro',
+    mudancas: [
+      'Nova área IA, com todas as análises guardadas e uma conversa que lembra o que já foi dito.',
+      'A IA passou a receber o contexto completo do app — metas, diário recente, peso, composição, métricas, exames, treino e as análises anteriores. Antes ela respondia sem saber das suas próprias decisões dentro do app.',
+      'O coach de treino saiu do modelo antigo e passou a caber no tempo de resposta do celular, em vez de estourar e não gerar nada.',
+    ],
+  },
+  {
     versao: '11',
     data: '2026-08-21',
     titulo: 'Pausa da dieta em vez de cortar sempre',
