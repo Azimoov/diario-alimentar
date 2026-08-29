@@ -52,21 +52,56 @@ const mock = createServer((req, res) => {
       orientacoes: "Comece leve, anote tudo. Dor articular aguda não é dor boa: troque o exercício.",
       sessoes: [
         { dia: "seg", titulo: "Força A", tipo: "forca", duracaoMin: 45, itens: [
-          { nome: "Agachamento", registro: "carga", series: 3, reps: "5", cargaSugerida: carga + " kg", minutos: null, detalhe: "3 min de descanso" },
-          { nome: "Supino", registro: "carga", series: 3, reps: "5", cargaSugerida: "30 kg", minutos: null, detalhe: "" },
+          { nome: "Agachamento", registro: "carga", series: 3, reps: "5", cargaSugerida: carga + " kg", descansoSeg: 180, minutos: null, detalhe: "carga alta pede série de qualidade" },
+          { nome: "Supino", registro: "carga", series: 3, reps: "5", cargaSugerida: "30 kg", descansoSeg: 150, minutos: null, detalhe: "" },
         ] },
         { dia: "qua", titulo: "Zona 2", tipo: "z2", duracaoMin: 40, itens: [
-          { nome: "Caminhada rápida ou bike", registro: "tempo", series: null, reps: null, cargaSugerida: null, minutos: 40, detalhe: "ritmo de conversa" },
+          { nome: "Caminhada rápida ou bike", registro: "tempo", series: null, reps: null, cargaSugerida: null, descansoSeg: null, minutos: 40, detalhe: "ritmo de conversa" },
         ] },
         { dia: "ter", titulo: "Pico do dia", tipo: "picoFc", duracaoMin: 10, itens: [
-          { nome: "Subida de escada forte", registro: "fc", series: 2, reps: "30 s", cargaSugerida: "esforço máximo", minutos: null, detalhe: "anote o pico do relógio" },
+          { nome: "Subida de escada forte", registro: "fc", series: 2, reps: "30 s", cargaSugerida: "esforço máximo", descansoSeg: 90, minutos: null, detalhe: "anote o pico do relógio" },
         ] },
         { dia: "sex", titulo: "Potência e equilíbrio", tipo: "potencia", duracaoMin: 30, itens: [
-          { nome: "Salto horizontal", registro: "carga", series: 3, reps: "3", cargaSugerida: "peso do corpo", minutos: null, detalhe: "intenção máxima, descansado" },
-          { nome: "Apoio unipodal olhos fechados", registro: "tempo", series: null, reps: null, cargaSugerida: null, minutos: 2, detalhe: "anote os segundos por perna" },
+          { nome: "Salto horizontal", registro: "carga", series: 3, reps: "3", cargaSugerida: "peso do corpo", descansoSeg: 240, minutos: null, detalhe: "intenção máxima, descansado" },
+          { nome: "Apoio unipodal olhos fechados", registro: "tempo", series: null, reps: null, cargaSugerida: null, descansoSeg: null, minutos: 2, detalhe: "anote os segundos por perna" },
         ] },
       ],
     });
+    const isMemoria = sys.includes("arquivo de memória");
+    if (isMemoria) {
+      // ecoa trechos REAIS do arquivo recebido: a peneira do Worker exige que
+      // o `trecho` exista no texto, então uma fixture inventada seria
+      // descartada e o teste passaria a testar o descarte, não a leitura.
+      const arq = String(((body.messages || [])[0] || {}).content || "");
+      const acha = (re) => { const m = re.exec(arq); return m ? m[0] : null; };
+      const linhaIdade = acha(/[^\n]*4[0-9] anos[^\n]*/);
+      const linhaRemedio = acha(/[^\n]*[Rr]osuvastatina[^\n]*/);
+      const linhaExame = acha(/[^\n]*[Gg]licose[^\n]*/);
+      const conteudo = {
+        resumo: "Achei idade, altura e um remédio. Não achei peso recente nem exames com data.",
+        perfil: linhaIdade
+          ? { sexo: "m", idade: 47, altura: 178, peso: null, objetivo: "emagrecer sem perder força", trecho: linhaIdade }
+          : { sexo: null, idade: null, altura: null, peso: null, objetivo: null, trecho: "" },
+        medicamentos: linhaRemedio
+          ? [{ nome: "Rosuvastatina", tipo: "remedio", dose: "10 mg", motivo: "colesterol", trecho: linhaRemedio },
+             // este NÃO existe no arquivo: o Worker tem que descartar
+             { nome: "Remedio Fantasma", tipo: "remedio", dose: "1 g", motivo: "inventado", trecho: "frase que nunca foi escrita neste arquivo" }]
+          : [],
+        exames: linhaExame
+          ? [{ nome: "Glicose em jejum", valor: "92", unidade: "mg/dL", data: "2026-06-10", trecho: linhaExame },
+             // sem data: o app não importa, mas o Worker deixa passar
+             { nome: "Colesterol total", valor: "188", unidade: "mg/dL", data: null, trecho: linhaExame }]
+          : [],
+        rotinaTreino: "Treina de manhã cedo, três vezes por semana.",
+        contexto: "Prefere comida de verdade a suplemento. Já tentou low carb e não sustentou.",
+      };
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        id: "msg_memoria", type: "message", role: "assistant", model: body.model || "dev", stop_reason: "end_turn",
+        content: [{ type: "tool_use", id: "tu_1", name: "registrar", input: conteudo }],
+        usage: { input_tokens: 100, output_tokens: 50 },
+      }));
+    }
     if (isTreino) {
       const corpo = JSON.stringify(body.messages || []);
       const m = /SEMANA FECHADA \(número (\d+)\)/.exec(corpo);
@@ -77,7 +112,16 @@ const mock = createServer((req, res) => {
             melhorias: ["Priorizar potência: saltos no começo da sessão", "Registrar uma sessão de Zona 5 para ter nota"],
             proximaSemana: semanaTreino(parseInt(m[1], 10) + 1, "42"),
           }
-        : (corpo.includes("TEXTO_LONGO")
+        : (corpo.includes("DESCANSO_ABSURDO")
+          // números fora de qualquer faixa útil: 1 s não é descanso, 2 h não é
+          // treino, e negativo não é nada. Todos têm que virar null.
+          ? { apresentacao: "plano com descanso absurdo",
+              semana: (() => { const sem = semanaTreino(1, "40");
+                sem.sessoes[0].itens[0].descansoSeg = 7200;
+                sem.sessoes[0].itens[1].descansoSeg = 1;
+                sem.sessoes[3].itens[0].descansoSeg = -60;
+                return sem; })() }
+        : corpo.includes("TEXTO_LONGO")
           // exercita o corte: apresentação e carga bem acima dos limites, com
           // espaços, para conferir que o corte cai em PALAVRA inteira
           ? {
@@ -177,6 +221,10 @@ const ENV = {
   CLAUDE_MODEL_TREINO: "claude-opus-5",
   TIMEZONE: "America/Sao_Paulo",
   PHOTO_DAILY_LIMIT: "60",
+  // o bloco do coach faz mais chamadas que o teto padrão (10/dia). O teto em si
+  // é testado à parte, com env próprio — sem isto a suíte começava a devolver
+  // 429 e o teste seguinte "falhava" por motivo que não era o dele.
+  TRAINING_DAILY_LIMIT: "40",
   // contas
   DATA_KEY: "chave-de-dados-de-teste-nao-usar-em-producao",
   INVITE_CODE: "convite-teste, convite-maria",
@@ -427,6 +475,13 @@ mock.listen(MOCK_PORT, async () => {
       await worker.fetch(anReq(), ENV);
       const sysAnalise = ultimoSystem;
 
+      // memória de outra IA é RELATO. Sem esta linha no prompt, a IA cita um
+      // peso lembrado num memory.md com a mesma confiança de uma pesagem.
+      ok("prompt manda tratar a memória importada como relato, não medição",
+        /relatoTrazidoDeOutraIA/.test(sysChat) && /RELATO, não medição/.test(sysChat));
+      ok("a mesma regra vale na análise", /relatoTrazidoDeOutraIA/.test(sysAnalise));
+      ok("prompt diz que o dado registrado vence o relato",
+        /dado registrado vence/.test(sysChat));
       ok("base de referência chega na conversa", /BASE DE REFERÊNCIA/.test(sysChat));
       ok("base chega também na análise", /BASE DE REFERÊNCIA/.test(sysAnalise));
       ok("manda respeitar o peso de evidência", /\[ESCOLA\]/.test(sysChat) && /peso de evid|etiquetas de evid/i.test(sysChat));
@@ -764,6 +819,88 @@ mock.listen(MOCK_PORT, async () => {
     }
 
     // =====================================================================
+    // IMPORTAR MEMÓRIA DE OUTRA IA (/memoria)
+    // =====================================================================
+    // O ponto delicado desta rota não é ler bem — é NÃO INVENTAR. O Worker
+    // exige que cada campo venha com uma frase literal do arquivo e descarta
+    // o que não tiver. Estes testes cobrem a peneira, não a leitura.
+    {
+      let ipMem = 0;
+      const ARQUIVO = [
+        "# Memória sobre o Daniel",
+        "",
+        "- Homem, 47 anos, 1,78 m de altura.",
+        "- Objetivo: emagrecer sem perder força.",
+        "- Toma Rosuvastatina 10 mg por causa do colesterol.",
+        "- Exame de 10/06/2026: Glicose em jejum 92 mg/dL.",
+        "- Prefere comida de verdade a suplemento.",
+      ].join("\n");
+      const memReq = (body, opts = {}) => new Request("https://proxy.example/memoria", {
+        method: opts.method || "POST",
+        headers: {
+          "Content-Type": "application/json", Origin: ORIGIN,
+          ...(opts.session !== null ? { "X-Session": sessao } : {}),
+          "CF-Connecting-IP": "198.51.102." + (++ipMem),
+        },
+        body: opts.method === "GET" ? undefined : JSON.stringify(body),
+      });
+
+      // o bloco anterior terminou apagando a chave da conta
+      await check("memória sem chave da conta -> 402", worker.fetch(memReq({ texto: ARQUIVO }), ENV), 402,
+        (res, body) => body.error === "no_api_key" || "erro errado: " + body.error);
+      await worker.fetch(keyReq(), ENV);   // cadastra a chave p/ o resto do bloco
+
+      await check("memória sem login -> 401", worker.fetch(new Request("https://proxy.example/memoria", {
+        method: "POST", headers: { "Content-Type": "application/json", Origin: ORIGIN },
+        body: JSON.stringify({ texto: ARQUIVO }),
+      }), ENV), 401);
+      await check("memória por GET -> 405", worker.fetch(memReq(null, { method: "GET" }), ENV), 405);
+      await check("memória sem texto -> 400", worker.fetch(memReq({}), ENV), 400,
+        (res, body) => body.error === "missing_text" || "erro errado: " + body.error);
+      await check("arquivo gigante é recusado, não cortado", worker.fetch(memReq({ texto: "a".repeat(300_001) }), ENV), 413,
+        (res, body) => body.error === "text_too_large" || "erro errado: " + body.error);
+
+      await check("lê perfil, remédio e exame do arquivo", worker.fetch(memReq({ texto: ARQUIVO }), ENV), 200,
+        (res, body) => {
+          if (!body.perfil || body.perfil.idade !== 47 || body.perfil.altura !== 178) {
+            return "perfil: " + JSON.stringify(body.perfil);
+          }
+          if (!body.medicamentos.some((m) => m.nome === "Rosuvastatina")) return "remédio não veio";
+          if (!body.exames.some((e) => e.nome === "Glicose em jejum" && e.data === "2026-06-10")) return "exame não veio";
+          if (!body.contexto) return "contexto vazio";
+          return true;
+        });
+
+      // O TESTE QUE JUSTIFICA A ROTA INTEIRA: a fixture manda um "Remedio
+      // Fantasma" cujo trecho não existe no arquivo. Se ele passar, o app
+      // grava um remédio que a pessoa nunca tomou.
+      await check("campo sem frase correspondente no arquivo é descartado",
+        worker.fetch(memReq({ texto: ARQUIVO }), ENV), 200,
+        (res, body) => {
+          const fantasma = body.medicamentos.some((m) => /Fantasma/.test(m.nome));
+          if (fantasma) return "remédio inventado passou pela peneira";
+          return (body.descartados || []).some((d) => /Fantasma/.test(d))
+            || "descartou em silêncio, sem dizer à pessoa: " + JSON.stringify(body.descartados);
+        });
+      await check("exame sem data volta com data null, não com a de hoje",
+        worker.fetch(memReq({ texto: ARQUIVO }), ENV), 200,
+        (res, body) => {
+          const col = body.exames.find((e) => /Colesterol/.test(e.nome));
+          return (col && col.data === null) || "data do colesterol: " + JSON.stringify(col && col.data);
+        });
+      await check("texto que não é memória não vira dado",
+        worker.fetch(memReq({ texto: "function soma(a, b) { return a + b; }" }), ENV), 200,
+        (res, body) => (body.perfil === null && !body.medicamentos.length && !body.exames.length)
+          || "extraiu algo de um arquivo de código: " + JSON.stringify(body.perfil));
+
+      // devolve o estado como estava: o bloco seguinte (coach) começa
+      // conferindo o 402 de conta sem chave. Sem isto, ele falharia por causa
+      // da chave que ESTE bloco cadastrou — um teste vermelho apontando para
+      // o lugar errado.
+      await worker.fetch(keyReq({ method: "DELETE" }), ENV);
+    }
+
+    // =====================================================================
     // COACH DE TREINO (/treino): plano semanal + fechar semana com notas
     // =====================================================================
     {
@@ -854,6 +991,42 @@ mock.listen(MOCK_PORT, async () => {
         () => (/NUTRIÇÃO registrada muda no treino/.test(ultimoSystem)
           && /EXAMES e as MÉTRICAS mudam no treino/.test(ultimoSystem)
           && /1,6–2,2 g/.test(ultimoSystem)) || "ligação nutrição/exames não viajou");
+      // DESCANSO ENTRE SÉRIES: sem campo próprio, o coach só conseguia
+      // mencionar descanso solto no "detalhe" — quando lembrava. Aqui trava
+      // as três pontas: o campo chega inteiro, a regra viaja no prompt e a
+      // base explica os números.
+      await check("o descanso entre séries chega ao app em segundos",
+        worker.fetch(treinoReq({ acao: "plano", dados: { perfil: {} }, perfilTreino: perfilT }), ENV), 200,
+        (res, body) => {
+          const forca = body.semana.sessoes.find((x) => x.tipo === "forca");
+          const it = forca.itens[0];
+          if (it.descansoSeg !== 180) return "força veio com descansoSeg = " + it.descansoSeg;
+          const z2 = body.semana.sessoes.find((x) => x.tipo === "z2");
+          if (z2.itens[0].descansoSeg !== null) return "Zona 2 contínua não devia ter descanso";
+          return true;
+        });
+      await check("descanso absurdo vira null em vez de ir para a tela",
+        worker.fetch(treinoReq({ acao: "plano", dados: { perfil: {} },
+          perfilTreino: { ...perfilT, limitacoes: "DESCANSO_ABSURDO" } }), ENV), 200,
+        (res, body) => {
+          const forca = body.semana.sessoes.find((x) => x.tipo === "forca");
+          const pot = body.semana.sessoes.find((x) => x.tipo === "potencia");
+          const vistos = [forca.itens[0].descansoSeg, forca.itens[1].descansoSeg, pot.itens[0].descansoSeg];
+          // === null e não == null: campo AUSENTE (undefined) é falha diferente
+          // — quer dizer que o Worker nem conhece o campo. JSON.stringify vira
+          // os dois em "null", por isso a mensagem descreve cada um na mão.
+          if (vistos.every((v) => v === null)) return true;
+          return "esperava null nos três; veio " + vistos
+            .map((v) => (v === undefined ? "AUSENTE" : String(v))).join(", ");
+        });
+      await check("o prompt manda prescrever o descanso entre séries",
+        Promise.resolve(new Response(null, { status: 200 })), 200,
+        () => (/DESCANSO ENTRE SÉRIES/.test(ultimoSystem)
+          && /descansoSeg/.test(ultimoSystem)) || "regra de descanso não viajou");
+      await check("a base explica os tempos de descanso",
+        Promise.resolve(new Response(null, { status: 200 })), 200,
+        () => (/## Descanso entre séries/.test(ultimoSystem)
+          && /180–300 s/.test(ultimoSystem)) || "seção de descanso não viajou");
       await check("o prompt manda prescrever o pico diário de FC",
         Promise.resolve(new Response(null, { status: 200 })), 200,
         () => (/PICO DIÁRIO DE FC/.test(ultimoSystem)
