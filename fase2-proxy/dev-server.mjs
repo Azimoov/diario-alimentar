@@ -48,21 +48,56 @@ createServer((req, res) => {
       orientacoes: "Comece leve, anote tudo. Dor articular aguda não é dor boa: troque o exercício.",
       sessoes: [
         { dia: "seg", titulo: "Força A", tipo: "forca", duracaoMin: 45, itens: [
-          { nome: "Agachamento", registro: "carga", series: 3, reps: "5", cargaSugerida: carga + " kg", minutos: null, detalhe: "3 min de descanso" },
-          { nome: "Supino", registro: "carga", series: 3, reps: "5", cargaSugerida: "30 kg", minutos: null, detalhe: "" },
+          { nome: "Agachamento", registro: "carga", series: 3, reps: "5", cargaSugerida: carga + " kg", descansoSeg: 180, minutos: null, detalhe: "carga alta pede série de qualidade" },
+          { nome: "Supino", registro: "carga", series: 3, reps: "5", cargaSugerida: "30 kg", descansoSeg: 90, minutos: null, detalhe: "" },
         ] },
         { dia: "qua", titulo: "Zona 2", tipo: "z2", duracaoMin: 40, itens: [
-          { nome: "Caminhada rápida ou bike", registro: "tempo", series: null, reps: null, cargaSugerida: null, minutos: 40, detalhe: "ritmo de conversa" },
+          { nome: "Caminhada rápida ou bike", registro: "tempo", series: null, reps: null, cargaSugerida: null, descansoSeg: null, minutos: 40, detalhe: "ritmo de conversa" },
         ] },
         { dia: "ter", titulo: "Pico do dia", tipo: "picoFc", duracaoMin: 10, itens: [
-          { nome: "Subida de escada forte", registro: "fc", series: 2, reps: "30 s", cargaSugerida: "esforço máximo", minutos: null, detalhe: "anote o pico do relógio" },
+          { nome: "Subida de escada forte", registro: "fc", series: 2, reps: "30 s", cargaSugerida: "esforço máximo", descansoSeg: 45, minutos: null, detalhe: "anote o pico do relógio" },
         ] },
         { dia: "sex", titulo: "Potência e equilíbrio", tipo: "potencia", duracaoMin: 30, itens: [
-          { nome: "Salto horizontal", registro: "carga", series: 3, reps: "3", cargaSugerida: "peso do corpo", minutos: null, detalhe: "intenção máxima, descansado" },
-          { nome: "Apoio unipodal olhos fechados", registro: "tempo", series: null, reps: null, cargaSugerida: null, minutos: 2, detalhe: "anote os segundos por perna" },
+          { nome: "Salto horizontal", registro: "carga", series: 3, reps: "3", cargaSugerida: "peso do corpo", descansoSeg: 240, minutos: null, detalhe: "intenção máxima, descansado" },
+          { nome: "Apoio unipodal olhos fechados", registro: "tempo", series: null, reps: null, cargaSugerida: null, descansoSeg: null, minutos: 2, detalhe: "anote os segundos por perna" },
         ] },
       ],
     });
+    const isMemoria = sys.includes("arquivo de memória");
+    if (isMemoria) {
+      // ecoa trechos REAIS do arquivo recebido: a peneira do Worker exige que
+      // o `trecho` exista no texto, então uma fixture inventada seria
+      // descartada e o teste passaria a testar o descarte, não a leitura.
+      const arq = String(((body.messages || [])[0] || {}).content || "");
+      const acha = (re) => { const m = re.exec(arq); return m ? m[0] : null; };
+      const linhaIdade = acha(/[^\n]*4[0-9] anos[^\n]*/);
+      const linhaRemedio = acha(/[^\n]*[Rr]osuvastatina[^\n]*/);
+      const linhaExame = acha(/[^\n]*[Gg]licose[^\n]*/);
+      const conteudo = {
+        resumo: "Achei idade, altura e um remédio. Não achei peso recente nem exames com data.",
+        perfil: linhaIdade
+          ? { sexo: "m", idade: 47, altura: 178, peso: null, objetivo: "emagrecer sem perder força", trecho: linhaIdade }
+          : { sexo: null, idade: null, altura: null, peso: null, objetivo: null, trecho: "" },
+        medicamentos: linhaRemedio
+          ? [{ nome: "Rosuvastatina", tipo: "remedio", dose: "10 mg", motivo: "colesterol", trecho: linhaRemedio },
+             // este NÃO existe no arquivo: o Worker tem que descartar
+             { nome: "Remedio Fantasma", tipo: "remedio", dose: "1 g", motivo: "inventado", trecho: "frase que nunca foi escrita neste arquivo" }]
+          : [],
+        exames: linhaExame
+          ? [{ nome: "Glicose em jejum", valor: "92", unidade: "mg/dL", data: "2026-06-10", trecho: linhaExame },
+             // sem data: o app não importa, mas o Worker deixa passar
+             { nome: "Colesterol total", valor: "188", unidade: "mg/dL", data: null, trecho: linhaExame }]
+          : [],
+        rotinaTreino: "Treina de manhã cedo, três vezes por semana.",
+        contexto: "Prefere comida de verdade a suplemento. Já tentou low carb e não sustentou.",
+      };
+      res.writeHead(200, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({
+        id: "msg_memoria", type: "message", role: "assistant", model: body.model || "dev", stop_reason: "end_turn",
+        content: [{ type: "tool_use", id: "tu_1", name: "registrar", input: conteudo }],
+        usage: { input_tokens: 100, output_tokens: 50 },
+      }));
+    }
     if (isTreino) {
       const corpo = JSON.stringify(body.messages || []);
       const m = /SEMANA FECHADA \(número (\d+)\)/.exec(corpo);
