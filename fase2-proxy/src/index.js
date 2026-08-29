@@ -283,6 +283,7 @@ const REGRAS_HONESTIDADE = `Regras de honestidade (crítico):
 - Remédios e suplementos registrados são contexto de LEITURA, não assunto para opinar: um exame se interpreta diferente sob medicação, e uma virada num gráfico muitas vezes coincide com algo que começou ou foi encerrado — aponte a coincidência quando os dados mostrarem, deixando claro que coincidir não é causar. Sugerir uma pergunta para levar ao médico é certo; dar a conduta, não.`;
 
 const SYSTEM_ANALISE = `Você analisa dados de saúde PESSOAIS que o próprio dono coletou num app local: diário alimentar (kcal/macros), peso e composição corporal, exames laboratoriais e de imagem anotados à mão, métricas de Apple Watch/iPhone e lembretes de exames.
+- relatoTrazidoDeOutraIA: texto que a pessoa importou de OUTRA IA (um memory.md). É RELATO, não medição: trate como "ela me contou isso", no mesmo nível de confiança de uma frase dita numa conversa. Use para entender contexto, preferências e histórico; NUNCA cite um número desse texto como se fosse exame ou pesagem do app. Se ele contradisser um dado registrado, o dado registrado vence — e vale dizer que os dois divergem.
 
 Sua tarefa: uma leitura honesta e útil, cruzando as fontes.
 
@@ -392,6 +393,7 @@ O JSON traz o CONTEXTO COMPLETO do app dela — use tudo, não só as médias:
 - treino: o plano que o coach montou, o que ela marcou como feito e as notas das últimas avaliações. NÃO sugira um treino por cima do que já existe — comente o plano dela.
 - analisesAnteriores: as conclusões que VOCÊ já deu a ela antes. Mantenha coerência; se for mudar de posição, diga que está mudando e por quê.
 - estadoDoApp: o que ela ativou e quando importou dados.
+- relatoTrazidoDeOutraIA: texto que a pessoa importou de OUTRA IA (um memory.md). É RELATO, não medição: trate como "ela me contou isso", no mesmo nível de confiança de uma frase dita numa conversa. Use para entender contexto, preferências e histórico; NUNCA cite um número desse texto como se fosse exame ou pesagem do app. Se ele contradisser um dado registrado, o dado registrado vence — e vale dizer que os dois divergem.
 
 Como responder:
 - Direto ao ponto e em português do Brasil. Responda o que foi perguntado, sem despejar um relatório inteiro — para o panorama completo existe a análise.
@@ -441,10 +443,11 @@ const SCHEMA_TREINO_SEMANA = {
                 series: { type: ["integer", "null"], description: "Séries alvo (null quando registro = tempo)" },
                 reps: { type: ["string", "null"], description: "Repetições alvo, como texto ('5', '6-8'). null quando registro = tempo" },
                 cargaSugerida: { type: ["string", "null"], description: "Sugestão de carga ('20 kg', 'peso do corpo'). Se não houver histórico, sugira 'comece leve e anote' em vez de inventar número" },
+                descansoSeg: { type: ["integer", "null"], description: "Descanso ENTRE SÉRIES, em segundos (ex.: 180 = 3 min). Obrigatório sempre que houver séries. null só quando não faz sentido: esforço contínuo de Zona 2, mobilidade fluida, ou item de série única" },
                 minutos: { type: ["integer", "null"], description: "Minutos alvo (null quando registro = carga)" },
                 detalhe: { type: "string", description: "Como executar/medir, em uma linha. String vazia se nada a dizer" },
               },
-              required: ["nome", "registro", "series", "reps", "cargaSugerida", "minutos", "detalhe"],
+              required: ["nome", "registro", "series", "reps", "cargaSugerida", "descansoSeg", "minutos", "detalhe"],
               additionalProperties: false,
             },
           },
@@ -506,6 +509,7 @@ Regras de progressão (siga a base de treino anexa):
 - Itens não cumpridos ou RPE alto → manter ou reduzir; diga isso sem cobrança.
 - SEM REGISTRO NÃO HÁ NOTA: se a pessoa não anotou números de uma capacidade, a nota daquela capacidade é null e a avaliação pede o registro — chutar nota é proibido.
 - Notas (0-10) são relativas à PRÓPRIA pessoa e aos mínimos da bateria de avaliação da base — nunca comparação com atleta. Explique cada nota em uma linha na avaliação.
+- DESCANSO ENTRE SÉRIES É PRESCRIÇÃO, NÃO DETALHE: todo item com séries leva "descansoSeg" preenchido, em segundos. O descanso muda o que a série treina — descanso curto num trabalho de força alta transforma o exercício em outra coisa e derruba a carga da série seguinte. Siga a seção "Descanso entre séries" da base anexa e ajuste ao caso: se o tempo total da sessão não couber na rotina da pessoa, corte EXERCÍCIO, não descanso, e diga isso nas orientações. Só use null quando descanso não se aplica (esforço contínuo de Zona 2, mobilidade fluida, item de série única).
 - Potência vem no COMEÇO da sessão, depois do aquecimento. Respeite os dias por semana e o equipamento declarados: nunca prescreva o que a pessoa não tem ou disse não poder.
 - ENCAIXE O TREINO NA ROTINA REAL. O campo "diasAcademia" do perfil diz em QUE DIAS ela tem academia: força e hipertrofia com equipamento vão SÓ nesses dias, e o campo "dia" de cada sessão tem que bater com eles. Nos dias sem academia prescreva o que dá para fazer sem equipamento — Zona 2, mobilidade, equilíbrio, pico de FC, peso do corpo. Se "diasAcademia" vier vazio, diga nas orientações que preencher isso melhora o plano, e distribua assumindo peso do corpo.
 - O campo "rotina" é texto livre sobre a vida da pessoa (horário de trabalho, dias corridos, quando dá para treinar, o que atrapalha). LEIA e obedeça: não coloque sessão longa em dia que ela disse ser corrido, aproveite o dia livre que ela apontou para a sessão mais pesada, e respeite o dia de descanso que ela pediu. Quando a rotina determinar uma escolha sua, diga isso em uma linha nas orientações.
@@ -677,6 +681,10 @@ async function handleTreino(request, env, json, uid) {
           series: intOk(it.series, 1, 12, null),
           reps: txt(it.reps, 40) || null,
           cargaSugerida: txt(it.cargaSugerida, 160) || null,
+          // 5 s a 10 min: abaixo disso não é descanso, acima disso não é treino.
+          // Fora da faixa vira null (o app simplesmente não mostra) em vez de um
+          // número absurdo que a pessoa seguiria achando que o coach quis aquilo.
+          descansoSeg: intOk(it.descansoSeg, 5, 600, null),
           minutos: intOk(it.minutos, 1, 240, null),
           detalhe: txt(it.detalhe, 500),
         })),
@@ -814,6 +822,234 @@ async function handleChat(request, env, json, uid) {
     return json({ error: "empty_response", detail: "Resposta sem conteúdo (stop: " + msg.stop_reason + ")." }, 502);
   }
   return json({ resposta, modelo: msg.model });
+}
+
+// ===========================================================================
+// IMPORTAR MEMÓRIA DE OUTRA IA (/memoria)
+// ===========================================================================
+// Quem chega ao app já contou a própria história para outra IA: idade, altura,
+// peso, remédios, o que já tentou. Redigitar tudo é a razão mais comum de
+// abandonar um app de saúde na primeira semana. Aqui a pessoa joga o memory.md
+// e o modelo extrai o que dá para preencher.
+//
+// A REGRA QUE SEGURA A HONESTIDADE: todo campo extraído vem acompanhado de
+// `trecho` — a frase LITERAL do arquivo que o sustenta. Campo sem trecho, ou
+// com trecho que não existe no arquivo, é DESCARTADO aqui no servidor, antes
+// de chegar ao app. Isso não impede o modelo de errar interpretando; impede
+// que ele invente do nada, que é o erro perigoso num app de saúde.
+const SCHEMA_MEMORIA = {
+  type: "object",
+  properties: {
+    resumo: { type: "string", description: "Duas ou três frases, em português simples, dizendo o que você achou no arquivo e o que NÃO achou. Texto puro." },
+    perfil: {
+      type: "object",
+      properties: {
+        sexo: { type: ["string", "null"], enum: ["m", "f", null], description: "'m' ou 'f'. null se o arquivo não disser" },
+        idade: { type: ["integer", "null"], description: "Idade em anos" },
+        altura: { type: ["integer", "null"], description: "Altura em CENTÍMETROS (1,78 m = 178)" },
+        peso: { type: ["number", "null"], description: "Peso atual em kg. Se houver vários, o mais recente" },
+        objetivo: { type: ["string", "null"], description: "O que a pessoa quer, em uma linha ('emagrecer 10 kg', 'ganhar massa')" },
+        trecho: { type: "string", description: "A frase LITERAL do arquivo que sustenta os campos acima. String vazia se você não achou nada de perfil" },
+      },
+      required: ["sexo", "idade", "altura", "peso", "objetivo", "trecho"],
+      additionalProperties: false,
+    },
+    medicamentos: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          nome: { type: "string", description: "Nome do remédio ou suplemento, como está no arquivo" },
+          tipo: { type: "string", enum: ["remedio", "suplemento"] },
+          dose: { type: ["string", "null"], description: "Dose como está escrita ('20 mg', '2 cápsulas')" },
+          motivo: { type: ["string", "null"], description: "Para que a pessoa disse que toma" },
+          trecho: { type: "string", description: "A frase LITERAL do arquivo que cita este item" },
+        },
+        required: ["nome", "tipo", "dose", "motivo", "trecho"],
+        additionalProperties: false,
+      },
+    },
+    exames: {
+      type: "array",
+      description: "Só resultados NUMÉRICOS de exames laboratoriais que a pessoa escreveu. Não converta unidade, não calcule, não complete o que falta.",
+      items: {
+        type: "object",
+        properties: {
+          nome: { type: "string", description: "Nome do analito ('Glicose em jejum', 'Hemoglobina')" },
+          valor: { type: "string", description: "O valor como está no arquivo" },
+          unidade: { type: ["string", "null"], description: "Unidade, se o arquivo disser" },
+          data: { type: ["string", "null"], description: "Data do exame em AAAA-MM-DD, se o arquivo disser. null se não disser — NUNCA chute" },
+          trecho: { type: "string", description: "A frase LITERAL do arquivo com este resultado" },
+        },
+        required: ["nome", "valor", "unidade", "data", "trecho"],
+        additionalProperties: false,
+      },
+    },
+    rotinaTreino: { type: ["string", "null"], description: "O que o arquivo diz sobre a rotina de treino/exercício da pessoa, em texto corrido. null se não disser" },
+    contexto: { type: "string", description: "O resto que vale a IA saber e que não cabe em campo nenhum: preferências, restrições alimentares, histórico, o que já tentou. Texto puro, sem markdown. String vazia se não houver." },
+  },
+  required: ["resumo", "perfil", "medicamentos", "exames", "rotinaTreino", "contexto"],
+  additionalProperties: false,
+};
+
+const SYSTEM_MEMORIA = `Você lê um arquivo de memória que uma pessoa exportou de OUTRA inteligência artificial (tipicamente um memory.md) e extrai o que serve para preencher um app pessoal de saúde.
+
+O QUE VOCÊ ESTÁ FAZENDO: transcrevendo, não interpretando. O arquivo é a única fonte. Você não sabe nada sobre esta pessoa além do que está escrito ali.
+
+REGRAS DURAS:
+- Todo campo que você preencher precisa de um "trecho": a frase LITERAL, copiada do arquivo, que sustenta aquele dado. Copie do arquivo, não parafraseie. Sem trecho literal, deixe o campo null (ou não inclua o item na lista).
+- NÃO CALCULE E NÃO CONVERTA. Se o arquivo diz "1,78 m", altura = 178 (isso é ler, não calcular). Se diz "IMC 27", NÃO derive peso. Se diz "colesterol alto" sem número, o exame NÃO entra.
+- NÃO COMPLETE. Exame sem data fica sem data. Remédio sem dose fica sem dose. Faltar dado é normal e é melhor que dado inventado.
+- Datas relativas ("mês passado", "no começo do ano") NÃO viram data. Deixe null.
+- Se o arquivo trouxer um diagnóstico ou conclusão clínica, isso vai para "contexto" como relato da pessoa — nunca vire exame nem laudo.
+- Se o arquivo não parecer uma memória pessoal (é um código, uma receita, um contrato), devolva tudo vazio e diga isso no "resumo". Não force extração.
+- O "resumo" fala com a PESSOA, em português simples: o que você achou, e principalmente o que NÃO achou e ela vai ter que preencher na mão.
+- Texto puro, sem markdown, em português do Brasil.`;
+
+async function handleMemoria(request, env, json, uid) {
+  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+  const cred = await resolverChave(env, uid);
+  if (cred.erro) return json(cred.erro, cred.erro.error === "no_api_key" ? 402 : 500);
+  const ip = request.headers.get("CF-Connecting-IP") || "?";
+  if (rateLimited("memoria:" + ip, 5)) return json({ error: "rate_limited", detail: "Aguarde um minuto antes de importar de novo." }, 429);
+
+  let body;
+  try { body = await request.json(); } catch { return json({ error: "invalid_json" }, 400); }
+  const texto = body && typeof body.texto === "string" ? body.texto.trim() : "";
+  if (!texto) return json({ error: "missing_text", detail: "Envie {texto: \"…\"} com o conteúdo do arquivo." }, 400);
+  // Medido no texto ORIGINAL: cortar para caber devolveria uma leitura
+  // PARCIAL apresentada como completa — a pessoa acharia que o app leu tudo.
+  if (texto.length > 300_000) {
+    return json({ error: "text_too_large", detail: "Arquivo grande demais (~300 KB máx). Divida em partes." }, 413);
+  }
+
+  // cota própria: importar é evento raro, um teto baixo já protege o custo
+  if (env.DIARIO_KV) {
+    const tz = env.TIMEZONE || "America/Sao_Paulo";
+    const day = new Date().toLocaleDateString("en-CA", { timeZone: tz });
+    const quotaKey = "memorias:" + (uid ? uid + ":" : "") + day;
+    const used = parseInt((await env.DIARIO_KV.get(quotaKey)) || "0", 10);
+    const limit = parseInt(env.MEMORY_DAILY_LIMIT || "10", 10);
+    if (used >= limit) {
+      return json({ error: "daily_limit", detail: `Limite de ${limit} importações por dia atingido — tente amanhã.` }, 429);
+    }
+    await env.DIARIO_KV.put(quotaKey, String(used + 1), { expirationTtl: 172800 });
+  }
+
+  const client = new Anthropic({
+    apiKey: cred.chave,
+    baseURL: env.ANTHROPIC_BASE_URL || undefined,
+    fetch: globalThis.fetch.bind(globalThis),
+  });
+  let msg;
+  try {
+    msg = await client.messages.create({
+      model: env.CLAUDE_MODEL_MEMORIA || env.CLAUDE_MODEL_CHAT || "claude-opus-5",
+      max_tokens: 8000,
+      thinking: { type: "adaptive" },
+      system: SYSTEM_MEMORIA,
+      tools: [{ name: "registrar", description: "Devolve o que foi extraído do arquivo.", input_schema: SCHEMA_MEMORIA }],
+      tool_choice: { type: "tool", name: "registrar" },
+      messages: [{ role: "user", content: "ARQUIVO DE MEMÓRIA DA PESSOA:\n\n" + texto }],
+    });
+  } catch (err) {
+    console.log("ERRO API /memoria:", err && err.status, String((err && err.message) || err).slice(0, 300));
+    if (err instanceof Anthropic.RateLimitError) {
+      return json({ error: "upstream_rate_limited", detail: "API ocupada — tente de novo em instantes." }, 429);
+    }
+    if (err instanceof Anthropic.AuthenticationError) {
+      return json({ error: "bad_api_key", detail: "Sua chave da Anthropic foi recusada. Cadastre de novo em Dados." }, 502);
+    }
+    return json({ error: "upstream_error", detail: String((err && err.message) || err) }, 502);
+  }
+  const uso = (msg.content || []).find((b) => b.type === "tool_use");
+  const bruto = uso && uso.input;
+  if (!bruto || typeof bruto !== "object") {
+    return json({ error: "bad_model_output", detail: "Não consegui ler esse arquivo — tente de novo." }, 502);
+  }
+  return json(Object.assign({ modelo: msg.model }, sanearMemoria(bruto, texto)));
+}
+
+// Peneira do que o modelo devolveu. Duas peneiras, e a segunda é a que importa:
+//   1. tipo e faixa (idade 1-120, altura 50-250, peso 20-400…);
+//   2. ANCORAGEM: o `trecho` tem que aparecer de verdade no arquivo. É o que
+//      separa "o modelo leu errado" (acontece, a pessoa corrige na tela) de
+//      "o modelo inventou" (não pode chegar na tela de um app de saúde).
+// A comparação normaliza espaços, acento e caixa — o modelo reescreve
+// espaçamento ao copiar, e exigir byte a byte descartaria trecho legítimo.
+function sanearMemoria(bruto, arquivo) {
+  const normal = (v) => String(v == null ? "" : v)
+    .toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, " ").trim();
+  const alvo = normal(arquivo);
+  // trecho curto demais casa com qualquer coisa e não ancora nada
+  const ancorado = (t) => {
+    const n = normal(t);
+    return n.length >= 8 && alvo.includes(n);
+  };
+  const txt = (v, max) => {
+    if (typeof v !== "string") return "";
+    const t = v.trim();
+    return t.length <= max ? t : t.slice(0, max).trimEnd() + "…";
+  };
+  const num = (v, min, max) => (typeof v === "number" && Number.isFinite(v) && v >= min && v <= max ? v : null);
+  const int = (v, min, max) => (Number.isInteger(v) && v >= min && v <= max ? v : null);
+
+  const descartados = [];
+  const p = (bruto.perfil && typeof bruto.perfil === "object") ? bruto.perfil : {};
+  let perfil = null;
+  if (ancorado(p.trecho)) {
+    perfil = {
+      sexo: (p.sexo === "m" || p.sexo === "f") ? p.sexo : null,
+      idade: int(p.idade, 1, 120),
+      altura: int(p.altura, 50, 250),
+      peso: num(p.peso, 20, 400),
+      objetivo: txt(p.objetivo, 200) || null,
+      trecho: txt(p.trecho, 400),
+    };
+    // perfil sem nenhum campo útil não é perfil
+    if (perfil.sexo == null && perfil.idade == null && perfil.altura == null
+        && perfil.peso == null && !perfil.objetivo) perfil = null;
+  } else if (p.trecho || p.idade != null || p.altura != null || p.peso != null) {
+    descartados.push("perfil (sem frase correspondente no arquivo)");
+  }
+
+  const lista = (v) => (Array.isArray(v) ? v : []);
+  const medicamentos = [];
+  for (const m of lista(bruto.medicamentos).slice(0, 40)) {
+    if (!m || !txt(m.nome, 120)) continue;
+    if (!ancorado(m.trecho)) { descartados.push("remédio " + txt(m.nome, 40)); continue; }
+    medicamentos.push({
+      nome: txt(m.nome, 120),
+      tipo: m.tipo === "suplemento" ? "suplemento" : "remedio",
+      dose: txt(m.dose, 80) || null,
+      motivo: txt(m.motivo, 200) || null,
+      trecho: txt(m.trecho, 400),
+    });
+  }
+  const exames = [];
+  for (const e of lista(bruto.exames).slice(0, 120)) {
+    if (!e || !txt(e.nome, 120) || !txt(e.valor, 40)) continue;
+    if (!ancorado(e.trecho)) { descartados.push("exame " + txt(e.nome, 40)); continue; }
+    exames.push({
+      nome: txt(e.nome, 120),
+      valor: txt(e.valor, 40),
+      unidade: txt(e.unidade, 30) || null,
+      data: /^\d{4}-\d{2}-\d{2}$/.test(String(e.data || "")) ? e.data : null,
+      trecho: txt(e.trecho, 400),
+    });
+  }
+  return {
+    resumo: txt(bruto.resumo, 2000),
+    perfil,
+    medicamentos,
+    exames,
+    rotinaTreino: txt(bruto.rotinaTreino, 2000) || null,
+    contexto: txt(bruto.contexto, 20000),
+    // o app mostra isto: silenciar um descarte seria esconder que a leitura
+    // ficou incompleta justamente onde ela era menos confiável
+    descartados,
+  };
 }
 
 // ===========================================================================
@@ -1563,6 +1799,7 @@ export default {
 
     // ---- coach de treino (semana a semana, com notas) ----
     if (url.pathname === "/treino") return handleTreino(request, env, json, uid);
+    if (url.pathname === "/memoria") return handleMemoria(request, env, json, uid);
 
     // ---- envio de contexto de saúde para o Open Brain ----
     if (url.pathname === "/openbrain/sync") return handleOpenBrain(request, env, json, uid);

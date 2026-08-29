@@ -276,6 +276,38 @@ menos 2x/semana supera 1x/semana no MESMO volume total — distribuir as
 séries em 2+ sessões por grupo em vez de empilhar tudo numa sessão só.
 (Nippard, série Fundamentals) [FORTE]
 
+## Descanso entre séries
+O descanso não é sobra de tempo: ele decide o que a série treina. Duas coisas
+diferentes se apoiam em evidências de força diferente, e vale separar.
+
+O que é bem estabelecido: descanso curto (~1 min ou menos) DERRUBA o número de
+repetições e a carga das séries seguintes, e descanso mais longo preserva o
+volume da sessão. [FORTE] Em hipertrofia, quando se compara descanso curto com
+descanso longo mantendo o resto igual, o descanso mais longo sai igual ou
+melhor — não pior. [FORTE quanto à direção]
+
+O que é convenção prática, não número mágico: os valores abaixo são a escola
+de treino, não constantes fisiológicas. [ESCOLA]
+- Força máxima e potência (3–5 reps, carga alta ou intenção de velocidade):
+  180–300 s (3–5 min). O objetivo é chegar na próxima série com a mesma
+  qualidade; se a carga cai série a série, o descanso está curto.
+- Hipertrofia em multiarticular (agachamento, terra, supino, remada):
+  120–180 s (2–3 min).
+- Hipertrofia em isolado/acessório (rosca, elevação lateral, panturrilha):
+  60–90 s.
+- Circuito ou trabalho metabólico deliberado: 30–60 s — aqui o descanso curto
+  É o estímulo, e a queda de carga é esperada.
+- Intervalos de Zona 5: o descanso é parte do protocolo (ex.: ~4 min forte +
+  ~4 min leve), não um item à parte.
+- Pico diário de FC: 60–180 s entre tiros, o bastante para o próximo tiro ser
+  forte de verdade.
+- Mobilidade e Zona 2 contínua: não se aplica.
+
+Regra de bolso honesta: na dúvida, descansar mais. O custo de descansar demais
+é a sessão ficar mais longa; o custo de descansar de menos é treinar outra
+capacidade sem perceber. Quando a sessão não couber no tempo da pessoa, cortar
+EXERCÍCIO rende mais que espremer o descanso. [ESCOLA]
+
 ## Seleção de exercícios — relação estímulo/fadiga (SFR) [ESCOLA]
 Exercícios diferem em quanto estímulo de crescimento dão por quanto fadiga
 cobram. Agachamento estimula bem o quadríceps mas cobra fadiga sistêmica
