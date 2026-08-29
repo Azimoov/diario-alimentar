@@ -3,7 +3,7 @@
 //     node test/todos.mjs
 //
 // Ele mesmo sobe os dois servidores locais (app na 8123, Worker de
-// desenvolvimento na 8124), roda as dezessete suítes em ordem, imprime um resumo
+// desenvolvimento na 8124), roda as dezoito suítes em ordem, imprime um resumo
 // e derruba o que subiu. Se os servidores já estiverem no ar, reaproveita.
 //
 // Nada aqui usa internet, chave de API ou conta na Cloudflare: o dev-server
@@ -29,6 +29,7 @@ const SUITES = [
   ['marca-e-pwa', 'test/marca-e-pwa.mjs', RAIZ, 'marca, manifest, ícones, as 6 áreas'],
   ['remedios', 'test/remedios.mjs', RAIZ, 'área Remédios: anotar, encerrar, chegar na IA'],
   ['treino', 'test/treino.mjs', RAIZ, 'área Treino: plano semanal, registro, notas, evolução'],
+  ['memoria', 'test/memoria.mjs', RAIZ, 'trazer dados de outra IA (memory.md)'],
   ['plato', 'test/plato.mjs', RAIZ, 'aviso de peso parado e ajuste da meta'],
   ['novidades', 'test/novidades.mjs', RAIZ, 'histórico de versões e popup de atualização'],
   ['exames-e-metricas', 'test/exames-e-metricas.mjs', RAIZ, 'áreas Exames e Métricas + análise'],

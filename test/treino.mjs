@@ -53,6 +53,24 @@ await page.waitForSelector('.tr-sessao-card', { timeout: 20000 });
 check('cabeçalho mostra Semana 1', (await page.locator('#tab-trsemana .card').first().textContent()).includes('Semana 1'));
 check('bloco e posição no bloco visíveis', (await page.locator('.tr-bloco').textContent()).includes('Base geral'));
 check('4 sessões na semana do mock', await page.locator('.tr-sessao-card').count() === 4);
+
+// ---- descanso entre séries ----
+// Antes o coach não tinha campo para isso: quando lembrava, o descanso ia
+// solto no "detalhe" e sumia da linha do alvo. Descanso curto num trabalho de
+// força alta muda o que a série treina, então ele é prescrição, não enfeite.
+const alvos = await page.locator('.tr-alvo').allTextContents();
+check('o alvo mostra o descanso prescrito', alvos.some(t => /descanso 3 min/.test(t)),
+  alvos.join(' | '));
+check('descanso quebrado sai em min + s, não em segundos crus',
+  alvos.some(t => /descanso 1 min 30 s/.test(t)), alvos.join(' | '));
+check('descanso abaixo de 1 min sai em segundos, não em "0 min 45 s"',
+  alvos.some(t => /descanso 45 s/.test(t)), alvos.join(' | '));
+check('descanso redondo não vira "3 min 0 s"',
+  !alvos.some(t => /descanso \d+ min 0 s/.test(t)), alvos.join(' | '));
+// Zona 2 contínua não tem série, logo não tem descanso entre séries: mostrar
+// um número ali seria inventar prescrição.
+const alvoZ2 = await page.locator('.tr-sessao-card', { hasText: 'Zona 2' }).locator('.tr-alvo').first().textContent();
+check('Zona 2 contínua não ganha descanso inventado', !/descanso/.test(alvoZ2), alvoZ2);
 check('sessões carregam o tipo (força, zona 2, potência, pico de FC)',
   await page.locator('.tr-tipo', { hasText: 'força' }).count() === 1
   && await page.locator('.tr-tipo', { hasText: 'zona 2' }).count() === 1
