@@ -49,6 +49,11 @@ window.Store = (function () {
       // Conversa com a IA sobre os próprios dados. Uma conversa corrente por
       // aparelho; "nova conversa" arquiva a atual limpando esta lista.
       chat: { mensagens: [] }, // [{role:'user'|'assistant', text, at}]
+      // ---- memória trazida de outra IA ----
+      // Texto que a pessoa exportou de outro assistente (memory.md) e trouxe
+      // para cá. Fica como TEXTO, editável: é relato, não medição, e o que a
+      // importação preencheu de campo já foi gravado nos lugares certos.
+      memoria: null,        // {texto, importadoEm, resumo, preenchido:[…]}
       customFoods: [],      // {id:'c1', name, kcal, prot, carb, fat, fiber}
       sharedFoods: [],      // cache da base COMUM (compartilhada via proxy)
       // Fase 2 (foto): endereço do SEU proxy + senha do app. A chave da API
@@ -111,6 +116,18 @@ window.Store = (function () {
     normalizarTreino();
     state.health = Object.assign({}, d.health, state.health || {});
     state.health.daily = state.health.daily || {};
+    // memória de outra IA: null é o normal (quem nunca importou). Só
+    // normaliza a forma quando existe, p/ backup antigo/editado à mão não
+    // quebrar a tela de Dados.
+    if (state.memoria && typeof state.memoria === 'object') {
+      state.memoria = {
+        texto: typeof state.memoria.texto === 'string' ? state.memoria.texto : '',
+        importadoEm: state.memoria.importadoEm || null,
+        resumo: typeof state.memoria.resumo === 'string' ? state.memoria.resumo : '',
+        preenchido: Array.isArray(state.memoria.preenchido) ? state.memoria.preenchido : [],
+      };
+      if (!state.memoria.texto) state.memoria = null;
+    } else { state.memoria = null; }
     state.customFoods = state.customFoods || [];
     state.sharedFoods = state.sharedFoods || [];
     // análises: campo único antigo (`analysis`) vira o primeiro item da lista.
@@ -286,6 +303,10 @@ window.Store = (function () {
       // Conversa é um FIO: intercalar duas conversas diferentes produziria um
       // diálogo que nunca aconteceu. Ficamos com a mais longa — a mais
       // completa — em vez de misturar as duas.
+      // memória: é UM texto, não uma lista — concatenar duas produziria um
+      // relato que ninguém escreveu. Fica a local se já houver; senão entra a
+      // que veio. (Editar/apagar continua na mão da pessoa, na aba Dados.)
+      if (!state.memoria && incoming.memoria && incoming.memoria.texto) state.memoria = incoming.memoria;
       const msgsVindas = ((incoming.chat || {}).mensagens) || [];
       state.chat = state.chat || { mensagens: [] };
       if (msgsVindas.length > (state.chat.mensagens || []).length) state.chat = { mensagens: msgsVindas };

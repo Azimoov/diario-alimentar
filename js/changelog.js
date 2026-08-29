@@ -12,6 +12,32 @@
 // analisarPlato() em app.js".
 window.CHANGELOG = [
   {
+    versao: '16',
+    data: '2026-08-29',
+    titulo: 'Trazer seus dados de outra IA',
+    mudancas: [
+      'Em Diário → Dados tem um cartão novo: você joga o arquivo de memória de outra IA (o memory.md) ou cola o texto, e o app preenche o que conseguir — idade, altura, sexo, peso do perfil, remédios e exames.',
+      'O texto inteiro fica guardado como seu contexto: a IA daqui passa a saber sua história sem você redigitar nada. Dá para editar ou apagar esse texto a qualquer momento.',
+      'Três coisas o app se recusa a fazer, de propósito: não sobrescreve nada que você já preencheu; não importa exame sem data (carimbar "hoje" num exame antigo estragaria o gráfico); e não transforma um peso mencionado no texto em pesagem do histórico.',
+      'Cada remédio e exame importado guarda a frase do arquivo que o originou, para você conferir de onde saiu.',
+      'O servidor descarta qualquer campo que a IA não consiga sustentar com uma frase literal do arquivo — e a tela diz o que foi descartado, em vez de fingir que leu tudo.',
+      'A IA trata esse texto como RELATO, não como medição: se ele contradisser um exame que você anotou, o exame anotado vence.',
+    ],
+  },
+  {
+    versao: '15',
+    data: '2026-08-29',
+    titulo: 'O coach passou a prescrever o descanso entre séries',
+    mudancas: [
+      'Cada exercício da semana agora vem com o tempo de descanso entre as séries, na linha do alvo: "3 × 5 · 40 kg · descanso 3 min".',
+      'Antes o coach não tinha onde escrever isso. Quando lembrava, o descanso ia solto no texto de execução; na maioria das vezes não aparecia.',
+      'Por que importa: o descanso decide o que a série treina. Descansar pouco num trabalho de força alta derruba a carga da série seguinte e vira outro exercício sem você perceber.',
+      'A base de conhecimento ganhou uma seção sobre isso, separando o que é bem estabelecido (descanso curto derruba as séries seguintes) do que é convenção de escola (os números em si).',
+      'Quando a sessão não couber no seu tempo, o coach foi instruído a cortar exercício em vez de espremer o descanso — e a dizer isso nas orientações.',
+      'Planos montados antes desta versão continuam funcionando; eles simplesmente não mostram descanso, porque o coach não prescreveu. Refaça o plano para receber os tempos.',
+    ],
+  },
+  {
     versao: '14',
     data: '2026-08-28',
     titulo: 'O app já sabe quanto pesa 1 morango',

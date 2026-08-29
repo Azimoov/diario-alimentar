@@ -1594,6 +1594,211 @@ window.App = (function () {
   }
 
   // ================= ABA DADOS =================
+  // =====================================================================
+  // TRAZER DADOS DE OUTRA IA (memory.md)
+  // =====================================================================
+  // Quem chega aqui já contou a própria história para outro assistente.
+  // Redigitar idade, altura, remédios e exames é a razão mais comum de
+  // largar um app de saúde na primeira semana. A pessoa joga o arquivo e o
+  // app preenche o que der.
+  //
+  // O QUE NÃO FAZEMOS, de propósito:
+  // - não sobrescrever nada que já esteja preenchido (importar não pode
+  //   apagar o que a pessoa anotou);
+  // - não datar exame que veio sem data. Carimbar "hoje" num exame de meses
+  //   atrás estraga o gráfico de tendência, que é justamente para que o
+  //   exame serve aqui. Sem data, ele fica no texto e é dito na tela;
+  // - não transformar peso relatado em PESAGEM datada. Vira o peso do
+  //   perfil (que a pessoa vê e corrige), não um ponto no histórico.
+  function renderMemoriaCard() {
+    const mem = S.memoria;
+    const card = h('div', { class: 'card' }, [h('h3', {}, '🧠 Trazer meus dados de outra IA')]);
+
+    if (!mem) {
+      card.appendChild(h('p', { class: 'note' },
+        'Já conversou com outra IA sobre sua saúde? Exporte a memória dela (o arquivo costuma se chamar memory.md) e jogue aqui. O app lê e preenche o que conseguir: perfil, remédios e exames com data. O resto do texto fica guardado para a IA daqui saber seu contexto.'));
+      card.appendChild(h('p', { class: 'hint' },
+        'Nada que você já tenha preenchido é sobrescrito. Consome a mesma chave de IA das outras funções do app.'));
+    } else {
+      card.appendChild(h('p', { class: 'note' },
+        'Importado em ' + new Date(mem.importadoEm).toLocaleString('pt-BR') + '.'));
+      if (mem.resumo) card.appendChild(h('p', { class: 'hint' }, mem.resumo));
+      if ((mem.preenchido || []).length) {
+        card.appendChild(h('p', { class: 'hint' }, 'O que entrou no app:'));
+        const ul = h('ul', { class: 'hint' });
+        mem.preenchido.forEach(t => ul.appendChild(h('li', {}, t)));
+        card.appendChild(ul);
+      }
+      card.appendChild(h('p', { class: 'hint' },
+        'O texto abaixo é o que a IA daqui lê como seu contexto. Pode corrigir ou apagar o que não quiser que ela veja — sai do ar assim que você salvar.'));
+      const ta = h('textarea', { rows: '8', class: 'mem-texto', value: mem.texto });
+      card.appendChild(ta);
+      card.appendChild(h('div', { class: 'btn-row' }, [
+        h('button', { class: 'btn primary', onclick: () => {
+          const t = ta.value.trim();
+          if (!t) { toast('Texto vazio — use "Apagar" se quiser remover.', 'error'); return; }
+          S.memoria.texto = t; window.Store.save(); scheduleBackup();
+          toast('Contexto atualizado ✅', 'ok');
+        } }, '💾 Salvar o texto'),
+        h('button', { class: 'btn danger', onclick: () => {
+          if (!confirm('Apagar o texto trazido de outra IA? O que já foi preenchido no app (perfil, remédios, exames) CONTINUA — só o texto de contexto sai.')) return;
+          S.memoria = null; window.Store.save(); scheduleBackup();
+          renderDados(); toast('Texto removido.', 'ok');
+        } }, '🗑 Apagar'),
+      ]));
+    }
+
+    const out = h('div', { class: 'mem-out' });
+    card.appendChild(h('div', { class: 'btn-row' }, [
+      h('label', { class: 'btn primary' }, [
+        mem ? '⬆ Importar outro arquivo' : '⬆ Escolher o arquivo',
+        h('input', {
+          type: 'file', accept: '.md,.markdown,.txt,text/markdown,text/plain', style: 'display:none',
+          onchange: async (e) => {
+            const f = e.target.files && e.target.files[0];
+            e.target.value = '';
+            if (!f) return;
+            let texto = '';
+            try { texto = await f.text(); } catch (err) { trErro(out, err, 'ler o arquivo'); return; }
+            importarMemoria(texto, out);
+          },
+        }),
+      ]),
+      h('button', { class: 'btn', onclick: () => {
+        const ta = h('textarea', { rows: '10', placeholder: 'Cole aqui o conteúdo da memória…' });
+        const m = modal('Colar a memória', h('div', {}, [
+          h('p', { class: 'hint' }, 'Se não der para baixar o arquivo, copie o texto da outra IA e cole aqui.'),
+          ta,
+          h('div', { class: 'btn-row' }, [
+            h('button', { class: 'btn primary', onclick: () => {
+              const t = ta.value.trim();
+              if (!t) { toast('Cole algum texto primeiro.', 'error'); return; }
+              m.close(); importarMemoria(t, out);
+            } }, 'Importar'),
+          ]),
+        ]));
+      } }, '📋 Colar texto'),
+    ]));
+    card.appendChild(out);
+    return card;
+  }
+
+  async function importarMemoria(texto, out) {
+    clear(out);
+    out.appendChild(h('p', { class: 'hint' }, 'Lendo o arquivo… isso leva alguns segundos.'));
+    let data;
+    try {
+      const res = await fetch(window.Auth.urlProxy('/memoria'), {
+        method: 'POST',
+        headers: window.Auth.cabecalhosProxy({ 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ texto }),
+      });
+      data = await res.json().catch(() => null);
+      if (!res.ok) {
+        const e = new Error((data && (data.detail || data.error)) || 'HTTP ' + res.status);
+        e.semChave = res.status === 402;
+        throw e;
+      }
+    } catch (err) { trErro(out, err, 'ler essa memória'); return; }
+
+    const preenchido = aplicarMemoria(data, texto);
+    S.memoria = {
+      texto,
+      importadoEm: new Date().toISOString(),
+      resumo: data.resumo || '',
+      preenchido,
+    };
+    window.Store.save();
+    scheduleBackup();
+    renderAll();
+    goTo('diario', 'dados');
+    // o que o servidor DESCARTOU aparece junto: dizer só o que entrou daria a
+    // impressão de que a leitura foi completa quando não foi
+    const descartados = (data.descartados || []);
+    modal('Pronto', h('div', {}, [
+      data.resumo ? h('p', { class: 'note' }, data.resumo) : null,
+      preenchido.length
+        ? h('div', {}, [h('p', { class: 'hint' }, 'Preenchi no app:'),
+          h('ul', { class: 'hint' }, preenchido.map(t => h('li', {}, t)))])
+        : h('p', { class: 'note' }, 'Não achei nada que desse para preencher automaticamente — mas guardei o texto como contexto para a IA.'),
+      descartados.length
+        ? h('div', {}, [
+          h('p', { class: 'hint' }, 'Deixei de fora por não achar a frase correspondente no arquivo (pode ter sido interpretação errada da leitura):'),
+          h('ul', { class: 'hint' }, descartados.map(t => h('li', {}, t)))])
+        : null,
+      h('p', { class: 'hint' }, 'Confira tudo: isto veio de um texto, não de uma medição. Perfil fica em Diário → Perfil, remédios na área Remédios, exames na área Exames.'),
+    ].filter(Boolean)));
+  }
+
+  // Aplica o que veio, SEM sobrescrever o que já existe. Devolve a lista do
+  // que mudou, em português — é o que a pessoa lê na tela e o único jeito de
+  // ela saber o que o app fez sozinho.
+  function aplicarMemoria(data, textoOriginal) {
+    const feito = [];
+    const p = data.perfil;
+    if (p) {
+      const alvo = S.profile;
+      const pares = [
+        ['sex', p.sexo, 'sexo'],
+        ['age', p.idade, 'idade (' + p.idade + ' anos)'],
+        ['height', p.altura, 'altura (' + p.altura + ' cm)'],
+        ['weight', p.peso, 'peso do perfil (' + p.peso + ' kg)'],
+      ];
+      pares.forEach(([campo, valor, rotulo]) => {
+        if (valor == null) return;
+        if (alvo[campo] != null && alvo[campo] !== '') return;  // não sobrescreve
+        alvo[campo] = valor;
+        feito.push(rotulo);
+      });
+    }
+
+    // remédios: não duplica o que já está anotado (compara pelo nome normalizado)
+    const jaTem = new Set((S.meds || []).map(m => m.norm));
+    (data.medicamentos || []).forEach(m => {
+      const norm = window.Parser.normalize(m.nome);
+      if (!norm || jaTem.has(norm)) return;
+      jaTem.add(norm);
+      S.meds.push({
+        id: uid('m'), name: m.nome, norm, kind: m.tipo === 'suplemento' ? 'suplemento' : 'remedio',
+        dose: m.dose || '', schedule: '', reason: m.motivo || '',
+        // sem data de início no arquivo: começar "hoje" seria inventar quando
+        // ela começou a tomar. Fica em branco e a observação diz de onde veio.
+        start: '', end: null, endReason: '',
+        obs: 'importado de outra IA: "' + String(m.trecho || '').slice(0, 200) + '"',
+      });
+      feito.push('remédio/suplemento: ' + m.nome);
+    });
+
+    // exames: SÓ com data. Ver o comentário no topo do bloco.
+    let semData = 0;
+    (data.exames || []).forEach(e => {
+      if (!e.data) { semData++; return; }
+      const norm = window.Parser.normalize(e.nome);
+      const repetido = (S.labExams || []).some(x => x.norm === norm && x.date === e.data);
+      if (repetido) return;
+      S.labExams.push({
+        id: uid('l'), date: e.data, name: e.nome, norm,
+        value: e.valor, num: numFromText(e.valor), unit: e.unidade || '',
+        refLow: null, refHigh: null,
+        obs: 'importado de outra IA: "' + String(e.trecho || '').slice(0, 200) + '"',
+      });
+      feito.push('exame: ' + e.nome + ' (' + fmtBR(e.data) + ')');
+    });
+    if (semData) {
+      feito.push(semData + ' exame(s) NÃO importados: o arquivo não dizia a data, e datar com hoje estragaria o gráfico');
+    }
+
+    // rotina de treino: só entra se já existe perfil de treino e o campo está
+    // vazio. Criar um perfil de treino inteiro a partir de um texto exigiria
+    // chutar objetivo, dias por semana e equipamento — coisas que o arquivo
+    // quase nunca diz e que mudam o plano todo.
+    if (data.rotinaTreino && S.treino && S.treino.perfil && !S.treino.perfil.rotina) {
+      S.treino.perfil.rotina = data.rotinaTreino;
+      feito.push('rotina no perfil de treino');
+    }
+    return feito;
+  }
+
   function renderDados() {
     const root = $('#tab-dados');
     clear(root);
@@ -1602,6 +1807,7 @@ window.App = (function () {
     root.appendChild(renderContaCard());
     root.appendChild(renderChaveCard());
     root.appendChild(renderNovidadesCard());
+    root.appendChild(renderMemoriaCard());
 
     // export/import + backup automático na nuvem
     const st0 = S.settings;
@@ -2460,6 +2666,14 @@ window.App = (function () {
       medicamentos: meds,
       metricasRelogio: metricas,
       lembretesVencidos: (S.examReminders || []).filter(r => reminderDue(r).days <= 0).map(r => r.name + ' (venceu em ' + fmtBR(reminderDue(r).due) + ')'),
+      // Memória trazida de OUTRA IA. Vai rotulada como relato da pessoa, e
+      // não como dado do app, porque é exatamente isso: texto que ela
+      // escreveu (ou outra IA escreveu sobre ela) em outro lugar. Misturar
+      // isso com peso pesado e exame anotado faria a IA tratar lembrança
+      // como medição.
+      relatoTrazidoDeOutraIA: (S.memoria && S.memoria.texto)
+        ? { importadoEm: S.memoria.importadoEm, texto: S.memoria.texto.slice(0, 20000) }
+        : null,
     };
   }
 
@@ -2527,7 +2741,7 @@ window.App = (function () {
       semanaAtual: t.plano.semana.numero, bloco: t.plano.semana.bloco,
       sessoes: (t.plano.semana.sessoes || []).map(s => ({
         dia: s.dia, foco: s.foco,
-        itens: (s.itens || []).slice(0, 12).map(i => ({ nome: i.nome, series: i.series, reps: i.reps, feito: !!i.feito })),
+        itens: (s.itens || []).slice(0, 12).map(i => ({ nome: i.nome, series: i.series, reps: i.reps, descansoSeg: i.descansoSeg != null ? i.descansoSeg : null, feito: !!i.feito })),
       })),
     } : null;
     const treino = {
@@ -3163,6 +3377,16 @@ window.App = (function () {
     return card;
   }
 
+  // Segundos -> texto curto. Abaixo de 1 min fica em segundos ("45 s"); a
+  // partir daí vira minuto, e só mostra os segundos quando eles existem
+  // ("2 min" e não "2 min 0 s"; "1 min 30 s" quando quebra).
+  function fmtDescanso(seg) {
+    if (!(seg > 0)) return '';
+    if (seg < 60) return seg + ' s';
+    const min = Math.floor(seg / 60), resto = seg % 60;
+    return min + ' min' + (resto ? ' ' + resto + ' s' : '');
+  }
+
   // Uma linha por exercício: alvo prescrito + campos de registro. Os inputs
   // NÃO redesenham a tela ao digitar (perderia o foco no meio do número) —
   // só gravam no estado e acendem a borda de "registrado".
@@ -3172,13 +3396,16 @@ window.App = (function () {
     // duas, que o schema permite) deixava " · 20 kg" com separador órfão
     // 'fc' = pico diário de frequência cardíaca: o alvo é o esforço/duração,
     // e o que a pessoa anota depois é o bpm que o relógio marcou
-    const alvo = item.registro === 'fc'
-      ? [[item.series, item.reps].filter(x => x != null).join(' × '), item.cargaSugerida]
+    // descanso entre séries: o coach prescreve em segundos, a tela mostra na
+    // unidade que a pessoa pensa ("1 min 30", "45 s"). Planos gerados antes
+    // deste campo existir vêm sem ele — por isso o `!= null`, e não um valor
+    // padrão: inventar um descanso que o coach não prescreveu seria mentira.
+    const descanso = item.descansoSeg != null ? 'descanso ' + fmtDescanso(item.descansoSeg) : '';
+    const alvo = item.registro === 'tempo'
+      ? [(item.minutos != null ? item.minutos + ' min' : 'tempo livre'), descanso]
         .filter(Boolean).join(' · ')
-      : item.registro === 'tempo'
-        ? (item.minutos != null ? item.minutos + ' min' : 'tempo livre')
-        : [[item.series, item.reps].filter(x => x != null).join(' × '), item.cargaSugerida]
-          .filter(Boolean).join(' · ');
+      : [[item.series, item.reps].filter(x => x != null).join(' × '), item.cargaSugerida, descanso]
+        .filter(Boolean).join(' · ');
     row.appendChild(h('div', {}, [
       h('span', { class: 'tr-item-nome' }, h('strong', {}, item.nome)),
       ' ',
@@ -3660,7 +3887,10 @@ window.App = (function () {
       || (S.labExams || []).length > 0
       || (S.imgExams || []).length > 0
       || (S.analyses || []).length > 0
-      || ((S.chat || {}).mensagens || []).length > 0;
+      || ((S.chat || {}).mensagens || []).length > 0
+      // memória importada conta: quem só trouxe o memory.md e ainda não
+      // registrou nada veria a nuvem apagá-lo em silêncio ao entrar
+      || !!(S.memoria && S.memoria.texto);
   }
 
   // Resolve o encontro entre o que está aqui e o que está na nuvem.
